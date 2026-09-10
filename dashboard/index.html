@@ -76,6 +76,24 @@
       </article>
     </section>
 
+    <section class="panel detail status-card reveal-4" id="cardUsage" aria-labelledby="usageHeading">
+      <div class="usage-head">
+        <h3 id="usageHeading">Usage &amp; Budget</h3>
+        <label>Window
+          <select id="usagePeriod">
+            <option value="day" selected>Today</option>
+            <option value="week">This week</option>
+          </select>
+        </label>
+      </div>
+      <p id="usageWindow" class="muted mono">Usage: loading...</p>
+      <dl id="usageMetrics" class="state-list usage-metrics"></dl>
+      <p id="usageRecordedBudget" class="mono">Last recorded budget: UNKNOWN</p>
+      <p id="usageCurrentPause" class="mono" role="status" aria-live="polite">Current budget pause: UNKNOWN</p>
+      <ul id="usageAlerts" class="usage-alerts"></ul>
+      <p class="muted">Reported cycle data only. Unknown values are not zero; partial values are reported subtotals.</p>
+    </section>
+
     <section class="grid-details reveal-4">
       <article class="panel detail">
         <h3>Runtime State</h3>

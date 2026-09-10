@@ -21,23 +21,12 @@ is_launchd_supported() {
 }
 
 stop_loop_process() {
-    # Method 1: Signal file (graceful, waits for current cycle to finish)
+    # The flag also stops startup/idle paths before another cycle can begin.
     touch "$PROJECT_DIR/.auto-loop-stop"
-    echo "Stop signal sent. Loop will stop after current cycle completes."
+    echo "Stop requested. The active cycle will be interrupted and its owned processes cleaned up."
 
-    # Method 2: Also send SIGTERM if PID file exists
-    if [ -f "$PID_FILE" ]; then
-        pid=$(cat "$PID_FILE")
-        if kill -0 "$pid" 2>/dev/null; then
-            echo "Sending SIGTERM to PID $pid..."
-            kill -TERM "$pid"
-        else
-            echo "Process $pid not running. Cleaning up PID file."
-            rm -f "$PID_FILE"
-        fi
-    else
-        echo "No PID file found."
-    fi
+    # Validate the held lock and exact script identity before signalling a PID.
+    python3 "$SCRIPT_DIR/loop-lock.py" --stop "$PID_FILE" "$SCRIPT_DIR/auto-loop.sh"
 }
 
 pause_daemon() {
@@ -47,7 +36,7 @@ pause_daemon() {
         exit 1
     fi
 
-    touch "$PAUSE_FLAG"
+    printf 'PAUSE_REASON=manual\n' > "$PAUSE_FLAG"
     echo "Pause flag created: $PAUSE_FLAG"
     stop_loop_process
 

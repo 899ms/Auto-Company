@@ -13,7 +13,7 @@ function Assert-WslAvailable {
 function Get-RepoPaths {
     $repoWin = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
     $repoWinForWsl = $repoWin -replace "\\", "/"
-    $repoWslRaw = & wsl.exe wslpath -a "$repoWinForWsl"
+    $repoWslRaw = & wsl.exe -d $Distro wslpath -a "$repoWinForWsl"
     if (-not $repoWslRaw) {
         throw "Failed to convert repository path to WSL path."
     }
@@ -54,7 +54,8 @@ $repoWsl = $paths.RepoWsl
 
 $installedCode = Invoke-WslCommand -RepoWsl $repoWsl -Command "systemctl --user cat auto-company.service >/dev/null 2>&1" -IgnoreExitCode
 if ($installedCode -eq 0) {
-    $stopCode = Invoke-WslCommand -RepoWsl $repoWsl -Command "systemctl --user stop auto-company.service" -IgnoreExitCode
+    $null = Invoke-WslCommand -RepoWsl $repoWsl -Command "bash scripts/wsl/dashboard-wsl.sh check"
+    $stopCode = Invoke-WslCommand -RepoWsl $repoWsl -Command "bash scripts/wsl/dashboard-wsl.sh stop" -IgnoreExitCode
     if ($stopCode -ne 0) {
         Write-Warning "auto-company.service is installed but was not running/loaded."
     } else {
