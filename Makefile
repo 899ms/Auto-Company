@@ -1,4 +1,4 @@
-.PHONY: start start-awake awake stop status last cycles monitor dashboard pause resume install uninstall team help
+.PHONY: start start-awake awake stop status last cycles usage-day usage-week usage-date usage-status monitor dashboard pause resume install uninstall team test-process-supervisor test-auto-loop-integration project-new project-select project-status project-publish project-migrate-legacy project-migrate-rollback clean-logs reset-consensus help
 
 UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
 ENGINE ?= claude
@@ -43,11 +43,30 @@ last: ## Show last cycle's full output
 cycles: ## Show cycle history summary
 	./scripts/core/monitor.sh --cycles
 
+usage-day: ## Show today's structured cost/token summary
+	python3 ./scripts/core/usage.py summary --period day
+
+usage-week: ## Show this week's structured cost/token summary
+	python3 ./scripts/core/usage.py summary --period week
+
+usage-date: ## Show one date (DATE=YYYY-MM-DD)
+	@test -n "$(DATE)" || (echo "DATE is required (YYYY-MM-DD)."; exit 1)
+	python3 ./scripts/core/usage.py summary --period day --date "$(DATE)"
+
+usage-status: ## Show hard-budget pause state
+	python3 ./scripts/core/usage.py status
+
 monitor: ## Tail live logs (Ctrl+C to exit)
 	./scripts/core/monitor.sh
 
-dashboard: ## Start local dashboard server (Windows host or macOS host)
+dashboard: ## Start local dashboard server (Windows, Linux/WSL, or macOS)
 	python3 dashboard/server.py
+
+test-process-supervisor: ## Test cycle-owned process-tree cleanup with fake engines
+	bash tests/test_process_supervisor.sh
+
+test-auto-loop-integration: ## Test sidecar, usage, and governance pause integration with a fake engine
+	bash tests/test_auto_loop_integration.sh
 
 # === Daemon (macOS launchd / Linux systemd --user) ===
 
@@ -69,17 +88,21 @@ pause: ## Pause daemon (no auto-restart)
 ifeq ($(UNAME_S),Darwin)
 	./scripts/core/stop-loop.sh --pause-daemon
 else
-	@command -v systemctl >/dev/null 2>&1 || (echo "systemctl not found. Ensure WSL systemd is enabled."; exit 1)
-	@systemctl --user stop auto-company.service
+	@bash ./scripts/wsl/dashboard-wsl.sh check
+	@printf 'PAUSE_REASON=manual\n' > .auto-loop-paused
+	@bash ./scripts/wsl/dashboard-wsl.sh stop
 	@echo "auto-company.service paused (stopped)."
 endif
 
 resume: ## Resume paused daemon
 ifeq ($(UNAME_S),Darwin)
+	python3 ./scripts/core/usage.py resume
 	./scripts/core/stop-loop.sh --resume-daemon
 else
-	@command -v systemctl >/dev/null 2>&1 || (echo "systemctl not found. Ensure WSL systemd is enabled."; exit 1)
-	@systemctl --user start auto-company.service
+	@bash ./scripts/wsl/dashboard-wsl.sh check
+	python3 ./scripts/core/usage.py resume
+	@rm -f .auto-loop-paused
+	@bash ./scripts/wsl/dashboard-wsl.sh start
 	@echo "auto-company.service resumed (started)."
 endif
 
@@ -93,17 +116,35 @@ team: ## Start selected engine interactive session (ENGINE=claude|codex)
 	fi; \
 	cd "$(CURDIR)" && "$$engine"
 
+# === Product repositories ===
+
+project-new: ## Create an independent local product repo (NAME=<slug>)
+	@test -n "$(NAME)" || (echo "NAME is required. Example: make project-new NAME=my-product"; exit 1)
+	./scripts/core/project.sh new --name "$(NAME)"
+
+project-select: ## Select a product explicitly (PROJECT=<slug> CONFIRM=SELECT)
+	./scripts/core/project.sh select --project "$(PROJECT)" --confirm "$(CONFIRM)"
+
+project-status: ## Show the selected product repo status (optional PROJECT=<slug>)
+	./scripts/core/project.sh status --project "$(PROJECT)"
+
+project-publish: ## Explicitly push a clean product repo (REMOTE_URL=<url> CONFIRM=PUBLISH)
+	./scripts/core/project.sh publish --project "$(PROJECT)" --remote-url "$(REMOTE_URL)" --confirm "$(CONFIRM)"
+
+project-migrate-legacy: ## Stage reversible migration of a tracked legacy project (NAME=<slug> CONFIRM=MIGRATE)
+	./scripts/core/project.sh migrate-legacy --name "$(NAME)" --confirm "$(CONFIRM)"
+
+project-migrate-rollback: ## Roll back an uncommitted legacy migration (NAME=<slug> CONFIRM=ROLLBACK)
+	./scripts/core/project.sh migrate-rollback --name "$(NAME)" --confirm "$(CONFIRM)"
+
 # === Maintenance ===
 
 clean-logs: ## Remove all cycle logs
-	rm -f logs/cycle-*.log logs/auto-loop.log.old
+	rm -f logs/cycle-*.log logs/cycle-*.json logs/auto-loop.log.old
 	@echo "Cycle logs cleaned."
 
-reset-consensus: ## Reset consensus to initial Day 0 state (CAUTION)
-	@echo "This will reset all company progress. Ctrl+C to cancel."
-	@sleep 3
-	git checkout -- memories/consensus.md
-	@echo "Consensus reset to initial state."
+reset-consensus: ## Back up and reset business state; preserve human rules (CONFIRM=RESET)
+	./scripts/core/consensus-guard.sh reset --confirm "$(CONFIRM)"
 
 # === Help ===
 

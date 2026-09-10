@@ -135,17 +135,24 @@ logs/
 .auto-loop-state
 .auto-loop-stop
 .auto-loop-paused
+.auto-loop-budget-paused
+.auto-loop-budget-paused.*
 .auto-loop.env
+.auto-company.local
+.auto-company.local.*
+.auto-company-migrations/
 .auto-loop-awake.pid
 .auto-loop-awake.stop
 .auto-loop-wsl-anchor.pid
 .auto-loop-wsl-anchor.stop
 memories/consensus.md.bak
 
-# Projects directory (show folder on GitHub, hide contents)
+# Generated products are independent local Git repositories. The framework only
+# tracks the directory guide and registry metadata.
 projects/*
 !projects/.gitkeep
-!projects/snapog/
+!projects/README.md
+!projects/registry.tsv
 
 # Local/private outputs (do not publish)
 AGENTS.md
@@ -171,6 +178,19 @@ Files/RELEASE_NOTES.md
 Files/CHANGELOG.md
 Files/CHANGELOG-zh.md
 
+# Release AI internal documents and development artifacts
+CHANGELOG-zh.md
+CHANGELOG.md
+RELEASE_NOTES.md
+node_modules/
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+Archive/
+
 # for codex
 tasks
 
@@ -183,6 +203,8 @@ docs/*
 docs/*/*
 !docs/*/.gitkeep
 !docs/windows-setup.md
+!docs/usage-governance.md
 # Ignore all memories (keep folder marker only)
 memories/*
 !memories/.gitkeep
+!memories/consensus.template.md

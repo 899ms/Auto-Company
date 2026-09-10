@@ -20,7 +20,7 @@
 - `docs/`: 文档
 - `logs/`: 运行日志
 - `memories/`: 共识文件
-- `projects/`: 自动公司产出项目
+- `projects/`: 独立本地项目仓库（框架只跟踪说明与登记表）
 
 ## 核心运行逻辑（Win + WSL）
 
@@ -30,7 +30,8 @@
 
 说明：
 - 默认引擎是 `ENGINE=claude`
-- 可通过 `.auto-loop.env` 或 `start-win.ps1 -Engine codex` 切换到 Codex
+- systemd 服务可通过 `.auto-loop.env` 或 `start-win.ps1 -Engine codex` 切换到 Codex；前台循环只读进程环境变量
+- Cursor 与 OpenAI-compatible 适配器需显式启用，配置与契约见 `ENGINE_ADAPTERS.md`
 - 不做自动引擎回退，所选引擎缺失时直接失败
 
 停止链路：
@@ -41,7 +42,7 @@
 
 | 类别 | 脚本路径 | 主要职责 |
 |---|---|---|
-| 入口 | `scripts/windows/start-win.ps1` | 启动 WSL daemon，写 `.auto-loop.env`（支持 `ENGINE/CLAUDE_PERMISSION_MODE/CODEX_SANDBOX_MODE`），启动防睡眠与 WSL keepalive |
+| 入口 | `scripts/windows/start-win.ps1` | 校验服务仓库，保留配置并更新显式参数，启动 WSL daemon、防睡眠与 WSL keepalive |
 | 入口 | `scripts/windows/stop-win.ps1` | 停止 daemon 并回收防睡眠与 WSL keepalive |
 | 入口 | `scripts/windows/status-win.ps1` | 汇总 guardian/keepalive/autostart/daemon/loop 五层状态 |
 | 诊断 | `scripts/windows/monitor-win.ps1` | 实时日志 |
@@ -56,8 +57,14 @@
 | 守护 | `scripts/wsl/install-wsl-daemon.sh` | 安装并启用 `auto-company.service` |
 | 守护 | `scripts/wsl/uninstall-wsl-daemon.sh` | 卸载 WSL daemon |
 | 守护 | `scripts/wsl/wsl-daemon-status.sh` | 查询 WSL daemon 状态 |
+| 守护 | `scripts/wsl/dashboard-wsl.sh` | 为 Linux/WSL Dashboard 查询及启停 `systemd --user` 服务 |
 | 守护 | `scripts/macos/install-daemon.sh` | macOS launchd 安装/卸载 |
 | 核心 | `scripts/core/auto-loop.sh` | 主循环执行、熔断、日志、共识更新 |
+| 核心 | `scripts/core/engine-adapters.sh` | 统一引擎调用与结果契约，不管理服务或治理策略 |
+| 核心 | `scripts/core/process-supervisor.sh` | Cycle 进程生命周期；Linux 使用独立子孙监管器 |
+| 核心 | `scripts/core/usage.py` | 结构化账本、日/周汇总、预算检查与人工恢复 |
+| 核心 | `scripts/core/consensus-guard.sh` | Human Overrides 保护、P1 预检、回滚暂停、成功快照 |
+| 核心 | `scripts/core/project.sh` | 独立项目创建、人工选择、状态与显式发布门禁 |
 | 核心 | `scripts/core/monitor.sh` | 核心状态/日志输出 |
 | 核心 | `scripts/core/stop-loop.sh` | 核心停止/暂停/恢复控制 |
 

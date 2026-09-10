@@ -28,6 +28,12 @@ fi
 
 mkdir -p "$SYSTEMD_USER_DIR"
 
+# Unit values use double-quoted escaping and literal percent signs. ExecStart
+# otherwise splits checkout paths containing spaces into separate arguments.
+UNIT_PROJECT_DIR="${PROJECT_DIR//\\/\\\\}"
+UNIT_PROJECT_DIR="${UNIT_PROJECT_DIR//\"/\\\"}"
+UNIT_PROJECT_DIR="${UNIT_PROJECT_DIR//%/%%}"
+
 cat > "$SERVICE_PATH" << EOF
 [Unit]
 Description=Auto Company Loop
@@ -35,10 +41,11 @@ After=default.target
 
 [Service]
 Type=simple
-WorkingDirectory=$PROJECT_DIR
-EnvironmentFile=-$PROJECT_DIR/.auto-loop.env
-ExecStart=/usr/bin/bash $PROJECT_DIR/scripts/core/auto-loop.sh
+WorkingDirectory="$UNIT_PROJECT_DIR"
+EnvironmentFile=-"$UNIT_PROJECT_DIR/.auto-loop.env"
+ExecStart=/usr/bin/bash "$UNIT_PROJECT_DIR/scripts/core/auto-loop.sh"
 Restart=always
+RestartPreventExitStatus=78
 RestartSec=10
 TimeoutStopSec=45
 

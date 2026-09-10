@@ -14,7 +14,7 @@
 
 ```bash
 sudo apt update
-sudo apt install -y make jq curl
+sudo apt install -y git make python3 curl
 
 # 安装 Node.js（推荐 LTS）
 curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
@@ -33,14 +33,16 @@ npm install -g @openai/codex
 make --version
 claude --version
 codex --version
-jq --version
+python3 --version
 systemctl --user --version
 ps -p 1 -o comm=
 ```
 
 判定标准：
+- Python 3.10+，WSL Linux 内核 5.3+（进程身份校验需要 pidfd）
 - `systemctl --user --version` 成功
 - `ps -p 1 -o comm=` 输出 `systemd`
+- CLI 的 `--version` 成功只证明安装，不代表已经登录；首次实际 Cycle 会使用订阅额度或 API 计费
 
 建议额外检查引擎路径（至少检查你要使用的引擎）：
 
@@ -61,14 +63,14 @@ wsl -d Ubuntu -u root loginctl enable-linger <your-user>
 
 ## 3. 前置事项（每次开始前）
 
-1. WSL 内 `make`、`claude`、`jq`、`systemctl --user` 可用（如需 codex，再确认 `codex`）。
+1. WSL 内 Git、`make`、Python 3.10+、`claude`、`systemctl --user` 可用（如需 codex，再确认 `codex`）。
 2. 目标引擎在 WSL 内已登录且可用（默认 `claude`）。
 3. 建议确认目标引擎路径优先是 WSL 本地路径（`/home/...`）。
 
 可选快速检查（PowerShell）：
 
 ```powershell
-wsl -d Ubuntu bash -lc 'make --version; claude --version; jq --version; systemctl --user --version'
+wsl -d Ubuntu bash -lc 'make --version; python3 --version; claude --version; systemctl --user --version'
 wsl -d Ubuntu bash -lc 'command -v claude'
 # Optional (for ENGINE=codex):
 wsl -d Ubuntu bash -lc 'codex --version; command -v codex'
@@ -79,8 +81,8 @@ wsl -d Ubuntu bash -lc 'codex --version; command -v codex'
 在仓库根目录运行：
 
 ```powershell
-# 默认 Claude
-.\scripts\windows\start-win.ps1 -Engine claude -ClaudePermissionMode bypassPermissions -CycleTimeoutSeconds 1800 -LoopInterval 30
+# Claude：先在没有密钥的一次性克隆中试运行
+.\scripts\windows\start-win.ps1 -Engine claude -ClaudePermissionMode acceptEdits -CycleTimeoutSeconds 1800 -LoopInterval 30
 
 # 切换 Codex
 .\scripts\windows\start-win.ps1 -Engine codex -SandboxMode workspace-write -CycleTimeoutSeconds 1800 -LoopInterval 30
@@ -94,16 +96,18 @@ wsl -d Ubuntu bash -lc 'codex --version; command -v codex'
 ```
 
 说明：
-- `.\scripts\windows\start-win.ps1` 会写入 `.auto-loop.env`，并启动 `auto-company.service` + `awake guardian` + `wsl anchor`
+- `.\scripts\windows\start-win.ps1` 只更新 `.auto-loop.env` 中显式传入的设置，保留已有预算等其他设置，并启动 `auto-company.service` + `awake guardian` + `wsl anchor`
+- 启停前会校验服务绑定的仓库；若它属于其他 worktree，会拒绝操作。请先人工确认应该使用哪个工作目录，不要为绕过提示而直接重新绑定现有服务
 - `.\scripts\windows\stop-win.ps1` 会停止 `auto-company.service` 并关闭 `awake guardian` + `wsl anchor`
 - `.\scripts\windows\dashboard-win.ps1` 会启动本地 Web 看板（默认 `http://127.0.0.1:8787`）
+- 也可在 WSL 仓库目录执行 `make dashboard`；Linux/WSL 看板只通过已安装的 `systemd --user auto-company.service` 启停运行时，不会另起前台或 `nohup` 循环
 
 推荐参数：
 - `CycleTimeoutSeconds`：`900-1800`
 - `LoopInterval`：`30-60`
 - `Engine`：`claude`（默认）或 `codex`
 - `SandboxMode`：仅在 `ENGINE=codex` 时生效（兼容旧参数 `CodexSandboxMode`）
-- `ClaudePermissionMode`：默认 `bypassPermissions`
+- `ClaudePermissionMode`：为兼容保留 `bypassPermissions` 默认；首次试运行显式使用 `acceptEdits`，可能因需要交互确认而失败。放宽权限前先评估仓库、网络和凭据风险
 
 脚本定位说明：
 - 所有脚本实现位于 `scripts/windows/`、`scripts/core/`、`scripts/wsl/`、`scripts/macos/`
@@ -158,7 +162,7 @@ git config core.eol lf
 ### Claude 运行时卡在权限确认
 
 - 原因：`CLAUDE_PERMISSION_MODE` 设置过严，导致非交互流程被阻塞
-- 处理：启动时显式传 `-ClaudePermissionMode bypassPermissions`
+- 处理：先检查需要批准的操作；只有确认能够信任工作目录与执行内容后，才考虑显式传 `-ClaudePermissionMode bypassPermissions`。它会跳过权限保护，不是通用修复
 - 排查：查看 `logs/auto-loop.log` 中 `Engine: claude | ... | PermissionMode: ...`
 
 ### `systemctl --user` 不可用

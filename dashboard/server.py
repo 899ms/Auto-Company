@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Local dashboard server for Auto Company (Windows + WSL + macOS runtime)."""
+"""Local dashboard server for Auto Company (Windows, Linux/WSL, and macOS)."""
 
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import platform
 import re
+import socket
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -20,6 +23,11 @@ from urllib.parse import parse_qs, urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DASHBOARD_DIR = Path(__file__).resolve().parent
+CORE_SCRIPT_DIR = REPO_ROOT / "scripts" / "core"
+if str(CORE_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(CORE_SCRIPT_DIR))
+
+from usage_lib import UsageError, read_pause_state, summarize_usage  # noqa: E402
 
 WINDOWS_STATUS_SCRIPT = REPO_ROOT / "scripts" / "windows" / "status-win.ps1"
 WINDOWS_START_SCRIPT = REPO_ROOT / "scripts" / "windows" / "start-win.ps1"
@@ -29,12 +37,41 @@ MACOS_STATUS_SCRIPT = REPO_ROOT / "scripts" / "macos" / "status-mac.sh"
 MACOS_START_SCRIPT = REPO_ROOT / "scripts" / "macos" / "install-daemon.sh"
 MACOS_STOP_SCRIPT = REPO_ROOT / "scripts" / "core" / "stop-loop.sh"
 
+LINUX_DASHBOARD_SCRIPT = REPO_ROOT / "scripts" / "wsl" / "dashboard-wsl.sh"
+
 LOG_FILE = REPO_ROOT / "logs" / "auto-loop.log"
+USAGE_FILE = REPO_ROOT / "logs" / "usage.jsonl"
 STATE_FILE = REPO_ROOT / ".auto-loop-state"
 CONSENSUS_FILE = REPO_ROOT / "memories" / "consensus.md"
+BUDGET_PAUSE_FILE = REPO_ROOT / ".auto-loop-budget-paused"
 
 WINDOWS_HOST = "windows"
 MACOS_HOST = "macos"
+LINUX_HOST = "linux"
+
+KNOWN_STATES = frozenset(
+    {
+        "active",
+        "activating",
+        "configured",
+        "deactivating",
+        "failed",
+        "inactive",
+        "idle",
+        "mismatched",
+        "paused",
+        "waiting_limit",
+        "circuit_break",
+        "not_configured",
+        "not_installed",
+        "reloading",
+        "running",
+        "stopped",
+        "unavailable",
+        "unknown",
+        "unsupported",
+    }
+)
 
 
 def ps_quote(value: str) -> str:
@@ -47,8 +84,11 @@ def detect_host_kind(system_name: str | None = None) -> str:
         return WINDOWS_HOST
     if name == "Darwin":
         return MACOS_HOST
+    if name == "Linux":
+        return LINUX_HOST
     raise RuntimeError(
-        "Dashboard only supports Windows hosts (with WSL backend) and macOS hosts."
+        "Dashboard only supports Windows hosts (with WSL backend), Linux/WSL, "
+        "and macOS hosts."
     )
 
 
@@ -140,20 +180,34 @@ def get_host_profile(system_name: str | None = None) -> dict[str, Any]:
             "runner": run_powershell_script,
             "parser": parse_windows_status_output,
             "status_script": WINDOWS_STATUS_SCRIPT,
+            "status_args": None,
             "start_script": WINDOWS_START_SCRIPT,
             "start_args": None,
             "stop_script": WINDOWS_STOP_SCRIPT,
             "stop_args": None,
         }
+    if host == MACOS_HOST:
+        return {
+            "host": host,
+            "runner": run_shell_script,
+            "parser": parse_macos_status_output,
+            "status_script": MACOS_STATUS_SCRIPT,
+            "status_args": None,
+            "start_script": MACOS_START_SCRIPT,
+            "start_args": None,
+            "stop_script": MACOS_STOP_SCRIPT,
+            "stop_args": ["--pause-daemon"],
+        }
     return {
         "host": host,
         "runner": run_shell_script,
-        "parser": parse_macos_status_output,
-        "status_script": MACOS_STATUS_SCRIPT,
-        "start_script": MACOS_START_SCRIPT,
-        "start_args": None,
-        "stop_script": MACOS_STOP_SCRIPT,
-        "stop_args": ["--pause-daemon"],
+        "parser": parse_linux_status_output,
+        "status_script": LINUX_DASHBOARD_SCRIPT,
+        "status_args": ["status"],
+        "start_script": LINUX_DASHBOARD_SCRIPT,
+        "start_args": ["start"],
+        "stop_script": LINUX_DASHBOARD_SCRIPT,
+        "stop_args": ["stop"],
     }
 
 
@@ -227,10 +281,15 @@ def parse_key_values(rows: list[str]) -> dict[str, str]:
     return values
 
 
+def normalize_state(value: str | None, default: str = "unknown") -> str:
+    state = (value or "").strip().lower()
+    return state if state in KNOWN_STATES else default
+
+
 def blank_parsed() -> dict[str, Any]:
     return {
         "guardian": {"state": "unknown", "pid": None, "raw": ""},
-        "autostart": {"state": "unknown", "raw": ""},
+        "autostart": {"state": "unknown", "enabledState": "unknown", "raw": ""},
         "daemon": {
             "state": "unknown",
             "activeState": "unknown",
@@ -247,6 +306,7 @@ def blank_parsed() -> dict[str, Any]:
             "lastRun": "",
             "errorCount": "",
             "loopCount": "",
+            "pauseReason": "",
             "raw": "",
         },
         "consensusPreview": "",
@@ -296,8 +356,8 @@ def parse_windows_status_output(raw: str) -> dict[str, Any]:
             parsed["daemon"]["state"] = "not_installed"
         elif first == "active":
             parsed["daemon"]["state"] = "active"
-        elif first in {"inactive", "activating", "failed"}:
-            parsed["daemon"]["state"] = "inactive"
+        else:
+            parsed["daemon"]["state"] = normalize_state(first)
         for row in daemon_compact:
             if row.startswith("MainPID="):
                 parsed["daemon"]["mainPid"] = parse_int(row.split("=", 1)[1])
@@ -333,23 +393,25 @@ def parse_windows_status_output(raw: str) -> dict[str, Any]:
             parsed["loop"]["errorCount"] = row.split("=", 1)[1].strip()
         elif row.startswith("LOOP_COUNT="):
             parsed["loop"]["loopCount"] = row.split("=", 1)[1].strip()
+        elif row.startswith("PAUSE_REASON="):
+            parsed["loop"]["pauseReason"] = row.split("=", 1)[1].strip()
 
     parsed["consensusPreview"] = "\n".join(sections.get("Latest Consensus", [])).strip()
     parsed["recentLog"] = "\n".join(sections.get("Recent Log", [])).strip()
     return parsed
 
 
-def parse_macos_status_output(raw: str) -> dict[str, Any]:
+def parse_structured_status_output(raw: str) -> dict[str, Any]:
     sections = parse_sections(raw)
     parsed = blank_parsed()
 
     guardian_fields = parse_key_values(sections.get("Guardian", []))
-    parsed["guardian"]["state"] = guardian_fields.get("State", "unknown") or "unknown"
+    parsed["guardian"]["state"] = normalize_state(guardian_fields.get("State"))
     parsed["guardian"]["pid"] = parse_int(guardian_fields.get("Pid"))
     parsed["guardian"]["raw"] = guardian_fields.get("Raw", "")
 
     daemon_fields = parse_key_values(sections.get("Daemon", []))
-    daemon_state = daemon_fields.get("State", "unknown") or "unknown"
+    daemon_state = normalize_state(daemon_fields.get("State"))
     parsed["daemon"]["state"] = daemon_state
     parsed["daemon"]["mainPid"] = parse_int(daemon_fields.get("MainPID"))
     parsed["daemon"]["raw"] = daemon_fields.get("Raw", "")
@@ -357,11 +419,14 @@ def parse_macos_status_output(raw: str) -> dict[str, Any]:
     parsed["daemon"]["subState"] = daemon_fields.get("SubState", "unknown")
 
     autostart_fields = parse_key_values(sections.get("Autostart", []))
-    parsed["autostart"]["state"] = autostart_fields.get("State", "unknown") or "unknown"
+    parsed["autostart"]["state"] = normalize_state(autostart_fields.get("State"))
+    parsed["autostart"]["enabledState"] = autostart_fields.get(
+        "EnabledState", "unknown"
+    )
     parsed["autostart"]["raw"] = autostart_fields.get("Raw", "")
 
     loop_fields = parse_key_values(sections.get("Loop", []))
-    parsed["loop"]["state"] = loop_fields.get("State", "unknown") or "unknown"
+    parsed["loop"]["state"] = normalize_state(loop_fields.get("State"))
     parsed["loop"]["pid"] = parse_int(loop_fields.get("Pid"))
     parsed["loop"]["raw"] = "\n".join(sections.get("Loop", [])).strip()
     parsed["loop"]["daemonSummary"] = loop_fields.get("DaemonSummary", "unknown")
@@ -372,10 +437,21 @@ def parse_macos_status_output(raw: str) -> dict[str, Any]:
     parsed["loop"]["lastRun"] = state_file_fields.get("LAST_RUN", "")
     parsed["loop"]["errorCount"] = state_file_fields.get("ERROR_COUNT", "")
     parsed["loop"]["loopCount"] = state_file_fields.get("LOOP_COUNT", "")
+    parsed["loop"]["pauseReason"] = state_file_fields.get("PAUSE_REASON", "")
 
     parsed["consensusPreview"] = "\n".join(sections.get("Latest Consensus", [])).strip()
     parsed["recentLog"] = "\n".join(sections.get("Recent Log", [])).strip()
     return parsed
+
+
+def parse_macos_status_output(raw: str) -> dict[str, Any]:
+    return parse_structured_status_output(raw)
+
+
+def parse_linux_status_output(raw: str) -> dict[str, Any]:
+    """Parse the structured status report emitted by dashboard-wsl.sh."""
+
+    return parse_structured_status_output(raw)
 
 
 def read_state_file_pairs() -> dict[str, str]:
@@ -392,7 +468,9 @@ def read_state_file_pairs() -> dict[str, str]:
 def run_status_command(system_name: str | None = None) -> dict[str, Any]:
     profile = get_host_profile(system_name)
     runner = profile["runner"]
-    return runner(profile["status_script"], timeout=90)
+    if profile["status_args"] is None:
+        return runner(profile["status_script"], timeout=90)
+    return runner(profile["status_script"], args=profile["status_args"], timeout=90)
 
 
 def run_dashboard_action(action: str, system_name: str | None = None) -> dict[str, Any]:
@@ -406,7 +484,11 @@ def run_dashboard_action(action: str, system_name: str | None = None) -> dict[st
             profile["stop_script"], args=profile["stop_args"], timeout=120
         )
     if action == "refresh":
-        return profile["runner"](profile["status_script"], timeout=90)
+        if profile["status_args"] is None:
+            return profile["runner"](profile["status_script"], timeout=90)
+        return profile["runner"](
+            profile["status_script"], args=profile["status_args"], timeout=90
+        )
     raise ValueError(f"Unsupported dashboard action: {action}")
 
 
@@ -416,8 +498,21 @@ def parse_status_output(raw: str, system_name: str | None = None) -> dict[str, A
 
 
 def gather_status_payload(system_name: str | None = None) -> dict[str, Any]:
-    result = run_status_command(system_name)
+    try:
+        result = run_status_command(system_name)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        result = {"ok": False, "exitCode": 1, "elapsedMs": 0,
+                  "output": f"Dashboard status unavailable: {exc}"}
     parsed = parse_status_output(result["output"], system_name)
+    state_file = read_state_file_pairs()
+    # Saved runtime phases refine a live process only. A stale state file must
+    # never turn a stopped process into a running or paused one.
+    parsed["loop"]["processState"] = parsed["loop"]["state"]
+    runtime_phase = state_file.get("STATUS")
+    if parsed["loop"]["state"] == "running" and runtime_phase in {
+        "running", "idle", "paused", "waiting_limit", "circuit_break"
+    }:
+        parsed["loop"]["state"] = runtime_phase
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "ok": result["ok"],
@@ -425,13 +520,46 @@ def gather_status_payload(system_name: str | None = None) -> dict[str, Any]:
         "elapsedMs": result["elapsedMs"],
         "raw": result["output"],
         "parsed": parsed,
-        "stateFile": read_state_file_pairs(),
+        "stateFile": state_file,
         "consensusHead": read_text_file(CONSENSUS_FILE, "(no consensus file)")[:3000],
         "logTail": read_tail(LOG_FILE, lines=180),
     }
 
 
+def gather_usage_payload(
+    *,
+    period: str = "day",
+    target_date: str | None = None,
+    ledger_path: Path = USAGE_FILE,
+    pause_path: Path = BUDGET_PAUSE_FILE,
+) -> dict[str, Any]:
+    selected_date = target_date or datetime.now().astimezone().date().isoformat()
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "summary": summarize_usage(
+            ledger_path,
+            period=period,
+            target_date=selected_date,
+        ),
+        "budgetPause": read_pause_state(pause_path),
+    }
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
+    def _request_allowed(self) -> bool:
+        address, port = self.server.server_address[:2]
+        hosts = {f"localhost:{port}", f"{address}:{port}"}
+        if ":" in address:
+            hosts.add(f"[{address}]:{port}")
+        host = self.headers.get("Host", "").lower()
+        origin = self.headers.get("Origin")
+        if (host not in hosts or (origin is not None and origin != f"http://{host}")
+                or self.headers.get("Sec-Fetch-Site") == "cross-site"):
+            self._json({"ok": False, "error": "Only same-origin local dashboard requests are allowed."},
+                       code=HTTPStatus.FORBIDDEN)
+            return False
+        return True
+
     def _json(self, payload: dict[str, Any], code: int = 200) -> None:
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
@@ -459,6 +587,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._text(path.read_text(encoding="utf-8"), content_type=content_type)
 
     def do_GET(self) -> None:  # noqa: N802
+        if not self._request_allowed():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
 
@@ -480,6 +610,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path == "/api/status":
             self._json(gather_status_payload())
             return
+        if path == "/api/usage":
+            qs = parse_qs(parsed.query)
+            period = qs.get("period", ["day"])[0]
+            target_date = qs.get("date", [None])[0]
+            try:
+                self._json(
+                    gather_usage_payload(period=period, target_date=target_date)
+                )
+            except UsageError as exc:
+                self._json({"ok": False, "error": str(exc)}, code=HTTPStatus.BAD_REQUEST)
+            return
         if path == "/api/log-tail":
             qs = parse_qs(parsed.query)
             lines = parse_positive_int(qs.get("lines", ["180"])[0], default=180)
@@ -495,6 +636,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._text("Not found", code=404)
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self._request_allowed():
+            return
+        if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
+            self._json({"ok": False, "error": "Actions require application/json."},
+                       code=HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+            return
         parsed = urlparse(self.path)
         path = parsed.path
         if path not in {"/api/action/start", "/api/action/stop", "/api/action/refresh"}:
@@ -502,7 +649,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         action = path.rsplit("/", 1)[-1]
-        result = run_dashboard_action(action)
+        try:
+            result = run_dashboard_action(action)
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            self._json({"ok": False, "output": f"Dashboard action failed: {exc}"},
+                       code=HTTPStatus.GATEWAY_TIMEOUT)
+            return
         payload = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "action": action,
@@ -523,13 +675,24 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8787)
     args = parser.parse_args()
 
+    bind_host = "127.0.0.1" if args.host == "localhost" else args.host
+    try:
+        address = ipaddress.ip_address(bind_host)
+    except ValueError:
+        parser.error("--host must be a loopback IP address or localhost")
+    if not address.is_loopback:
+        parser.error("Dashboard controls are unauthenticated; --host must be loopback")
+
     try:
         host_kind = detect_host_kind()
     except RuntimeError as exc:
         print(f"[dashboard] {exc}")
         raise SystemExit(1) from exc
 
-    server = ThreadingHTTPServer((args.host, args.port), DashboardHandler)
+    class DashboardServer(ThreadingHTTPServer):
+        address_family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
+
+    server = DashboardServer((bind_host, args.port), DashboardHandler)
     print(f"[dashboard] serving on http://{args.host}:{args.port}")
     print(f"[dashboard] repo: {REPO_ROOT}")
     print(f"[dashboard] host: {host_kind}")

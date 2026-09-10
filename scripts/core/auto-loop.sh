@@ -2,7 +2,7 @@
 # ============================================================
 # Auto Company — 24/7 Autonomous Loop
 # ============================================================
-# Keeps selected CLI engine (Claude/Codex) running continuously.
+# Keeps the selected engine adapter running continuously.
 # Uses fresh sessions with consensus.md as the relay baton.
 #
 # Usage:
@@ -14,7 +14,7 @@
 #   kill $(cat .auto-loop.pid)  # Force stop
 #
 # Config (env vars):
-#   ENGINE=claude               # Engine selection: claude|codex (default: claude)
+#   ENGINE=claude               # claude|codex|cursor|openai-compatible
 #   MODEL=...                   # Optional model override (empty = engine default)
 #   CLAUDE_BIN=...              # Optional Claude executable override
 #   CLAUDE_PERMISSION_MODE=bypassPermissions
@@ -22,12 +22,27 @@
 #   CODEX_BIN=...               # Optional Codex executable override
 #   CODEX_SANDBOX_MODE=danger-full-access
 #                               # Codex sandbox mode (only for ENGINE=codex)
+#   CURSOR_ADAPTER_ENABLED=1    # Required opt-in for ENGINE=cursor
+#   CURSOR_SANDBOX_MODE=enabled # Safe default
+#   OPENAI_COMPATIBLE_ADAPTER_ENABLED=1
+#                               # Required opt-in for ENGINE=openai-compatible
+#   OPENAI_COMPATIBLE_ENDPOINT=...  # Required exact endpoint (no default)
+#   OPENAI_COMPATIBLE_MODEL=...     # Required model (MODEL also accepted)
+#   OPENAI_COMPATIBLE_ALLOW_INSECURE_HTTP=1
+#                               # Explicit opt-in for non-loopback plain HTTP
 #   LOOP_INTERVAL=30            # Seconds between cycles (default: 30)
 #   CYCLE_TIMEOUT_SECONDS=1800  # Max seconds per cycle before force-kill
+#   CYCLE_TERM_GRACE_SECONDS=5  # Grace after TERM before KILL
+#   CYCLE_KILL_WAIT_SECONDS=5   # Max wait to confirm the killed tree is gone
 #   MAX_CONSECUTIVE_ERRORS=5    # Circuit breaker threshold
 #   COOLDOWN_SECONDS=300        # Cooldown after circuit break
 #   LIMIT_WAIT_SECONDS=3600     # Wait on usage limit
 #   MAX_LOGS=200                # Max cycle logs to keep
+#   USAGE_BUDGET_PERIOD=day     # Budget window: day|week
+#   USAGE_WARNING_USD=          # Alert only; no price is inferred
+#   USAGE_HARD_LIMIT_USD=       # Pause after the current cycle
+#   USAGE_WARNING_TOKENS=       # Alert only on reported total tokens
+#   USAGE_HARD_LIMIT_TOKENS=    # Pause after the current cycle
 #   AUTO_LOOP_PROTECT_GITIGNORE=1
 #                               # Restore .gitignore if a cycle mutates it
 # ============================================================
@@ -37,12 +52,20 @@ set -euo pipefail
 # === Resolve project root (always relative to this script) ===
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$SCRIPT_DIR/process-supervisor.sh"
 
 LOG_DIR="$PROJECT_DIR/logs"
 CONSENSUS_FILE="$PROJECT_DIR/memories/consensus.md"
 PROMPT_FILE="$PROJECT_DIR/PROMPT.md"
 PID_FILE="$PROJECT_DIR/.auto-loop.pid"
 STATE_FILE="$PROJECT_DIR/.auto-loop-state"
+PAUSE_FLAG="$PROJECT_DIR/.auto-loop-paused"
+CONSENSUS_GUARD="$SCRIPT_DIR/consensus-guard.sh"
+PROJECT_CONTEXT_TOOL="$SCRIPT_DIR/project-context.py"
+USAGE_FILE="$LOG_DIR/usage.jsonl"
+USAGE_TOOL="$PROJECT_DIR/scripts/core/usage.py"
+BUDGET_PAUSE_FILE="$PROJECT_DIR/.auto-loop-budget-paused"
+LOOP_SLEEP_PID=""
 
 # Loop settings (all overridable via env vars)
 ENGINE="${ENGINE:-claude}"
@@ -55,15 +78,28 @@ CODEX_BIN="${CODEX_BIN:-}"
 CODEX_SANDBOX_MODE="${CODEX_SANDBOX_MODE:-danger-full-access}"
 LOOP_INTERVAL="${LOOP_INTERVAL:-30}"
 CYCLE_TIMEOUT_SECONDS="${CYCLE_TIMEOUT_SECONDS:-1800}"
+CYCLE_TERM_GRACE_SECONDS="${CYCLE_TERM_GRACE_SECONDS:-5}"
+CYCLE_KILL_WAIT_SECONDS="${CYCLE_KILL_WAIT_SECONDS:-5}"
 MAX_CONSECUTIVE_ERRORS="${MAX_CONSECUTIVE_ERRORS:-5}"
 COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-300}"
 LIMIT_WAIT_SECONDS="${LIMIT_WAIT_SECONDS:-3600}"
 MAX_LOGS="${MAX_LOGS:-200}"
 AUTO_LOOP_PROTECT_GITIGNORE="${AUTO_LOOP_PROTECT_GITIGNORE:-1}"
+BUDGET_PAUSE_POLL_SECONDS="${BUDGET_PAUSE_POLL_SECONDS:-10}"
 RESOLVED_ENGINE_BIN=""
 
-if [ "$ENGINE" != "claude" ] && [ "$ENGINE" != "codex" ]; then
-    echo "Error: ENGINE must be 'claude' or 'codex' (received: '$ENGINE')."
+source "$SCRIPT_DIR/engine-adapters.sh"
+if [ "$ENGINE" = "openai-compatible" ]; then
+    MODEL_LABEL="$OPENAI_COMPATIBLE_MODEL"
+fi
+if ! engine_adapter_validate; then
+    # EX_CONFIG lets service managers distinguish operator configuration errors
+    # from runtime failures and avoid a restart loop.
+    exit 78
+fi
+
+if ! cycle_supervisor_validate_config "$CYCLE_TIMEOUT_SECONDS" "$CYCLE_TERM_GRACE_SECONDS" "$CYCLE_KILL_WAIT_SECONDS"; then
+    echo "Error: cycle timeout, TERM grace, and KILL wait must be non-negative integer seconds."
     exit 1
 fi
 
@@ -94,6 +130,15 @@ log_cycle() {
     fi
 }
 
+# Bash defers a TERM trap while a foreground sleep runs. Waiting on a tracked
+# background sleep lets stop requests interrupt long cooldowns immediately.
+loop_sleep() {
+    sleep "$1" &
+    LOOP_SLEEP_PID=$!
+    wait "$LOOP_SLEEP_PID" || true
+    LOOP_SLEEP_PID=""
+}
+
 check_usage_limit() {
     local output="$1"
     if echo "$output" | grep -qi "usage limit\|rate limit\|too many requests\|resource_exhausted\|overloaded\|quota\|429\|billing\|insufficient credits"; then
@@ -110,22 +155,113 @@ check_stop_requested() {
     return 1
 }
 
+read_pause_reason() {
+    local pause_file="$1" fallback="$2" reason=""
+    [ -f "$pause_file" ] || {
+        printf '%s\n' "$fallback"
+        return
+    }
+    reason=$(sed -n -E 's/^PAUSE_REASON=([^[:space:]]+).*$/\1/p' "$pause_file" | head -n1)
+    if [ -z "$reason" ]; then
+        reason=$(sed -n -E 's/.*"reason"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$pause_file" | head -n1)
+    fi
+    printf '%s\n' "${reason:-$fallback}"
+}
+
+wait_while_paused() {
+    local pause_reason
+    [ -f "$PAUSE_FLAG" ] || return 0
+    pause_reason=$(read_pause_reason "$PAUSE_FLAG" "manual_or_governance")
+    log "Loop paused (${pause_reason}). Remove .auto-loop-paused only after reviewing the reason."
+    while [ -f "$PAUSE_FLAG" ]; do
+        save_state "paused" "$pause_reason"
+        if check_stop_requested; then
+            log "Stop requested while paused. Shutting down gracefully."
+            cleanup
+        fi
+        loop_sleep 5
+    done
+    log "Governance pause cleared. Resuming preflight checks."
+}
+
 save_state() {
+    local status="$1" pause_reason="${2:-}"
     cat > "$STATE_FILE" << EOF
 LOOP_COUNT=$loop_count
 ERROR_COUNT=$error_count
 LAST_RUN=$(date '+%Y-%m-%d %H:%M:%S')
-STATUS=$1
+STATUS=$status
+PAUSE_REASON=$pause_reason
 MODEL=$MODEL_LABEL
 ENGINE=$ENGINE
 EOF
 }
 
+wait_for_budget_resume() {
+    local pause_reason
+    if [ ! -f "$BUDGET_PAUSE_FILE" ]; then
+        return
+    fi
+
+    pause_reason=$(read_pause_reason "$BUDGET_PAUSE_FILE" "usage_budget")
+    log "Usage governance pause is active (${pause_reason}). Next cycle is blocked until manual 'make resume'."
+    while [ -f "$BUDGET_PAUSE_FILE" ]; do
+        save_state "paused" "$pause_reason"
+        if check_stop_requested; then
+            log "Stop requested while budget-paused. Shutting down gracefully."
+            cleanup
+        fi
+        loop_sleep "$BUDGET_PAUSE_POLL_SECONDS"
+    done
+    log "Budget pause cleared manually. Cycles may resume."
+}
+
+record_cycle_usage() {
+    local budget_state cycle_id
+    cycle_id=$(basename "$cycle_log" .log)
+
+    if budget_state=$(python3 "$USAGE_TOOL" record \
+        --ledger "$USAGE_FILE" \
+        --pause-file "$BUDGET_PAUSE_FILE" \
+        --cycle-id "$cycle_id" \
+        --cycle-number "$loop_count" \
+        --started-at "$cycle_started_at" \
+        --ended-at "$cycle_ended_at" \
+        --status "$CYCLE_LEDGER_STATUS" \
+        --exit-code "$EXIT_CODE" \
+        --engine "$ENGINE" \
+        --model "$MODEL_LABEL" \
+        --metadata-file "$cycle_record" \
+        --result-format state); then
+        echo "$budget_state"
+        return
+    fi
+
+    echo "record_error"
+}
+
 cleanup() {
+    local requested_exit="${1:-0}" final_state="${2:-stopped}"
+    trap '' SIGTERM SIGINT SIGHUP
+    if [ -n "$LOOP_SLEEP_PID" ]; then
+        kill -TERM "$LOOP_SLEEP_PID" 2>/dev/null || true
+        wait "$LOOP_SLEEP_PID" 2>/dev/null || true
+        LOOP_SLEEP_PID=""
+    fi
+    if ! cycle_supervisor_cleanup; then
+        requested_exit=1
+        final_state="process_cleanup_failed"
+        log "Process-tree cleanup could not be confirmed for cycle PGID ${CYCLE_SUPERVISOR_LAST_PGID}"
+    else
+        # The engine must be stopped before restoring its interrupted governance baseline.
+        "$CONSENSUS_GUARD" recover || true
+    fi
+    python3 "$USAGE_TOOL" recover --ledger "$USAGE_FILE" --pause-file "$BUDGET_PAUSE_FILE" || log "Interrupted usage recovery failed; pending identity retained for restart"
     log "=== Auto Loop Shutting Down (PID $$) ==="
-    rm -f "$PID_FILE"
-    save_state "stopped"
-    exit 0
+    # Keep the inode: unlinking a held lock lets another process lock a new file.
+    : > "$PID_FILE"
+    save_state "$final_state"
+    exit "$requested_exit"
 }
 
 snapshot_gitignore() {
@@ -176,6 +312,7 @@ restore_gitignore_if_changed() {
     fi
 
     [ -n "$snapshot_file" ] && rm -f "$snapshot_file"
+    return 0
 }
 
 get_file_size_bytes() {
@@ -204,7 +341,10 @@ rotate_logs() {
     count=$(find "$LOG_DIR" -name "cycle-*.log" -type f 2>/dev/null | wc -l | tr -d ' ')
     if [ "$count" -gt "$MAX_LOGS" ]; then
         local to_delete=$((count - MAX_LOGS))
-        find "$LOG_DIR" -name "cycle-*.log" -type f | sort | head -n "$to_delete" | xargs rm -f 2>/dev/null || true
+        while IFS= read -r old_cycle_log; do
+            [ -n "$old_cycle_log" ] || continue
+            rm -f "$old_cycle_log" "${old_cycle_log%.log}.json"
+        done < <(find "$LOG_DIR" -name "cycle-*.log" -type f | sort | head -n "$to_delete")
         log "Log rotation: removed $to_delete old cycle logs"
     fi
 
@@ -287,299 +427,64 @@ consensus_changed_since_backup() {
     return 0
 }
 
-resolve_codex_bin() {
-    if [ -n "$CODEX_BIN" ]; then
-        if [ -x "$CODEX_BIN" ]; then
-            echo "$CODEX_BIN"
-            return 0
-        fi
-        if command -v "$CODEX_BIN" >/dev/null 2>&1; then
-            command -v "$CODEX_BIN"
-            return 0
-        fi
-    fi
-
-    # Prefer WSL-local Codex installed via nvm.
-    local nvm_candidate=""
-    for candidate in "$HOME"/.nvm/versions/node/*/bin/codex; do
-        if [ -x "$candidate" ]; then
-            nvm_candidate="$candidate"
-        fi
-    done
-    if [ -n "$nvm_candidate" ]; then
-        echo "$nvm_candidate"
-        return 0
-    fi
-
-    # Fallback: ask an interactive bash shell (loads user profile).
-    local interactive_candidate
-    interactive_candidate=$(bash -ic 'command -v codex' 2>/dev/null | tail -n1 | tr -d '\r' || true)
-    if [ -n "$interactive_candidate" ] && [ -x "$interactive_candidate" ]; then
-        echo "$interactive_candidate"
-        return 0
-    fi
-
-    # Last fallback: current shell PATH.
-    if command -v codex >/dev/null 2>&1; then
-        command -v codex
-        return 0
-    fi
-
-    return 1
-}
-
-resolve_claude_bin() {
-    if [ -n "$CLAUDE_BIN" ]; then
-        if [ -x "$CLAUDE_BIN" ]; then
-            echo "$CLAUDE_BIN"
-            return 0
-        fi
-        if command -v "$CLAUDE_BIN" >/dev/null 2>&1; then
-            command -v "$CLAUDE_BIN"
-            return 0
-        fi
-    fi
-
-    # Prefer WSL-local Claude CLI installed via nvm.
-    local nvm_candidate=""
-    for candidate in "$HOME"/.nvm/versions/node/*/bin/claude; do
-        if [ -x "$candidate" ]; then
-            nvm_candidate="$candidate"
-        fi
-    done
-    if [ -n "$nvm_candidate" ]; then
-        echo "$nvm_candidate"
-        return 0
-    fi
-
-    # Fallback: ask an interactive bash shell (loads user profile).
-    local interactive_candidate
-    interactive_candidate=$(bash -ic 'command -v claude' 2>/dev/null | tail -n1 | tr -d '\r' || true)
-    if [ -n "$interactive_candidate" ] && [ -x "$interactive_candidate" ]; then
-        echo "$interactive_candidate"
-        return 0
-    fi
-
-    # Last fallback: current shell PATH.
-    if command -v claude >/dev/null 2>&1; then
-        command -v claude
-        return 0
-    fi
-
-    return 1
-}
-
 resolve_engine_bin() {
-    case "$ENGINE" in
-        claude)
-            resolve_claude_bin
-            ;;
-        codex)
-            resolve_codex_bin
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-
-run_codex_cycle() {
-    local prompt="$1"
-    local output_file timeout_flag message_file
-
-    output_file=$(mktemp)
-    timeout_flag=$(mktemp)
-    message_file=$(mktemp)
-
-    set +e
-    (
-        cd "$PROJECT_DIR" || exit 1
-        local codex_cmd=("$RESOLVED_ENGINE_BIN" "exec" "-c" "sandbox_mode=\"${CODEX_SANDBOX_MODE}\"" "-o" "$message_file")
-        if [ -n "$MODEL" ]; then
-            codex_cmd+=("-m" "$MODEL")
-        fi
-        codex_cmd+=("$prompt")
-        "${codex_cmd[@]}"
-    ) > "$output_file" 2>&1 &
-    local codex_pid=$!
-
-    (
-        sleep "$CYCLE_TIMEOUT_SECONDS"
-        if kill -0 "$codex_pid" 2>/dev/null; then
-            echo "1" > "$timeout_flag"
-            kill -TERM "$codex_pid" 2>/dev/null || true
-            sleep 5
-            kill -KILL "$codex_pid" 2>/dev/null || true
-        fi
-    ) &
-    local watchdog_pid=$!
-
-    wait "$codex_pid"
-    EXIT_CODE=$?
-
-    kill "$watchdog_pid" 2>/dev/null || true
-    wait "$watchdog_pid" 2>/dev/null || true
-    set -e
-
-    OUTPUT=$(cat "$output_file")
-    RESULT_MESSAGE=$(cat "$message_file" 2>/dev/null || true)
-    rm -f "$output_file" "$message_file"
-
-    if [ -s "$timeout_flag" ]; then
-        CYCLE_TIMED_OUT=1
-        EXIT_CODE=124
-    else
-        CYCLE_TIMED_OUT=0
-    fi
-    rm -f "$timeout_flag"
-}
-
-run_claude_cycle() {
-    local prompt="$1"
-    local output_file timeout_flag
-
-    output_file=$(mktemp)
-    timeout_flag=$(mktemp)
-
-    set +e
-    (
-        cd "$PROJECT_DIR" || exit 1
-        local claude_cmd=("$RESOLVED_ENGINE_BIN" "-p" "$prompt" "--output-format" "json")
-        if [ -n "$MODEL" ]; then
-            claude_cmd+=("--model" "$MODEL")
-        fi
-        if [ -n "$CLAUDE_PERMISSION_MODE" ]; then
-            claude_cmd+=("--permission-mode" "$CLAUDE_PERMISSION_MODE")
-        fi
-        "${claude_cmd[@]}"
-    ) > "$output_file" 2>&1 &
-    local claude_pid=$!
-
-    (
-        sleep "$CYCLE_TIMEOUT_SECONDS"
-        if kill -0 "$claude_pid" 2>/dev/null; then
-            echo "1" > "$timeout_flag"
-            kill -TERM "$claude_pid" 2>/dev/null || true
-            sleep 5
-            kill -KILL "$claude_pid" 2>/dev/null || true
-        fi
-    ) &
-    local watchdog_pid=$!
-
-    wait "$claude_pid"
-    EXIT_CODE=$?
-
-    kill "$watchdog_pid" 2>/dev/null || true
-    wait "$watchdog_pid" 2>/dev/null || true
-    set -e
-
-    OUTPUT=$(cat "$output_file")
-    RESULT_MESSAGE="$OUTPUT"
-    rm -f "$output_file"
-
-    if [ -s "$timeout_flag" ]; then
-        CYCLE_TIMED_OUT=1
-        EXIT_CODE=124
-    else
-        CYCLE_TIMED_OUT=0
-    fi
-    rm -f "$timeout_flag"
+    engine_adapter_resolve
 }
 
 run_engine_cycle() {
     local prompt="$1"
-    case "$ENGINE" in
-        claude)
-            run_claude_cycle "$prompt"
-            ;;
-        codex)
-            run_codex_cycle "$prompt"
-            ;;
-        *)
-            echo "Error: Unsupported ENGINE '$ENGINE'" >&2
-            return 1
-            ;;
-    esac
+    # This is workflow context, not an OS sandbox or an authentication boundary.
+    export AUTO_COMPANY_ROOT="$PROJECT_DIR"
+    export AUTO_COMPANY_CYCLE=1
+    export ACTIVE_PROJECT ACTIVE_PROJECT_PATH
+    engine_adapter_run "$prompt"
+    unset AUTO_COMPANY_CYCLE
+    OUTPUT="$ADAPTER_OUTPUT"
+    EXIT_CODE="$ADAPTER_EXIT_CODE"
+    CYCLE_TIMED_OUT="$ADAPTER_TIMED_OUT"
 }
 
 extract_cycle_metadata() {
-    RESULT_TEXT=""
-    CYCLE_COST="N/A"
-    CYCLE_SUBTYPE="unknown"
-    CYCLE_TYPE="${ENGINE}_exec"
-
-    if [ "$ENGINE" = "claude" ]; then
-        if command -v jq >/dev/null 2>&1; then
-            RESULT_TEXT=$(echo "$RESULT_MESSAGE" | jq -r '.result // .message // .output_text // empty' 2>/dev/null | head -c 2000 || true)
-            if [ -z "$RESULT_TEXT" ]; then
-                RESULT_TEXT=$(echo "$RESULT_MESSAGE" | jq -r '.. | .text? // empty' 2>/dev/null | head -c 2000 || true)
-            fi
-
-            parsed_cost=$(echo "$RESULT_MESSAGE" | jq -r '.total_cost_usd // .cost_usd // empty' 2>/dev/null || true)
-            if [ -n "$parsed_cost" ]; then
-                CYCLE_COST="$parsed_cost"
-            fi
-
-            parsed_subtype=$(echo "$RESULT_MESSAGE" | jq -r '.subtype // empty' 2>/dev/null || true)
-            if [ -n "$parsed_subtype" ]; then
-                CYCLE_SUBTYPE="$parsed_subtype"
-            fi
-
-            parsed_type=$(echo "$RESULT_MESSAGE" | jq -r '.type // empty' 2>/dev/null || true)
-            if [ -n "$parsed_type" ]; then
-                CYCLE_TYPE="$parsed_type"
-            fi
-        fi
-
-        if [ -z "$RESULT_TEXT" ]; then
-            RESULT_TEXT=$(echo "$OUTPUT" | head -c 2000 || true)
-        fi
-
-        if [ "$CYCLE_SUBTYPE" = "unknown" ]; then
-            if [ "$EXIT_CODE" -eq 0 ]; then
-                CYCLE_SUBTYPE="success"
-            else
-                CYCLE_SUBTYPE="error"
-            fi
-        fi
-        return
-    fi
-
-    RESULT_TEXT=$(echo "$RESULT_MESSAGE" | head -c 2000 || true)
-    if [ -z "$RESULT_TEXT" ]; then
-        RESULT_TEXT=$(echo "$OUTPUT" | head -c 2000 || true)
-    fi
-
-    if [ "$EXIT_CODE" -eq 0 ]; then
-        CYCLE_SUBTYPE="success"
-    else
-        CYCLE_SUBTYPE="error"
-    fi
+    engine_adapter_extract_metadata
+    RESULT_TEXT="$ADAPTER_RESULT"
+    CYCLE_COST="${ADAPTER_COST_USD:-N/A}"
+    CYCLE_SUBTYPE="$ADAPTER_SUBTYPE"
+    CYCLE_TYPE="$ADAPTER_TYPE"
 }
 
 # === Setup ===
 
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "Error: python3 is required for process ownership and structured usage accounting."
+    exit 1
+fi
+if [ "${AUTO_COMPANY_LOCK_PID:-}" != "$$" ]; then
+    exec python3 "$SCRIPT_DIR/loop-lock.py" "$PID_FILE" "$0" "$@"
+fi
+
 mkdir -p "$LOG_DIR" "$PROJECT_DIR/memories"
+
+if [ ! -x "$CONSENSUS_GUARD" ]; then
+    echo "Error: Consensus guard is missing or not executable: $CONSENSUS_GUARD"
+    exit 1
+fi
 
 # Clean up stale stop file from previous run
 rm -f "$PROJECT_DIR/.auto-loop-stop"
 
-# Check for existing instance
-if [ -f "$PID_FILE" ]; then
-    existing_pid=$(cat "$PID_FILE")
-    if kill -0 "$existing_pid" 2>/dev/null; then
-        echo "Auto loop already running (PID $existing_pid). Stop it first with ./stop-loop.sh"
-        exit 1
-    fi
-fi
-
 # Check dependencies
+set +e
+"$CONSENSUS_GUARD" recover
+governance_recovery_status=$?
+set -e
+if [ "$governance_recovery_status" -ne 0 ] && [ "$governance_recovery_status" -ne 42 ]; then
+    echo "Error: interrupted-cycle governance recovery failed before startup"
+    exit 1
+fi
+"$CONSENSUS_GUARD" init
+
 if ! RESOLVED_ENGINE_BIN="$(resolve_engine_bin)"; then
-    if [ "$ENGINE" = "claude" ]; then
-        echo "Error: Claude CLI not found. Install Claude Code in WSL and verify with 'claude --version'."
-    else
-        echo "Error: Codex CLI not found. Install Codex in WSL and verify with 'codex --version'."
-    fi
+    echo "Error: $(engine_adapter_missing_dependency_message)"
     exit 1
 fi
 
@@ -588,40 +493,47 @@ if [ ! -f "$PROMPT_FILE" ]; then
     exit 1
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "Error: python3 is required for structured usage accounting."
+    exit 1
+fi
+
+# Reject invalid policy before invoking a provider and reconstruct a missing
+# hard-budget pause from the durable ledger after restart.
+if ! python3 "$USAGE_TOOL" check --ledger "$USAGE_FILE" --pause-file "$BUDGET_PAUSE_FILE" --result-format state >/dev/null; then
+    echo "Error: usage budget preflight failed; no cycle was started."
+    exit 78
+fi
+
 # Write PID file
 echo $$ > "$PID_FILE"
-
-# Trap signals for graceful shutdown
-trap cleanup SIGTERM SIGINT SIGHUP
 
 # Initialize counters
 loop_count=0
 error_count=0
+run_id=$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')
+
+# Trap signals for graceful shutdown
+trap 'cleanup 0 stopped' SIGTERM SIGINT SIGHUP
+
+wait_for_budget_resume
 
 log "=== Auto Company Loop Started (PID $$) ==="
 log "Project: $PROJECT_DIR"
-if [ "$ENGINE" = "codex" ]; then
-    log "Engine: codex | Model: $MODEL_LABEL | Sandbox: $CODEX_SANDBOX_MODE"
-else
-    log "Engine: claude | Model: $MODEL_LABEL | PermissionMode: $CLAUDE_PERMISSION_MODE"
-fi
+log "$(engine_adapter_description)"
 log "Engine bin: $RESOLVED_ENGINE_BIN"
-engine_version=$("$RESOLVED_ENGINE_BIN" --version 2>/dev/null | head -n1 || true)
+engine_version=$("$RESOLVED_ENGINE_BIN" --version 2>/dev/null | head -n1 | adapter_redact || true)
 case "$RESOLVED_ENGINE_BIN" in
     /mnt/c/*)
-        if [ "$ENGINE" = "codex" ]; then
-            log "Warning: Codex binary resolves to Windows-mounted path. Prefer WSL-local install for stability."
-        else
-            log "Warning: Claude binary resolves to Windows-mounted path. Prefer WSL-local install for stability."
-        fi
+        log "Warning: $ENGINE binary resolves to a Windows-mounted path. Prefer a WSL-local runtime for stability."
         ;;
 esac
 if [ -n "$engine_version" ]; then
-    if [ "$ENGINE" = "codex" ]; then
-        log "Codex version: $engine_version"
-    else
-        log "Claude version: $engine_version"
-    fi
+    case "$ENGINE" in
+        claude) log "Claude version: $engine_version" ;;
+        codex) log "Codex version: $engine_version" ;;
+        *) log "Engine version: $engine_version" ;;
+    esac
 fi
 log "Interval: ${LOOP_INTERVAL}s | Timeout: ${CYCLE_TIMEOUT_SECONDS}s | Breaker: ${MAX_CONSECUTIVE_ERRORS} errors"
 
@@ -634,8 +546,43 @@ while true; do
         cleanup
     fi
 
-    loop_count=$((loop_count + 1))
-    cycle_log="$LOG_DIR/cycle-$(printf '%04d' "$loop_count")-$(date '+%Y%m%d-%H%M%S').log"
+    wait_while_paused
+    wait_for_budget_resume
+
+    next_cycle=$((loop_count + 1))
+    set +e
+    "$CONSENSUS_GUARD" preflight "$next_cycle"
+    preflight_status=$?
+    set -e
+    if [ "$preflight_status" -eq 41 ]; then
+        loop_sleep "$LOOP_INTERVAL"
+        continue
+    fi
+    if [ "$preflight_status" -eq 42 ]; then
+        wait_while_paused
+        continue
+    fi
+    if [ "$preflight_status" -ne 0 ]; then
+        log_cycle "$next_cycle" "FAIL" "Consensus preflight failed with exit code $preflight_status"
+        loop_sleep "$LOOP_INTERVAL"
+        continue
+    fi
+
+    # Consume human selection on every cycle; never source the local file as shell.
+    if ! ACTIVE_PROJECT_PATH=$(python3 "$PROJECT_CONTEXT_TOOL" active --root "$PROJECT_DIR" --optional); then
+        log_cycle "$next_cycle" "FAIL" "Invalid ACTIVE_PROJECT configuration; engine invocation blocked"
+        printf 'PAUSE_REASON=active_project_invalid\n' > "$PAUSE_FLAG"
+        wait_while_paused
+        continue
+    fi
+    ACTIVE_PROJECT=""
+    if [ -n "$ACTIVE_PROJECT_PATH" ]; then
+        ACTIVE_PROJECT="projects/${ACTIVE_PROJECT_PATH##*/}"
+    fi
+
+    loop_count=$next_cycle
+    cycle_log="$LOG_DIR/cycle-$(printf '%04d' "$loop_count")-$(date '+%Y%m%d-%H%M%S')-${run_id}.log"
+    cycle_started_at=$(date '+%Y-%m-%dT%H:%M:%S%z')
 
     log_cycle "$loop_count" "START" "Beginning work cycle"
     save_state "running"
@@ -643,8 +590,8 @@ while true; do
     # Log rotation
     rotate_logs
 
-    # Backup consensus before cycle
-    backup_consensus
+    # Capture the full consensus and protected human section before cycle.
+    "$CONSENSUS_GUARD" begin "$loop_count"
     gitignore_snapshot=$(snapshot_gitignore)
 
     # Build prompt with consensus pre-injected
@@ -661,6 +608,18 @@ while true; do
 3. Prefer shipping one completed milestone over broad parallel exploration.
 4. Never write files via shell heredoc (\`cat <<EOF\`). Use \`apply_patch\` for file creates/edits.
 5. Never execute shell lines that begin with \`>\` or \`>=\`; treat them as text and keep them inside markdown/files.
+6. Preserve the entire \`## Human Overrides\` section byte-for-byte. Never delete, edit, reorder, or reformat it.
+7. Create products only through \`make project-new NAME=<slug>\`. Never add a product remote or push outside the explicit human-run \`project-publish\` gate.
+8. Human-owned selection is \`$PROJECT_DIR/.auto-company.local\`; never create, edit, or select it during a cycle. Creating a candidate does not change the selection.
+
+## Authoritative Project Context
+
+- Framework working directory: \`$PROJECT_DIR\`
+- Consensus baton: \`$CONSENSUS_FILE\`
+- Human-selected ACTIVE_PROJECT: \`${ACTIVE_PROJECT:-none (framework exploration)}\`
+- Selected product repository: \`${ACTIVE_PROJECT_PATH:-none}\`
+- If a project is selected, perform all product source work there and use \`git -C \"$ACTIVE_PROJECT_PATH\"\` for product Git operations. Keep product commits and remotes out of the framework repository.
+- Framework cwd remains available for company coordination and consensus. Project selection is workflow routing, not an OS filesystem or network sandbox.
 
 ---
 
@@ -673,7 +632,18 @@ $CONSENSUS
 This is Cycle #$loop_count. Act decisively."
 
     # Run selected engine in headless mode with per-cycle timeout
+    if ! python3 "$USAGE_TOOL" begin --ledger "$USAGE_FILE" \
+        --cycle-id "$(basename "$cycle_log" .log)" --cycle-number "$loop_count" \
+        --started-at "$cycle_started_at" --engine "$ENGINE" --model "$MODEL_LABEL"; then
+        log_cycle "$loop_count" "USAGE" "Could not reserve durable usage identity; refusing to invoke the provider"
+        cleanup 1 usage_accounting_error
+    fi
     run_engine_cycle "$FULL_PROMPT"
+
+    if [ "$CYCLE_SUPERVISOR_CLEANUP_FAILED" -ne 0 ]; then
+        log_cycle "$loop_count" "FAIL" "Process-tree cleanup could not be confirmed for cycle PGID ${CYCLE_SUPERVISOR_LAST_PGID}; refusing to start another cycle"
+        cleanup 1 process_cleanup_failed
+    fi
 
     # Save full output to cycle log
     echo "$OUTPUT" > "$cycle_log"
@@ -684,10 +654,26 @@ This is Cycle #$loop_count. Act decisively."
 
     # Extract result fields for status classification
     extract_cycle_metadata
+    cycle_ended_at=$(date '+%Y-%m-%dT%H:%M:%S%z')
+
+    # A cycle may fail for other reasons, but it may never alter human instructions.
+    set +e
+    "$CONSENSUS_GUARD" verify "$loop_count"
+    consensus_guard_status=$?
+    set -e
 
     cycle_failed_reason=""
     cycle_soft_timeout=0
-    if [ "$CYCLE_TIMED_OUT" -eq 1 ]; then
+    governance_pause_required=0
+    if [ "$consensus_guard_status" -eq 42 ]; then
+        cycle_failed_reason="Human Overrides protection violation"
+        if [ "$(read_pause_reason "$PAUSE_FLAG" "")" = "active_project_mutated" ]; then
+            cycle_failed_reason="Human project selection protection violation"
+        fi
+        governance_pause_required=1
+    elif [ "$consensus_guard_status" -ne 0 ]; then
+        cycle_failed_reason="Consensus guard failed with exit code $consensus_guard_status"
+    elif [ "$CYCLE_TIMED_OUT" -eq 1 ]; then
         if validate_consensus && consensus_changed_since_backup; then
             cycle_soft_timeout=1
         else
@@ -695,43 +681,118 @@ This is Cycle #$loop_count. Act decisively."
         fi
     elif [ "$EXIT_CODE" -ne 0 ]; then
         cycle_failed_reason="Exit code $EXIT_CODE"
+    elif [ "$ADAPTER_STATUS" != "success" ]; then
+        cycle_failed_reason="Adapter reported $ADAPTER_STATUS ($CYCLE_SUBTYPE)"
     elif ! validate_consensus; then
         cycle_failed_reason="consensus.md validation failed after cycle"
     fi
 
+    if [ "$cycle_soft_timeout" -eq 1 ] || [ -z "$cycle_failed_reason" ]; then
+        set +e
+        consensus_snapshot=$("$CONSENSUS_GUARD" snapshot "$loop_count")
+        snapshot_status=$?
+        set -e
+        if [ "$snapshot_status" -ne 0 ]; then
+            cycle_soft_timeout=0
+            cycle_failed_reason="consensus snapshot failed after otherwise successful cycle"
+        else
+            log_cycle "$loop_count" "SNAPSHOT" "Saved ${consensus_snapshot#$PROJECT_DIR/}"
+        fi
+    fi
+
     if [ "$cycle_soft_timeout" -eq 1 ]; then
+        cycle_outcome="soft_timeout"
+    elif [ -z "$cycle_failed_reason" ]; then
+        cycle_outcome="success"
+    else
+        cycle_outcome="failure"
+    fi
+    cycle_record="${cycle_log%.log}.json"
+    engine_adapter_write_record "$cycle_record" "$cycle_outcome" "$cycle_failed_reason"
+
+    cycle_is_failure=0
+    cycle_has_usage_limit=0
+    if [ "$cycle_soft_timeout" -eq 1 ]; then
+        CYCLE_LEDGER_STATUS="completed_with_timeout"
         log_cycle "$loop_count" "OK" "Timed out after ${CYCLE_TIMEOUT_SECONDS}s but consensus was updated; keeping progress (cost: ${CYCLE_COST}, subtype: ${CYCLE_SUBTYPE})"
         if [ -n "$RESULT_TEXT" ]; then
             log_cycle "$loop_count" "SUMMARY" "$(echo "$RESULT_TEXT" | head -c 300)"
         fi
         error_count=0
     elif [ -z "$cycle_failed_reason" ]; then
+        CYCLE_LEDGER_STATUS="completed"
         log_cycle "$loop_count" "OK" "Completed (cost: ${CYCLE_COST}, subtype: ${CYCLE_SUBTYPE})"
         if [ -n "$RESULT_TEXT" ]; then
             log_cycle "$loop_count" "SUMMARY" "$(echo "$RESULT_TEXT" | head -c 300)"
         fi
         error_count=0
     else
+        CYCLE_LEDGER_STATUS="failed"
+        cycle_is_failure=1
         error_count=$((error_count + 1))
         log_cycle "$loop_count" "FAIL" "$cycle_failed_reason (cost: ${CYCLE_COST}, subtype: ${CYCLE_SUBTYPE}, errors: $error_count/$MAX_CONSECUTIVE_ERRORS)"
 
         # Restore consensus on hard failure
         restore_consensus
 
-        # Check for usage limit
         if check_usage_limit "$OUTPUT"; then
+            cycle_has_usage_limit=1
+        fi
+    fi
+
+    # Close after successful validation or failure rollback, before any budget pause.
+    if ! "$CONSENSUS_GUARD" close "$loop_count"; then
+        log_cycle "$loop_count" "FAIL" "Cannot close governance baseline; refusing another cycle"
+        cleanup 1 governance_recovery_failed
+    fi
+
+    budget_state=$(record_cycle_usage)
+    case "$budget_state" in
+        warning)
+            log_cycle "$loop_count" "BUDGET" "Warning threshold reached; next cycle remains enabled"
+            ;;
+        hard_limit|unverifiable)
+            log_cycle "$loop_count" "BUDGET" "Budget state $budget_state after cycle close; pausing before next cycle"
+            wait_for_budget_resume
+            ;;
+        indeterminate)
+            log_cycle "$loop_count" "USAGE" "Budget cannot be fully evaluated because configured usage is unavailable"
+            ;;
+        record_error)
+            log_cycle "$loop_count" "USAGE" "Structured usage record failed; inspect usage tooling before trusting budget enforcement"
+            if printf '{"reason":"usage_record_error","cycle_id":"%s"}\n' "$(basename "$cycle_log" .log)" > "$BUDGET_PAUSE_FILE"; then
+                wait_for_budget_resume
+            else
+                log_cycle "$loop_count" "USAGE" "Cannot persist the safety pause; holding this process to prevent an unmetered next cycle"
+                while true; do
+                    save_state "paused" "usage_accounting_error"
+                    if check_stop_requested; then
+                        cleanup
+                    fi
+                    loop_sleep "$BUDGET_PAUSE_POLL_SECONDS"
+                done
+            fi
+            ;;
+    esac
+
+    if [ "$governance_pause_required" -eq 1 ]; then
+        wait_while_paused
+        continue
+    fi
+
+    if [ "$cycle_is_failure" -eq 1 ]; then
+        if [ "$cycle_has_usage_limit" -eq 1 ]; then
             log_cycle "$loop_count" "LIMIT" "API usage limit detected. Waiting ${LIMIT_WAIT_SECONDS}s..."
             save_state "waiting_limit"
-            sleep "$LIMIT_WAIT_SECONDS"
+            loop_sleep "$LIMIT_WAIT_SECONDS"
             error_count=0
             continue
         fi
 
-        # Circuit breaker
         if [ "$error_count" -ge "$MAX_CONSECUTIVE_ERRORS" ]; then
             log_cycle "$loop_count" "BREAKER" "Circuit breaker tripped! Cooling down ${COOLDOWN_SECONDS}s..."
             save_state "circuit_break"
-            sleep "$COOLDOWN_SECONDS"
+            loop_sleep "$COOLDOWN_SECONDS"
             error_count=0
             log "Circuit breaker reset. Resuming..."
         fi
@@ -739,5 +800,5 @@ This is Cycle #$loop_count. Act decisively."
 
     save_state "idle"
     log_cycle "$loop_count" "WAIT" "Sleeping ${LOOP_INTERVAL}s before next cycle..."
-    sleep "$LOOP_INTERVAL"
+    loop_sleep "$LOOP_INTERVAL"
 done

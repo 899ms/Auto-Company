@@ -54,6 +54,12 @@
 - Revenue: $X
 - Users: X
 
+## Human Overrides
+[逐字保留现有内容；Agent 不得删除、改写、重排或格式化]
+
+## Priority Issues
+- [ ] P1: [未解决的最高优先级阻断项；没有则写 `- None.`]
+
 ## Open Questions
 - [待思考的问题]
 ```
@@ -66,3 +72,12 @@
 4. **Cycle 2 之后每轮必须产出实物**（文件、repo、部署），纯讨论禁止
 5. **同一个 Next Action 连续出现 2 轮** → 卡住了，换方向或缩范围直接 ship
 6. **凡是前端交付**（页面、界面、组件、dashboard、marketing site）→ 必须先使用 `frontend-design.md`，确保视觉与交互质量，不允许用通用默认风格直接输出
+
+## 人工治理与项目边界（强制）
+
+1. `Human Overrides` 是人类专属区，必须逐字保留；任何改动都会触发整轮共识回滚并暂停循环。
+2. `Priority Issues` 中存在未勾选的 P1 时，本轮会在调用模型前被阻断。只能由人类解决或明确勾选完成。
+3. 新产品只能通过 `make project-new NAME=<slug>` 创建；它会成为独立本地 Git 仓库。
+4. 框架仓库只登记项目元数据，不承载产品源码、产品提交或产品远端。
+5. 创建项目后禁止添加远端或 push；只有人类显式执行 `make project-publish ... CONFIRM=PUBLISH` 才能发布。
+6. 既有 tracked 项目不得由 Cycle 自动删除或迁移；legacy migration 必须由人类显式确认并审查可恢复工件。

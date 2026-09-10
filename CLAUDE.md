@@ -26,11 +26,15 @@ Humans guide direction only by editing `memories/consensus.md` under "Next Actio
 | Illegal activity | No fraud, infringement, data theft, or unauthorized access |
 | Leak credentials | Never commit keys/tokens/passwords to public repos/logs |
 | Force-push protected branches | No `git push --force` to main/master |
+| Change Human Overrides | Preserve the `consensus.md` section byte-for-byte; mutation rolls back and pauses the loop |
+| Publish generated products implicitly | No product remote or push outside the explicit `project-publish` entrypoint |
 | Destructive git reset on shared branches | `git reset --hard` only on disposable temporary branches |
 
 **Allowed:** create repos, deploy projects, create branches, commit code, install dependencies.
 
-**Workspace rule:** all new projects must be created under `projects/`.
+**Workspace rule:** create all new projects with `make project-new NAME=<slug>`. Each project is an independent local Git repository under `projects/`; the framework repository tracks registry metadata only. Do not add a remote or push until a human explicitly runs `project-publish` with the required confirmation token.
+
+**Legacy exception:** do not delete or automatically migrate an already tracked product such as SnapOG. Its migration requires the explicit legacy-migration gate, a local recovery bundle, and human review before the framework-side untracking is committed.
 
 ## Team Architecture
 
