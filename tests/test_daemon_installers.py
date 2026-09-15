@@ -66,12 +66,14 @@ class DaemonInstallerTests(unittest.TestCase):
         self.env["CLAUDE_PERMISSION_MODE"] = "invalid"
         self.run_installer("scripts/macos/install-daemon.sh", "--uninstall")
 
-    def test_systemd_quotes_and_escapes_checkout_paths(self):
+    def test_systemd_formats_literal_paths_and_quoted_command_arguments(self):
         self.run_installer("scripts/wsl/install-wsl-daemon.sh")
         unit = (self.home_dir / ".config/systemd/user/auto-company.service").read_text()
         escaped = str(self.project).replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
         self.assertIn(f'ExecStart=/usr/bin/bash "{escaped}/scripts/core/auto-loop.sh"', unit)
-        self.assertIn(f'EnvironmentFile=-"{escaped}/.auto-loop.env"', unit)
+        literal_path = str(self.project).replace("%", "%%")
+        self.assertIn(f'WorkingDirectory={literal_path}\n', unit)
+        self.assertIn(f'EnvironmentFile=-{literal_path}/.auto-loop.env\n', unit)
         self.assertIn("RestartPreventExitStatus=78", unit)
 
 

@@ -81,7 +81,7 @@ daemon (launchd / systemd --user, 崩溃自重启)
 
 # 克隆
 git clone https://github.com/MaxMiksa/Auto-Company.git
-cd auto-company
+cd Auto-Company
 
 # 前台运行（直接看输出）
 make start
@@ -101,7 +101,7 @@ make install
 
 # 克隆
 git clone https://github.com/MaxMiksa/Auto-Company.git
-cd auto-company
+cd Auto-Company
 
 # 在 PowerShell 启动（守护模式，默认引擎为 claude）
 .\scripts\windows\start-win.ps1
