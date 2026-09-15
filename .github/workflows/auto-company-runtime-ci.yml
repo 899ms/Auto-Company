@@ -58,9 +58,12 @@ concurrency:
 
 jobs:
   windows-config:
-    name: Windows configuration contracts
+    name: Windows configuration contracts (${{ matrix.shell }})
     runs-on: windows-latest
     timeout-minutes: 5
+    strategy:
+      matrix:
+        shell: [powershell, pwsh]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -68,8 +71,14 @@ jobs:
           persist-credentials: false
 
       - name: Verify configuration preservation and first-install ordering
-        shell: pwsh
+        shell: ${{ matrix.shell }}
         run: ./tests/test_windows_start_config.ps1
+
+      - name: Verify distro-specific paths and culture-independent configuration
+        shell: ${{ matrix.shell }}
+        run: |
+          ./tests/test_windows_wsl_paths.ps1
+          ./tests/test_windows_env_culture.ps1
 
   python-tests:
     name: Python unit tests
@@ -118,6 +127,14 @@ jobs:
 
       - name: Verify executable entrypoints and safe startup failure
         run: bash tests/test-shell-entrypoints.sh
+
+      - name: Verify generated units with a real systemd user manager
+        run: |
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          sudo systemctl start "user@$(id -u).service"
+          systemctl --user show-environment > /dev/null
+          AUTO_COMPANY_TEST_SYSTEMD_USER=1 python3 -m unittest discover -s tests -p test_systemd_installation.py -v
 
       - name: Verify project and consensus governance
         run: bash tests/test_project_governance.sh
