@@ -58,25 +58,26 @@ concurrency:
 
 jobs:
   windows-config:
-    name: Windows configuration contracts (${{ matrix.shell }})
+    name: Windows configuration contracts
     runs-on: windows-latest
     timeout-minutes: 5
-    strategy:
-      matrix:
-        shell: [powershell, pwsh]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Verify configuration preservation and first-install ordering
-        shell: ${{ matrix.shell }}
-        run: ./tests/test_windows_start_config.ps1
-
-      - name: Verify distro-specific paths and culture-independent configuration
-        shell: ${{ matrix.shell }}
+      - name: Verify Windows PowerShell 5.1 configuration and paths
+        shell: powershell
         run: |
+          ./tests/test_windows_start_config.ps1
+          ./tests/test_windows_wsl_paths.ps1
+          ./tests/test_windows_env_culture.ps1
+
+      - name: Verify PowerShell 7 configuration and paths
+        shell: pwsh
+        run: |
+          ./tests/test_windows_start_config.ps1
           ./tests/test_windows_wsl_paths.ps1
           ./tests/test_windows_env_culture.ps1
 
