@@ -81,7 +81,7 @@ Plus 30+ reusable skills (deep research, scraping, financial modeling, SEO, secu
 
 # Clone
 git clone https://github.com/MaxMiksa/Auto-Company.git
-cd auto-company
+cd Auto-Company
 
 # Foreground run (live output)
 make start
@@ -101,7 +101,7 @@ make install
 
 # Clone
 git clone https://github.com/MaxMiksa/Auto-Company.git
-cd auto-company
+cd Auto-Company
 
 # Start (daemon mode via PowerShell, default engine = claude)
 .\scripts\windows\start-win.ps1
