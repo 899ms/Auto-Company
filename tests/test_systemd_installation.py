@@ -65,8 +65,16 @@ class SystemdParserTests(SystemdFixture):
         _, unit = self.generate_unit(name)
         path = self.root / "auto-company-parser-probe.service"
         path.write_text(unit, encoding="utf-8")
+        # The offline user-unit parser needs a runtime directory, not a login
+        # session. Keep its lookup paths separate from any real user manager.
+        runtime_dir = self.root / "parser-runtime"
+        runtime_dir.mkdir(mode=0o700)
+        parser_env = dict(os.environ, HOME=str(self.home),
+                          XDG_CONFIG_HOME=str(self.home / ".config"),
+                          XDG_RUNTIME_DIR=str(runtime_dir))
+        parser_env.pop("DBUS_SESSION_BUS_ADDRESS", None)
         result = subprocess.run(["systemd-analyze", "--user", "verify", str(path)],
-                                capture_output=True, text=True, timeout=20)
+                                env=parser_env, capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # Invalid EnvironmentFile= is only a warning: exit status alone misses it.
         self.assertNotIn("EnvironmentFile=", result.stderr, result.stderr)
