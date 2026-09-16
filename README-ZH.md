@@ -48,6 +48,22 @@ daemon (launchd / systemd --user, 崩溃自重启)
 - Windows 用户：从 [Windows (WSL) 快速开始](#windows-wsl-快速开始) 开始，再看 [`docs/windows-setup.md`](docs/windows-setup.md)
 - macOS 用户：从 [macOS 快速开始](#macos-快速开始) 开始，再看 [命令速查（按平台）](#命令速查按平台)
 
+## 语言与文档
+
+运行输出支持 `zh-CN`（默认）与 `en`。先停止循环，再在仓库根目录运行 `make language LANGUAGE=en`，将 `AUTO_COMPANY_LANGUAGE=en` 保存到 `.auto-company.local`；切回中文用 `LANGUAGE=zh-CN`。Windows 等价命令为 `python scripts/core/localization.py set --language en`。重新启动循环后生效。
+
+同名环境变量 `AUTO_COMPANY_LANGUAGE` 优先于本地设置。Windows 的 `start-win.ps1 -Language en` 会将守护进程覆盖值保存到 `.auto-loop.env`；macOS 在安装 launchd 时保存环境变量覆盖值。具体配置和优先级见[语言说明](i18n/README.md)。
+
+切换语言会保留根目录 `PROMPT.md`、自定义规则和 Human Overrides。用户已修改的源文件优先于附带译文，缺少译文时回退到原文；既有日志和共识历史保持原样。Dashboard 界面有独立语言选择器，会在浏览器中记住偏好。
+
+| 文档 | 中文 | English |
+|---|---|---|
+| 仓库索引 | [索引](INDEX.md) | [Index](i18n/en/INDEX.md) |
+| Windows + WSL | [安装指南](docs/windows-setup.md) | [Setup guide](i18n/en/docs/windows-setup.md) |
+| 公司规则 | [公司章程](i18n/zh-CN/CLAUDE.md) | [Charter](CLAUDE.md) |
+| 引擎适配 | [引擎适配器](i18n/zh-CN/ENGINE_ADAPTERS.md) | [Adapter guide](ENGINE_ADAPTERS.md) |
+| 用量与预算 | [治理说明](i18n/zh-CN/docs/usage-governance.md) | [Governance guide](docs/usage-governance.md) |
+
 ## 团队阵容（14 人）
 
 不是"你是一个开发者"，而是"你是 DHH"——用真实传奇人物激活 LLM 的深层知识。
@@ -348,7 +364,20 @@ auto-company/
 
 ## 致谢
 
-- 感谢 [@JasonQWJ](https://github.com/JasonQWJ) 与 [@cnwillz](https://github.com/cnwillz) 提前推动 macOS dashboard 支持方向与实现尝试，这些工作帮助我最终落地并发布了 `v1.1.0` 的跨平台 dashboard 方案。
+感谢以下贡献者，他们的问题反馈、修复和方案推动了 Auto Company 的发展：
+
+| 贡献者 | 具体贡献 | 来源 |
+|---|---|---|
+| [@JasonQWJ](https://github.com/JasonQWJ) | 早期 macOS Dashboard 提案与实现尝试，为 `v1.1.0` 方案提供参考 | [#1](https://github.com/MaxMiksa/Auto-Company/pull/1) |
+| [@cnwillz](https://github.com/cnwillz) | 推动 macOS Dashboard 支持，为跨平台实现提供参考 | [#2](https://github.com/MaxMiksa/Auto-Company/pull/2) |
+| [@chbndrhnns](https://github.com/chbndrhnns) | 报告脚本缺少执行位导致的首次启动失败 | [#5](https://github.com/MaxMiksa/Auto-Company/issues/5) |
+| [@Sittichai9680](https://github.com/Sittichai9680) | 推动 Linux/WSL Dashboard 支持方向 | [#9](https://github.com/MaxMiksa/Auto-Company/pull/9) |
+| [@allenter](https://github.com/allenter) | 推动成本监控、预算告警及脚本入口执行位修复 | [#13](https://github.com/MaxMiksa/Auto-Company/pull/13)、[#14](https://github.com/MaxMiksa/Auto-Company/pull/14) |
+| [@maxgoff](https://github.com/maxgoff) | 记录 Cycle 超时后引擎残留的实际问题，提出完整进程树清理方向 | [Fork 贡献](https://github.com/maxgoff/Auto-Company/commit/861d678fc3070d385e3771591cb6468f2857aa05) |
+| [@omergeiger](https://github.com/omergeiger) | 为 Human Overrides 原样保护和 P1 问题阻断提供方向 | [Human Overrides](https://github.com/omergeiger/Auto-Company/commit/cb1dba1b687eaf700258411f562fd2986586c82d)、[P1 问题](https://github.com/omergeiger/Auto-Company/commit/4730a7d03c25e49035be95e48bda428f983e176e) |
+| [@NicklasSandin](https://github.com/NicklasSandin) | 推动英文文档和英文使用体验 | [#21](https://github.com/MaxMiksa/Auto-Company/pull/21) |
+| [@mdoganexe](https://github.com/mdoganexe) | 报告并贡献 systemd 安装、WSL 发行版选择及区域设置相关配置处理的修复 | [#27](https://github.com/MaxMiksa/Auto-Company/pull/27)、[#28](https://github.com/MaxMiksa/Auto-Company/pull/28) |
+
 - [nicepkg/auto-company](https://github.com/nicepkg/auto-company) — macOS初版
 - [continuous-claude](https://github.com/AnandChowdhary/continuous-claude) — 跨会话共享笔记
 - [ralph-claude-code](https://github.com/frankbria/ralph-claude-code) — 退出信号拦截

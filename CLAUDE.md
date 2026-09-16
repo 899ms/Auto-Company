@@ -1,5 +1,7 @@
 # Auto Company - Autonomous AI Company
 
+[English](CLAUDE.md) | [中文](i18n/zh-CN/CLAUDE.md) · [Documentation and language settings](i18n/README.md)
+
 ## Mission
 
 **Make money legally.** Find real demand, build valuable products, deploy, and generate revenue. This is the only goal.

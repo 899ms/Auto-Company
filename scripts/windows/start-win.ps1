@@ -2,6 +2,7 @@ param(
     [string]$Distro = "Ubuntu",
     [string]$Engine,
     [string]$Model,
+    [ValidateSet("zh-CN", "en")][string]$Language,
     [string]$ClaudePermissionMode,
     [string]$ClaudeBin,
     [string]$CodexBin,
@@ -26,6 +27,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function ConvertTo-RuntimeLanguage {
+    param([ValidateSet("zh-CN", "en")][string]$Value)
+    # PowerShell ValidateSet accepts case variants; the runtime uses canonical tags.
+    if ($Value -ieq "en") { return "en" }
+    return "zh-CN"
+}
 
 function Assert-WslAvailable {
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
@@ -173,6 +181,7 @@ if ($PSBoundParameters.ContainsKey("CycleTimeoutSeconds") -and $CycleTimeoutSeco
 $envLines = @()
 if ($PSBoundParameters.ContainsKey("Engine")) { $envLines += "ENGINE=$Engine" }
 if ($PSBoundParameters.ContainsKey("Model")) { $envLines += "MODEL=$Model" }
+if ($PSBoundParameters.ContainsKey("Language")) { $envLines += "AUTO_COMPANY_LANGUAGE=$(ConvertTo-RuntimeLanguage $Language)" }
 if ($PSBoundParameters.ContainsKey("ClaudePermissionMode")) { $envLines += "CLAUDE_PERMISSION_MODE=$ClaudePermissionMode" }
 if ($PSBoundParameters.ContainsKey("ClaudeBin")) { $envLines += "CLAUDE_BIN=$ClaudeBin" }
 if ($PSBoundParameters.ContainsKey("CodexBin")) { $envLines += "CODEX_BIN=$CodexBin" }

@@ -37,11 +37,18 @@ const els = {
   btnRaw: document.getElementById("btnRaw"),
   autoToggle: document.getElementById("autoToggle"),
   refreshInterval: document.getElementById("refreshInterval"),
+  languageSelect: document.getElementById("languageSelect"),
 };
 
+const { t } = DashboardI18n;
 let timer = null;
 let rawVisible = false;
 let refreshSequence = 0;
+let lastStatus = null;
+let lastUsage = null;
+let statusError = null;
+let usageError = null;
+let lastElapsed = 0;
 
 function escapeHtml(text) {
   return String(text)
@@ -172,25 +179,56 @@ function applyCardState(card, state) {
   card.classList.add(STATE_CLASS[state] || STATE_CLASS.unknown);
 }
 
-function formatTime(isoText) {
-  try {
-    return new Date(isoText).toLocaleString();
-  } catch {
-    return isoText;
-  }
+function formatTime(value, dateOnly = false) {
+  if (!value) return "--";
+  // Ledger dates represent calendar days, not UTC instants.
+  const text = String(value).replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/, "$1T$2");
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00` : text);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return dateOnly ? date.toLocaleDateString(DashboardI18n.locale) : date.toLocaleString(DashboardI18n.locale);
+}
+
+function formatNumber(value) {
+  if (value === null || value === undefined || value === "") return "--";
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toLocaleString(DashboardI18n.locale) : String(value);
+}
+
+function stateLabel(value) {
+  const state = String(value || "unknown");
+  return t(`state.${state.toLowerCase().replaceAll(" ", "_")}`, {}, state);
+}
+
+function pauseReason(value) {
+  return value ? t(`reason.${value}`, {}, value) : "-";
+}
+
+function daemonSummary(value) {
+  const match = String(value || "unknown").match(/^(.*?)(?: \((.*)\))?$/);
+  const enabled = match[1].match(/^ENABLED but (.+)$/);
+  const state = enabled ? t("daemon.enabledInactive", { state: stateLabel(enabled[1]) }) : stateLabel(match[1]);
+  const details = {
+    ".auto-loop-paused present": "daemon.pauseMarker",
+    "launchd is macOS-only": "daemon.macosOnly",
+    "launchd is macOS-only; pause flag present": "daemon.macosPaused",
+  };
+  const detail = Object.hasOwn(details, match[2]) ? t(details[match[2]]) : match[2];
+  return detail ? `${state} (${detail})` : state;
 }
 
 function renderStateList(parsed, stateFile) {
+  const loop = parsed.loop || {};
+  const daemon = parsed.daemon || {};
   const rows = [
-    ["Engine", parsed.loop.engine || "-"],
-    ["Model", parsed.loop.model || "-"],
-    ["Loop Count", parsed.loop.loopCount || stateFile.LOOP_COUNT || "-"],
-    ["Error Count", parsed.loop.errorCount || stateFile.ERROR_COUNT || "-"],
-    ["Last Run", parsed.loop.lastRun || stateFile.LAST_RUN || "-"],
-    ["Pause Reason", parsed.loop.pauseReason || stateFile.PAUSE_REASON || "-"],
-    ["Loop Daemon Summary", parsed.loop.daemonSummary || "-"],
-    ["Daemon ActiveState", parsed.daemon.activeState || "-"],
-    ["Daemon SubState", parsed.daemon.subState || "-"],
+    [t("field.engine"), loop.engine || "-"],
+    [t("field.model"), loop.model || "-"],
+    [t("field.loopCount"), formatNumber(loop.loopCount === "" ? stateFile.LOOP_COUNT : loop.loopCount ?? stateFile.LOOP_COUNT)],
+    [t("field.errorCount"), formatNumber(loop.errorCount === "" ? stateFile.ERROR_COUNT : loop.errorCount ?? stateFile.ERROR_COUNT)],
+    [t("field.lastRun"), formatTime(loop.lastRun || stateFile.LAST_RUN)],
+    [t("field.pauseReason"), pauseReason(loop.pauseReason || stateFile.PAUSE_REASON)],
+    [t("field.daemonSummary"), daemonSummary(loop.daemonSummary)],
+    [t("field.activeState"), stateLabel(daemon.activeState)],
+    [t("field.subState"), stateLabel(daemon.subState)],
   ];
 
   els.stateList.innerHTML = rows
@@ -207,8 +245,9 @@ function effectiveLoopState(loop, stateFile) {
 }
 
 function usageValue(value, currency = false) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "Unknown";
-  return (currency ? "$" : "") + value.toLocaleString("en-US", {
+  if (typeof value !== "number" || !Number.isFinite(value)) return t("usage.unknown");
+  return value.toLocaleString(DashboardI18n.locale, {
+    ...(currency ? { style: "currency", currency: "USD" } : {}),
     minimumFractionDigits: currency ? 2 : 0, maximumFractionDigits: 6,
   });
 }
@@ -216,41 +255,50 @@ function usageValue(value, currency = false) {
 function renderUsage(data) {
   const summary = data.summary || {};
   const metrics = [
-    ["Cost USD", summary.cost_usd, true],
-    ["Input tokens", summary.usage?.input_tokens],
-    ["Output tokens", summary.usage?.output_tokens],
-    ["Total tokens", summary.usage?.total_tokens],
+    [t("usage.cost"), summary.cost_usd, true],
+    [t("usage.input"), summary.usage?.input_tokens],
+    [t("usage.output"), summary.usage?.output_tokens],
+    [t("usage.total"), summary.usage?.total_tokens],
   ];
-  els.usageWindow.textContent = `${summary.period || "unknown"}: ${summary.start_date || "--"} to ${summary.end_date || "--"} | ${summary.cycles ?? 0} cycles | ${summary.invalid_records ?? 0} invalid records`;
+  els.usageWindow.textContent = t("usage.range", {
+    period: t(`period.${summary.period || "unknown"}`, {}, summary.period),
+    start: formatTime(summary.start_date, true), end: formatTime(summary.end_date, true),
+    cycles: formatNumber(summary.cycles ?? 0), invalid: formatNumber(summary.invalid_records ?? 0),
+  });
   els.usageMetrics.innerHTML = metrics.map(([label, metric, currency]) => {
     const coverage = metric || {};
     const value = usageValue(coverage.value, currency);
     const status = coverage.status || "unavailable";
-    return `<div><dt>${label}</dt><dd>${escapeHtml(value)}<span class="coverage">${escapeHtml(status.toUpperCase())} · ${coverage.known_cycles ?? 0} known / ${coverage.unknown_cycles ?? 0} unknown cycles</span></dd></div>`;
+    const description = t("usage.coverage", {
+      status: stateLabel(status), known: formatNumber(coverage.known_cycles ?? 0),
+      unknown: formatNumber(coverage.unknown_cycles ?? 0),
+    });
+    return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}<span class="coverage">${escapeHtml(description)}</span></dd></div>`;
   }).join("");
 
   const budget = typeof summary.latest_budget === "object" ? summary.latest_budget : null;
   const budgetState = typeof budget?.state === "string" ? budget.state : "unknown";
-  const budgetWindow = budget ? ` (${budget.period}: ${budget.start_date} to ${budget.end_date})` : "";
-  els.usageRecordedBudget.textContent = `Last recorded budget: ${budgetState.toUpperCase()}${budgetWindow}. Current service configuration is not inferred.`;
+  const budgetWindow = budget ? t("budget.window", {
+    period: t(`period.${budget.period || "unknown"}`, {}, budget.period),
+    start: formatTime(budget.start_date, true), end: formatTime(budget.end_date, true),
+  }) : "";
+  els.usageRecordedBudget.textContent = t("budget.recorded", { state: stateLabel(budgetState), window: budgetWindow });
   const pause = data.budgetPause;
-  const pauseLabels = {
-    usage_hard_limit: "hard budget limit reached",
-    budget_unverifiable: "hard budget cannot be verified because usage is incomplete",
-    invalid_pause_marker: "pause marker is unreadable; review required",
-  };
   els.usageCurrentPause.textContent = pause
-    ? `Current budget pause: PAUSED — ${pauseLabels[pause.reason] || pause.reason || "review required"}. Manual resume required.`
-    : "Current budget pause: inactive.";
+    ? t("budget.pause.active", { reason: pause.reason ? pauseReason(pause.reason) : t("budget.review") })
+    : t("budget.pause.inactive");
   const recordedAlerts = Array.isArray(budget?.alerts) ? budget.alerts : [];
   const alerts = recordedAlerts.filter((alert) => alert && typeof alert === "object").map((alert) => {
-    const label = alert.level === "warning" ? "Soft warning" : "Hard limit";
+    const label = t(alert.level === "warning" ? "budget.soft" : "budget.hard");
     const currency = alert.metric === "cost_usd";
-    const metric = currency ? "Cost USD" : "Total tokens";
-    return `${label}: ${metric} ${usageValue(alert.actual, currency)} / ${usageValue(alert.limit, currency)} (${alert.coverage || "unknown"} coverage).`;
+    return t("budget.alert", {
+      level: label, metric: t(currency ? "usage.cost" : "usage.total"),
+      actual: usageValue(alert.actual, currency), limit: usageValue(alert.limit, currency),
+      coverage: stateLabel(alert.coverage),
+    });
   });
-  if (budgetState === "unverifiable") alerts.push("Last recorded hard budget check could not be verified; usage is incomplete.");
-  if (summary.invalid_records) alerts.push("Some ledger records are invalid; totals may be incomplete.");
+  if (budgetState === "unverifiable") alerts.push(t("budget.unverifiable"));
+  if (summary.invalid_records) alerts.push(t("budget.invalid"));
   els.usageAlerts.innerHTML = alerts.map((text) => `<li>${escapeHtml(text)}</li>`).join("");
   const healthy = summary.cycles > 0 && !summary.invalid_records && !pause
     && metrics.every(([, metric]) => metric?.status === "complete")
@@ -261,16 +309,32 @@ function renderUsage(data) {
 
 function renderUsageUnavailable(error) {
   renderUsage({});
-  els.usageWindow.textContent = `Usage: UNAVAILABLE — ${error.message || error}`;
-  els.usageCurrentPause.textContent = "Current budget pause: UNKNOWN (usage request failed).";
+  els.usageWindow.textContent = t("usage.unavailable", { error: errorText(error) });
+  els.usageCurrentPause.textContent = t("budget.pause.unknown");
   applyCardState(els.cardUsage, "unavailable");
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url, { cache: "no-store" });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+  let response;
+  try {
+    response = await fetch(url, { cache: "no-store" });
+  } catch (error) {
+    throw { messageKey: "error.network", detail: error.message || String(error) };
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw { messageKey: "error.response" };
+  }
+  if (!response.ok) throw { messageKey: "error.request", status: response.status, detail: payload.error };
   return payload;
+}
+
+function errorText(error) {
+  const message = t(error.messageKey || "error.network", { status: error.status ?? "--" });
+  const detail = error.detail || error.message;
+  return detail ? `${message}: ${detail}` : message;
 }
 
 async function fetchStatus() {
@@ -281,20 +345,17 @@ async function fetchStatus() {
     fetchJson(`/api/usage?period=${encodeURIComponent(els.usagePeriod.value)}`),
   ]);
   if (sequence !== refreshSequence) return;
-  let usageHealthy = false;
-  if (usageResult.status === "fulfilled") usageHealthy = renderUsage(usageResult.value);
-  else renderUsageUnavailable(usageResult.reason);
-  if (statusResult.status === "rejected") {
-    els.pulseText.textContent = "Live Link: UNAVAILABLE";
-    els.pulseDot.style.background = "var(--warn)";
-    els.loopState.textContent = "UNAVAILABLE";
-    applyCardState(els.cardLoop, "unavailable");
-    els.rawText.textContent = statusResult.reason.message || String(statusResult.reason);
-    return;
+  usageError = usageResult.status === "rejected" ? usageResult.reason : null;
+  statusError = statusResult.status === "rejected" ? statusResult.reason : null;
+  if (!usageError) lastUsage = usageResult.value;
+  if (!statusError) {
+    lastStatus = statusResult.value;
+    lastElapsed = Math.round(performance.now() - started);
   }
-  const data = statusResult.value;
-  const elapsed = Math.round(performance.now() - started);
+  renderDashboard();
+}
 
+function renderStatus(data, usageHealthy) {
   const parsed = data.parsed || {};
   const guardian = parsed.guardian || {};
   const daemon = parsed.daemon || {};
@@ -302,60 +363,84 @@ async function fetchStatus() {
   const autostart = parsed.autostart || {};
   const loopState = effectiveLoopState(loop, data.stateFile || {});
 
-  els.guardianState.textContent = (guardian.state || "unknown").toUpperCase();
+  els.guardianState.textContent = stateLabel(guardian.state);
   els.guardianMeta.textContent = guardian.pid ? `PID ${guardian.pid}` : "PID --";
   applyCardState(els.cardGuardian, guardian.state);
 
-  els.daemonState.textContent = (daemon.state || "unknown").toUpperCase();
+  els.daemonState.textContent = stateLabel(daemon.state);
   els.daemonMeta.textContent = ["mismatched", "not_installed", "unavailable"].includes(daemon.state)
-    ? daemon.raw : (daemon.mainPid ? `MainPID ${daemon.mainPid}` : "MainPID --");
+    ? t(`daemon.${daemon.state}`) : (daemon.mainPid ? `MainPID ${daemon.mainPid}` : "MainPID --");
   applyCardState(els.cardDaemon, daemon.state);
 
-  els.loopState.textContent = loopState.toUpperCase().replaceAll("_", " ");
-  const loopCycle = loop.loopCount ? `Cycle ${loop.loopCount}` : "Cycle --";
+  els.loopState.textContent = stateLabel(loopState);
+  const loopCycle = t("cycle", { value: formatNumber(loop.loopCount) });
   const loopPid = loop.pid ? `PID ${loop.pid}` : "PID --";
   els.loopMeta.textContent = `${loopCycle} | ${loopPid}`;
   applyCardState(els.cardLoop, loopState);
 
-  els.autostartState.textContent = (autostart.state || "unknown").toUpperCase();
-  els.autostartMeta.textContent = autostart.raw || "Autostart";
+  els.autostartState.textContent = stateLabel(autostart.state);
+  els.autostartMeta.textContent = stateLabel(autostart.enabledState || autostart.state);
   applyCardState(els.cardAutostart, autostart.state);
 
   renderStateList(parsed, data.stateFile || {});
 
-  const consensusRaw = (data.consensusHead || parsed.consensusPreview || "(no consensus)").trim();
-  els.consensusText.innerHTML = renderMarkdown(consensusRaw);
-  els.logText.textContent = (data.logTail || parsed.recentLog || "(no logs yet)").trim();
+  const consensusRaw = (data.consensusHead || parsed.consensusPreview || "").trim();
+  els.consensusText.innerHTML = renderMarkdown(!consensusRaw || consensusRaw === "(no consensus file)"
+    ? t("empty.consensus") : consensusRaw);
+  const logRaw = (data.logTail || parsed.recentLog || "").trim();
+  els.logText.textContent = !logRaw || logRaw === "(no log file)" ? t("empty.logs") : logRaw;
   els.rawText.textContent = data.raw || "";
 
   const healthy = data.ok && ["running", "idle"].includes(loopState) && daemon.state === "active" && usageHealthy;
-  els.pulseText.textContent = healthy ? "Live Link: STABLE" : "Live Link: ATTENTION";
+  els.pulseText.textContent = t(healthy ? "live.stable" : "live.attention");
   els.pulseDot.style.background = healthy ? "var(--good)" : "var(--warn)";
 
-  els.lastUpdate.textContent = `Last update: ${formatTime(data.timestamp)}`;
-  els.latency.textContent = `Roundtrip: ${elapsed}ms`;
+  els.lastUpdate.textContent = t("lastUpdate", { time: formatTime(data.timestamp) });
+  els.latency.textContent = t("latency", { value: formatNumber(lastElapsed) });
+}
+
+function renderButtons() {
+  els.btnStart.textContent = t(els.btnStart.disabled ? "button.starting" : "button.start");
+  els.btnStop.textContent = t(els.btnStop.disabled ? "button.stopping" : "button.stop");
+  els.btnRaw.textContent = t(rawVisible ? "button.hideRaw" : "button.showRaw");
+  els.btnRaw.setAttribute("aria-expanded", String(rawVisible));
+}
+
+function renderDashboard() {
+  let usageHealthy = false;
+  if (usageError) renderUsageUnavailable(usageError);
+  else if (lastUsage) usageHealthy = renderUsage(lastUsage);
+  if (lastStatus) renderStatus(lastStatus, usageHealthy);
+  if (statusError) {
+    els.pulseText.textContent = t("live.unavailable");
+    els.pulseDot.style.background = "var(--warn)";
+    els.loopState.textContent = stateLabel("unavailable");
+    applyCardState(els.cardLoop, "unavailable");
+    els.rawText.textContent = errorText(statusError);
+  }
+  renderButtons();
 }
 
 async function runAction(action) {
   const btn = action === "start" ? els.btnStart : els.btnStop;
-  const label = btn.textContent;
   btn.disabled = true;
-  btn.textContent = `${label}...`;
+  renderButtons();
   try {
     const res = await fetch(`/api/action/${action}`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
     });
     const data = await res.json();
     if (!res.ok || !data.ok) {
-      throw new Error(data.output || `Action ${action} failed`);
+      throw new Error(data.output || data.error || "");
     }
     await fetchStatus();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    alert(msg);
+    const label = t("error.action", { action: t(`button.${action}`) });
+    alert(msg ? `${label}\n${msg}` : label);
   } finally {
     btn.disabled = false;
-    btn.textContent = label;
+    renderButtons();
   }
 }
 
@@ -378,11 +463,20 @@ els.btnTail.addEventListener("click", () => fetchStatus().catch(() => {}));
 els.btnRaw.addEventListener("click", () => {
   rawVisible = !rawVisible;
   els.rawText.classList.toggle("hidden", !rawVisible);
+  renderButtons();
 });
 els.autoToggle.addEventListener("change", resetAutoTimer);
 els.refreshInterval.addEventListener("change", resetAutoTimer);
 els.usagePeriod.addEventListener("change", () => fetchStatus().catch(() => {}));
+els.languageSelect.addEventListener("change", () => {
+  DashboardI18n.setLanguage(els.languageSelect.value);
+  DashboardI18n.apply();
+  renderDashboard();
+});
 
+DashboardI18n.apply();
+els.languageSelect.value = DashboardI18n.language;
+renderButtons();
 fetchStatus().catch((err) => {
   const msg = err instanceof Error ? err.message : String(err);
   els.rawText.textContent = msg;

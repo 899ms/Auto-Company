@@ -595,9 +595,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path == "/" or path == "/index.html":
             self._serve_file(DASHBOARD_DIR / "index.html", "text/html; charset=utf-8")
             return
-        if path == "/app.js":
+        if path in {"/app.js", "/i18n.js"}:
             self._serve_file(
-                DASHBOARD_DIR / "app.js",
+                DASHBOARD_DIR / path[1:],
                 "application/javascript; charset=utf-8",
             )
             return

@@ -1,5 +1,9 @@
 # Auto Company 索引
 
+[中文](INDEX.md) | [English](i18n/en/INDEX.md) · [文档与语言设置](i18n/README.md)
+
+本文中的路径相对于仓库根目录；命令也在仓库根目录运行。
+
 ## 目标
 
 本文件用于快速定位仓库目录结构、脚本职责和调用关系，便于后续维护与排障。
@@ -30,9 +34,10 @@
 
 说明：
 - 默认引擎是 `ENGINE=claude`
-- systemd 服务可通过 `.auto-loop.env` 或 `start-win.ps1 -Engine codex` 切换到 Codex；前台循环只读进程环境变量
+- systemd 服务可通过 `.auto-loop.env` 或 `start-win.ps1 -Engine codex` 切换到 Codex；前台循环的引擎配置只读进程环境变量
 - Cursor 与 OpenAI-compatible 适配器需显式启用，配置与契约见 `ENGINE_ADAPTERS.md`
 - 不做自动引擎回退，所选引擎缺失时直接失败
+- 运行语言默认 `zh-CN`；停止循环后用 `make language LANGUAGE=en` 保存到 `.auto-company.local`，环境变量 `AUTO_COMPANY_LANGUAGE` 可覆盖。详见[语言设置](i18n/README.md)
 
 停止链路：
 
@@ -61,6 +66,7 @@
 | 守护 | `scripts/macos/install-daemon.sh` | macOS launchd 安装/卸载 |
 | 核心 | `scripts/core/auto-loop.sh` | 主循环执行、熔断、日志、共识更新 |
 | 核心 | `scripts/core/engine-adapters.sh` | 统一引擎调用与结果契约，不管理服务或治理策略 |
+| 核心 | `scripts/core/localization.py` | 保存运行语言、选择本地化资源；保留自定义源文件和人工规则 |
 | 核心 | `scripts/core/process-supervisor.sh` | Cycle 进程生命周期；Linux 使用独立子孙监管器 |
 | 核心 | `scripts/core/usage.py` | 结构化账本、日/周汇总、预算检查与人工恢复 |
 | 核心 | `scripts/core/consensus-guard.sh` | Human Overrides 保护、P1 预检、回滚暂停、成功快照 |

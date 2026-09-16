@@ -6,6 +6,17 @@ $ast = [System.Management.Automation.Language.Parser]::ParseFile(
     (Resolve-Path $scriptPath).Path, [ref]$tokens, [ref]$parseErrors
 )
 if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
+$languageFunction = $ast.Find({ param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'ConvertTo-RuntimeLanguage'
+}, $true)
+. ([scriptblock]::Create($languageFunction.Extent.Text))
+foreach ($value in @('en', 'EN', 'En')) {
+    if ((ConvertTo-RuntimeLanguage $value) -cne 'en') { throw "Noncanonical language: $value" }
+}
+foreach ($value in @('zh-CN', 'zh-cn', 'ZH-CN')) {
+    if ((ConvertTo-RuntimeLanguage $value) -cne 'zh-CN') { throw "Noncanonical language: $value" }
+}
 $functionAst = $ast.Find({ param($node)
     $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
     $node.Name -eq 'Write-AutoLoopEnv'
@@ -27,10 +38,10 @@ try {
     if ([System.IO.File]::ReadAllText($envFile) -cne $initial) {
         throw 'Start without explicit settings changed the existing environment.'
     }
-    Write-AutoLoopEnv -RepoWin $testRoot -EnvLines @('MODEL=new model', 'CLAUDE_BIN=/home/user name/claude')
+    Write-AutoLoopEnv -RepoWin $testRoot -EnvLines @('MODEL=new model', 'CLAUDE_BIN=/home/user name/claude', 'AUTO_COMPANY_LANGUAGE=en')
     $updated = [System.IO.File]::ReadAllText($envFile)
     foreach ($required in @('USAGE_HARD_LIMIT_USD=12', 'CODEX_SANDBOX_MODE=read-only',
-                           'MODEL="new model"', 'CLAUDE_BIN="/home/user name/claude"')) {
+                           'MODEL="new model"', 'CLAUDE_BIN="/home/user name/claude"', 'AUTO_COMPANY_LANGUAGE="en"')) {
         if (-not $updated.Contains($required)) { throw "Missing preserved/quoted setting: $required" }
     }
     if ($updated.Contains('MODEL=old')) { throw 'Explicit MODEL override was not applied.' }

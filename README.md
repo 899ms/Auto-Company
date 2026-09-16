@@ -45,8 +45,24 @@ Each cycle is an independent CLI call. `memories/consensus.md` is the only cross
 
 ## Where To Start (By Platform)
 
-- Windows users: start from [Windows (WSL) Quick Start](#windows-wsl-quick-start), then read [`docs/windows-setup.md`](docs/windows-setup.md)
+- Windows users: start from [Windows (WSL) Quick Start](#windows-wsl-quick-start), then read the [Windows + WSL Setup Guide](i18n/en/docs/windows-setup.md)
 - macOS users: start from [macOS Quick Start](#macos-quick-start), then see [Command Quick Reference](#command-quick-reference-by-platform)
+
+## Languages and Documentation
+
+Runtime output supports `zh-CN` (default) and `en`. Stop the loop, then run `make language LANGUAGE=en` from the repository root to save `AUTO_COMPANY_LANGUAGE=en` in `.auto-company.local`; use `LANGUAGE=zh-CN` to switch back. On Windows, the equivalent is `python scripts/core/localization.py set --language en`. Start the loop again to apply the choice.
+
+The process environment variable `AUTO_COMPANY_LANGUAGE` overrides that saved setting. Windows `start-win.ps1 -Language en` saves a daemon override in `.auto-loop.env`; macOS captures an environment override when installing launchd. The [language guide](i18n/README.md) explains configuration and precedence.
+
+Language selection preserves your root `PROMPT.md`, custom rules, and Human Overrides. Customized source files take precedence over bundled translations; missing translations fall back to the source. Existing logs and consensus history are preserved. The Dashboard has a separate language selector and remembers your browser preference.
+
+| Guide | English | 中文 |
+|---|---|---|
+| Repository index | [Index](i18n/en/INDEX.md) | [索引](INDEX.md) |
+| Windows + WSL | [Setup guide](i18n/en/docs/windows-setup.md) | [安装指南](docs/windows-setup.md) |
+| Company rules | [Charter](CLAUDE.md) | [公司章程](i18n/zh-CN/CLAUDE.md) |
+| Engine adapters | [Adapter guide](ENGINE_ADAPTERS.md) | [引擎适配器](i18n/zh-CN/ENGINE_ADAPTERS.md) |
+| Usage and budgets | [Governance guide](docs/usage-governance.md) | [用量与预算治理](i18n/zh-CN/docs/usage-governance.md) |
 
 ## Team Lineup (14 Agents)
 
@@ -116,7 +132,7 @@ cd Auto-Company
 .\scripts\windows\stop-win.ps1
 ```
 
-For monitoring, dashboard, and autostart commands, see [`docs/windows-setup.md`](docs/windows-setup.md).
+For monitoring, dashboard, and autostart commands, see the [Windows + WSL Setup Guide](i18n/en/docs/windows-setup.md).
 
 ## Command Quick Reference (By Platform)
 
@@ -347,7 +363,20 @@ Suggested rollout: start with `make start` (foreground), then move to daemon mod
 
 ## Acknowledgments
 
-- Thanks to [@JasonQWJ](https://github.com/JasonQWJ) and [@cnwillz](https://github.com/cnwillz) for earlier macOS dashboard support proposals and implementation attempts that helped inform the final cross-platform dashboard design released in `v1.1.0`.
+Thanks to the contributors whose reports, fixes, and proposals have shaped Auto Company:
+
+| Contributor | Contribution | Reference |
+|---|---|---|
+| [@JasonQWJ](https://github.com/JasonQWJ) | Early macOS Dashboard proposal and implementation that informed the `v1.1.0` design | [#1](https://github.com/MaxMiksa/Auto-Company/pull/1) |
+| [@cnwillz](https://github.com/cnwillz) | macOS Dashboard support proposal that informed the cross-platform implementation | [#2](https://github.com/MaxMiksa/Auto-Company/pull/2) |
+| [@chbndrhnns](https://github.com/chbndrhnns) | Reported the missing executable bit that prevented first startup | [#5](https://github.com/MaxMiksa/Auto-Company/issues/5) |
+| [@Sittichai9680](https://github.com/Sittichai9680) | Advanced Linux/WSL Dashboard support | [#9](https://github.com/MaxMiksa/Auto-Company/pull/9) |
+| [@allenter](https://github.com/allenter) | Advanced cost monitoring, budget alerts, and executable script entrypoints | [#13](https://github.com/MaxMiksa/Auto-Company/pull/13), [#14](https://github.com/MaxMiksa/Auto-Company/pull/14) |
+| [@maxgoff](https://github.com/maxgoff) | Documented engines surviving Cycle timeouts and proposed full process-tree cleanup | [Fork contribution](https://github.com/maxgoff/Auto-Company/commit/861d678fc3070d385e3771591cb6468f2857aa05) |
+| [@omergeiger](https://github.com/omergeiger) | Informed Human Overrides preservation and P1 issue gates | [Human Overrides](https://github.com/omergeiger/Auto-Company/commit/cb1dba1b687eaf700258411f562fd2986586c82d), [P1 issues](https://github.com/omergeiger/Auto-Company/commit/4730a7d03c25e49035be95e48bda428f983e176e) |
+| [@NicklasSandin](https://github.com/NicklasSandin) | Advocated English documentation and an English-language workflow | [#21](https://github.com/MaxMiksa/Auto-Company/pull/21) |
+| [@mdoganexe](https://github.com/mdoganexe) | Reported and contributed fixes for systemd installation, WSL distribution selection, and locale-dependent configuration handling | [#27](https://github.com/MaxMiksa/Auto-Company/pull/27), [#28](https://github.com/MaxMiksa/Auto-Company/pull/28) |
+
 - [nicepkg/auto-company](https://github.com/nicepkg/auto-company) - initial macOS edition
 - [continuous-claude](https://github.com/AnandChowdhary/continuous-claude) - cross-session shared notes
 - [ralph-claude-code](https://github.com/frankbria/ralph-claude-code) - exit signal interception

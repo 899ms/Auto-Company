@@ -16,6 +16,7 @@
 # Config (env vars):
 #   ENGINE=claude               # claude|codex|cursor|openai-compatible
 #   MODEL=...                   # Optional model override (empty = engine default)
+#   AUTO_COMPANY_LANGUAGE=zh-CN # zh-CN|en; otherwise read .auto-company.local
 #   CLAUDE_BIN=...              # Optional Claude executable override
 #   CLAUDE_PERMISSION_MODE=bypassPermissions
 #                               # Claude permission mode (default: bypassPermissions)
@@ -62,6 +63,7 @@ STATE_FILE="$PROJECT_DIR/.auto-loop-state"
 PAUSE_FLAG="$PROJECT_DIR/.auto-loop-paused"
 CONSENSUS_GUARD="$SCRIPT_DIR/consensus-guard.sh"
 PROJECT_CONTEXT_TOOL="$SCRIPT_DIR/project-context.py"
+LOCALIZATION_TOOL="$SCRIPT_DIR/localization.py"
 USAGE_FILE="$LOG_DIR/usage.jsonl"
 USAGE_TOOL="$PROJECT_DIR/scripts/core/usage.py"
 BUDGET_PAUSE_FILE="$PROJECT_DIR/.auto-loop-budget-paused"
@@ -458,6 +460,7 @@ if ! command -v python3 >/dev/null 2>&1; then
     echo "Error: python3 is required for process ownership and structured usage accounting."
     exit 1
 fi
+
 if [ "${AUTO_COMPANY_LOCK_PID:-}" != "$$" ]; then
     exec python3 "$SCRIPT_DIR/loop-lock.py" "$PID_FILE" "$0" "$@"
 fi
@@ -482,6 +485,12 @@ if [ "$governance_recovery_status" -ne 0 ] && [ "$governance_recovery_status" -n
     exit 1
 fi
 "$CONSENSUS_GUARD" init
+
+# Recover human-owned configuration before interpreting its language setting.
+if ! python3 "$LOCALIZATION_TOOL" check --root "$PROJECT_DIR" >/dev/null; then
+    echo "Error: language configuration is invalid; no cycle was started."
+    exit 78
+fi
 
 if ! RESOLVED_ENGINE_BIN="$(resolve_engine_bin)"; then
     echo "Error: $(engine_adapter_missing_dependency_message)"
@@ -580,6 +589,14 @@ while true; do
         ACTIVE_PROJECT="projects/${ACTIVE_PROJECT_PATH##*/}"
     fi
 
+    # Resolve language each cycle, preserving customized source instructions.
+    if ! PROMPT=$(python3 "$LOCALIZATION_TOOL" prompt --root "$PROJECT_DIR"); then
+        log_cycle "$next_cycle" "FAIL" "Invalid language configuration or prompt; engine invocation blocked"
+        printf 'PAUSE_REASON=language_invalid\n' > "$PAUSE_FLAG"
+        wait_while_paused
+        continue
+    fi
+
     loop_count=$next_cycle
     cycle_log="$LOG_DIR/cycle-$(printf '%04d' "$loop_count")-$(date '+%Y%m%d-%H%M%S')-${run_id}.log"
     cycle_started_at=$(date '+%Y-%m-%dT%H:%M:%S%z')
@@ -595,7 +612,6 @@ while true; do
     gitignore_snapshot=$(snapshot_gitignore)
 
     # Build prompt with consensus pre-injected
-    PROMPT=$(cat "$PROMPT_FILE")
     CONSENSUS=$(cat "$CONSENSUS_FILE" 2>/dev/null || echo "No consensus file found. This is the very first cycle.")
     FULL_PROMPT="$PROMPT
 

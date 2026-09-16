@@ -488,6 +488,23 @@ class GovernanceLoopTest(GovernanceFixture):
         (self.root / ".auto-loop-stop").touch()
         self.assertEqual(restarted.wait(timeout=12), 0)
 
+    def test_interrupted_invalid_language_is_restored_before_language_validation(self):
+        original = self.consensus.read_bytes()
+        config = self.root / ".auto-company.local"
+        baseline = b"AUTO_COMPANY_LANGUAGE=en\n"
+        config.write_bytes(baseline)
+        self.assert_ok(self.guard("begin", "1"))
+        config.write_bytes(b"AUTO_COMPANY_LANGUAGE=invalid\nnot a configuration line\n")
+        self.consensus.write_bytes(original.replace(b'- (none)', b'- Tampered rule.'))
+        restarted = self.start_loop()
+        self.wait_until(lambda: self.text_contains(self.root / ".auto-loop-state", "STATUS=paused"), restarted)
+        self.assertEqual(config.read_bytes(), baseline)
+        self.assertEqual(self.consensus.read_bytes(), original)
+        self.assertFalse((self.root / "calls.jsonl").exists())
+        self.assertFalse((self.root / "memories/.consensus-cycle-pending").exists())
+        (self.root / ".auto-loop-stop").touch()
+        self.assertEqual(restarted.wait(timeout=12), 0)
+
     def test_completed_cycle_allows_human_edits_while_stopped(self):
         process = self.start_loop()
         self.assertEqual(process.wait(timeout=15), 0)
