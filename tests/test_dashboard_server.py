@@ -593,6 +593,25 @@ Raw=Loop not running
         gather.assert_called_once_with(period="week", target_date="2026-09-02")
         handler._json.assert_called_once_with(expected)
 
+    def test_frontend_translation_asset_uses_explicit_static_route(self) -> None:
+        handler = dashboard_server.DashboardHandler.__new__(
+            dashboard_server.DashboardHandler
+        )
+        handler._request_allowed = mock.Mock(return_value=True)
+        handler._serve_file = mock.Mock()
+        handler._text = mock.Mock()
+        handler.path = "/i18n.js"
+        handler.do_GET()
+        handler._serve_file.assert_called_once_with(
+            dashboard_server.DASHBOARD_DIR / "i18n.js",
+            "application/javascript; charset=utf-8",
+        )
+        handler._serve_file.reset_mock()
+        handler.path = "/../scripts/core/auto-loop.sh"
+        handler.do_GET()
+        handler._serve_file.assert_not_called()
+        handler._text.assert_called_once_with("Not found", code=404)
+
 
 if __name__ == "__main__":
     unittest.main()

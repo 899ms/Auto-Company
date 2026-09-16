@@ -1,5 +1,9 @@
 # Engine adapters
 
+[English](ENGINE_ADAPTERS.md) | [中文](i18n/zh-CN/ENGINE_ADAPTERS.md) · [Documentation and language settings](i18n/README.md)
+
+Run the commands below from the repository root.
+
 `scripts/core/auto-loop.sh` owns scheduling and loop policy. `scripts/core/engine-adapters.sh` owns engine discovery, invocation shape, and secret redaction; `engine-metadata.py` normalizes provider JSON and JSONL with the Python standard library. `scripts/core/process-supervisor.sh` owns the per-cycle PGID, timeout, descendant cleanup, and fail-closed cleanup verification used by every adapter.
 
 Claude remains the default. Cursor and OpenAI-compatible support are opt-in so an existing installation does not change behavior after an upgrade.

@@ -1,5 +1,9 @@
 # Usage and budget governance
 
+[English](usage-governance.md) | [中文](../i18n/zh-CN/docs/usage-governance.md) · [Documentation and language settings](../i18n/README.md)
+
+Run the commands below from the repository root.
+
 Each finished Cycle appends one JSON object to `logs/usage.jsonl`. Reports and
 the Dashboard read this ledger directly; `auto-loop.log` is not parsed for cost
 or token accounting.

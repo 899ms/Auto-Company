@@ -1,4 +1,8 @@
-# Windows + WSL Setup Guide
+# Windows + WSL 安装指南
+
+[中文](windows-setup.md) | [English](../i18n/en/docs/windows-setup.md) · [文档与语言设置](../i18n/README.md)
+
+除另有说明外，本文中的项目命令在仓库根目录运行。
 
 本项目在 Windows 上采用：
 
@@ -113,6 +117,18 @@ wsl -d Ubuntu bash -lc 'codex --version; command -v codex'
 - 所有脚本实现位于 `scripts/windows/`、`scripts/core/`、`scripts/wsl/`、`scripts/macos/`
 - 日常执行入口也统一使用 `scripts/` 下脚本
 - 如需维护逻辑，请直接修改 `scripts/` 下对应实现文件
+
+### 运行与界面语言
+
+运行语言默认中文（`zh-CN`），可切换为英文（`en`）。先停止循环，再在仓库根目录保存设置：
+
+```powershell
+.\scripts\windows\stop-win.ps1
+python scripts/core/localization.py set --language en
+.\scripts\windows\start-win.ps1
+```
+
+语言保存到 `.auto-company.local`，不改写根目录 `PROMPT.md`、自定义规则或历史记录。同名环境变量 `AUTO_COMPANY_LANGUAGE` 优先于此设置。如果之前用 `start-win.ps1 -Language en` 将语言写入 `.auto-loop.env`，该守护进程覆盖值仍然优先；切回中文时同步使用 `-Language zh-CN`，或人工移除该覆盖项后使用本地设置。Dashboard 的语言选择独立保存在浏览器中，不改变运行语言。完整说明见[语言设置](../i18n/README.md)。
 
 ## 5. 可选：登录后自启
 

@@ -103,6 +103,29 @@ h1 {
   align-self: center;
 }
 
+.language-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.language-hint {
+  max-width: 360px;
+  margin: 6px 0 12px auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+html:lang(zh) body,
+html:lang(zh) h1,
+html:lang(zh) h2,
+html:lang(zh) h3,
+html:lang(zh) button,
+html:lang(zh) select {
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
 .pulse-wrap {
   display: inline-flex;
   align-items: center;
@@ -144,6 +167,7 @@ h1 {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .control-group.compact {
@@ -242,6 +266,7 @@ select {
   font-family: "Rajdhani", sans-serif;
   font-size: 2rem;
   line-height: 1;
+  overflow-wrap: anywhere;
 }
 
 .muted {
@@ -466,6 +491,10 @@ select {
   }
   .hero-meta {
     text-align: left;
+    align-self: stretch;
+  }
+  .language-hint {
+    margin-left: 0;
   }
   .grid-cards {
     grid-template-columns: 1fr;
