@@ -110,6 +110,21 @@ class LaunchdRuntimeTests(unittest.TestCase):
 
     def loaded_pid(self):
         result = self.control("list", "-x", self.label)
+        if result.returncode:
+            # Inspect only this test's unique agent when a macOS CLI differs
+            # from the legacy interface. Never dump the user's whole domain.
+            listing = self.control("list", self.label)
+            print(f"probe launchctl list ({listing.returncode}):\n{listing.stdout}{listing.stderr}", flush=True)
+            converted = subprocess.run(["/usr/bin/plutil", "-convert", "json", "-o", "-", "-"],
+                                       input=listing.stdout, env=self.env, capture_output=True,
+                                       text=True, timeout=15)
+            print(f"probe plutil ({converted.returncode}):\n{converted.stdout}{converted.stderr}", flush=True)
+            for domain in ("gui", "user"):
+                details = self.control("print", f"{domain}/{os.getuid()}/{self.label}")
+                print(f"probe launchctl print {domain} ({details.returncode}):\n"
+                      f"{details.stdout}{details.stderr}", flush=True)
+                if details.returncode == 0:
+                    break
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         pid = plistlib.loads(result.stdout.encode())["PID"]
         self.assertIsInstance(pid, int)
