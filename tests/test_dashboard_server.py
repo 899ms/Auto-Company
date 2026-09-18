@@ -189,17 +189,17 @@ class DashboardServerTests(unittest.TestCase):
             self.assertFalse(budget.exists())
             self.assertEqual((root / "actions").read_text().splitlines(), ["start", "stop", "stop", "start"])
 
-    def test_frontend_and_backend_state_enums_match(self) -> None:
-        app_js = APP_JS_PATH.read_text(encoding="utf-8")
-        match = re.search(
-            r"const STATE_CLASS = Object\.freeze\(\{(.*?)\}\);", app_js, re.DOTALL
-        )
+    def test_frontend_translates_every_backend_state(self) -> None:
+        source = (APP_JS_PATH.parent / "i18n.js").read_text(encoding="utf-8")
+        match = re.search(r"window\.JOURNAL_MESSAGES\s*=\s*(\{.*\});", source, re.DOTALL)
         self.assertIsNotNone(match)
         assert match is not None
-        frontend_states = set(
-            re.findall(r"^\s{2}([a-z_]+):", match.group(1), re.MULTILINE)
-        )
-        self.assertEqual(frontend_states, set(dashboard_server.KNOWN_STATES))
+        dictionaries = json.loads(match.group(1))
+        for language in ("en", "zh-CN"):
+            for state in dashboard_server.KNOWN_STATES:
+                with self.subTest(language=language, state=state):
+                    key = "statusUnavailable" if state == "unavailable" else state
+                    self.assertTrue(dictionaries[language].get(key))
 
     def test_windows_not_running_maps_to_stopped(self) -> None:
         raw = """=== Windows Guardian ===

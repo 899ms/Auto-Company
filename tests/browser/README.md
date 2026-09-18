@@ -12,13 +12,16 @@ The suite uses Chromium to open and click the real dashboard served by its Pytho
 HTTP handler. Each test gets a temporary checkout and an OS-assigned loopback
 port. Language persistence and HTTP handling stay real. Host status/action calls
 are replaced, so no service, runtime loop or paid CLI starts and no user state is
-read or written. The simulated status is stopped on every operating system.
+read or written. Fixtures cover stopped, running and unavailable states
+without starting a real runtime on any operating system.
 External font requests are blocked.
 
-The five checks cover rendering and refresh controls, saved language after a
-reload, current versus next-product language, language/action failure feedback,
-and recovery after a failed status request. A write error and one HTTP 503 are
-deliberately injected; other requests use the real server.
+The checks cover the default cycle journal, refresh and runtime controls, saved
+language after a reload, current versus next-product language, failure feedback,
+and recovery after a failed status request. Journal archive tests also cover
+cycle/log identity, incomplete usage, untrusted reports, keyboard navigation and
+narrow layouts. Failure scenarios are deliberately injected at the host or HTTP
+boundary; normal requests use the real server.
 
 Python defaults to `python` on Windows and `python3` elsewhere. Set
 `AUTO_COMPANY_BROWSER_PYTHON` to an executable path if needed. Tests run serially

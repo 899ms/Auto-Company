@@ -47,16 +47,16 @@ export const test = base.extend({
     }
   },
 
-  page: async ({ page, dashboard }, use) => {
+  page: async ({ page, dashboard, scenario }, use) => {
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     // Fonts are cosmetic; smoke tests require no external network requests.
     await page.route("https://fonts.googleapis.com/**", (route) => route.abort());
     await page.route("https://fonts.gstatic.com/**", (route) => route.abort());
     await page.goto(dashboard.url);
-    await expect(page.getByRole("heading", { name: "Control Deck", exact: true })).toBeVisible();
-    await expect(page.locator("#loopState")).toHaveText("STOPPED");
-    await page.getByRole("checkbox", { name: "Auto refresh", exact: true }).uncheck();
+    await expect(page.locator("#projectName")).toHaveText("Browser Fixture");
+    await expect(page.locator("#runtimeState")).toHaveText(scenario === "running-cycle" ? "Running" : "Stopped");
+    await page.locator("#autoRefresh").uncheck();
     await use(page);
     expect(errors, "Unexpected dashboard JavaScript errors").toEqual([]);
   },

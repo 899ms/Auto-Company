@@ -27,9 +27,12 @@ DASHBOARD_DIR = Path(__file__).resolve().parent
 CORE_SCRIPT_DIR = REPO_ROOT / "scripts" / "core"
 if str(CORE_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(CORE_SCRIPT_DIR))
+if str(DASHBOARD_DIR) not in sys.path:
+    sys.path.insert(0, str(DASHBOARD_DIR))
 
 from usage_lib import UsageError, read_pause_state, summarize_usage  # noqa: E402
 import localization  # noqa: E402
+from journal_data import JournalSource  # noqa: E402
 
 WINDOWS_STATUS_SCRIPT = REPO_ROOT / "scripts" / "windows" / "status-win.ps1"
 WINDOWS_START_SCRIPT = REPO_ROOT / "scripts" / "windows" / "start-win.ps1"
@@ -596,6 +599,24 @@ def gather_usage_payload(
     }
 
 
+def gather_journal_payload() -> dict[str, Any]:
+    """Use the same runtime and language authority as the control endpoints."""
+    source = JournalSource(REPO_ROOT)
+    payload = source.snapshot(status=gather_status_payload(),
+                              language_state=localization.language_state(REPO_ROOT))
+    try:
+        _, truncated = source.read(".auto-loop-budget-paused", 32 * 1024)
+        if truncated:
+            raise ValueError("Budget marker exceeds its size limit")
+        payload["budgetPause"] = read_pause_state(source.safe_path(".auto-loop-budget-paused"))
+    except FileNotFoundError:
+        payload["budgetPause"] = None
+    except (OSError, ValueError):
+        payload["budgetPause"] = None
+        payload["warnings"].append("budget_pause_unavailable")
+    return payload
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     def _request_allowed(self) -> bool:
         address, port = self.server.server_address[:2]
@@ -616,17 +637,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
 
     def _text(
-        self, text: str, code: int = 200, content_type: str = "text/plain; charset=utf-8"
+        self, text: str, code: int = 200, content_type: str = "text/plain; charset=utf-8",
+        *, truncated: bool = False,
     ) -> None:
         raw = text.encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if truncated:
+            self.send_header("X-Content-Truncated", "true")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
@@ -643,6 +669,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path in {"/api/journal", "/api/journal/log", "/api/journal/document"}:
+            try:
+                query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=12)
+                if path == "/api/journal":
+                    self._json(gather_journal_payload())
+                elif path == "/api/journal/log":
+                    if set(query) != {"id"} or len(query["id"]) != 1:
+                        raise ValueError("One cycle identity is required")
+                    source = JournalSource(REPO_ROOT)
+                    try:
+                        result = source.log(query["id"][0])
+                    except ValueError:
+                        result = source.log(query["id"][0], gather_status_payload())
+                    self._json(result)
+                else:
+                    if set(query) != {"path"} or len(query["path"]) != 1:
+                        raise ValueError("One document path is required")
+                    text, truncated = JournalSource(REPO_ROOT).document(query["path"][0])
+                    self._text(text, truncated=truncated)
+            except (ValueError, KeyError, UnicodeError):
+                self._json({"ok": False, "error": "Invalid or unavailable journal resource."}, code=400)
+            except OSError:
+                self._json({"ok": False, "error": "Journal resource unavailable."}, code=404)
+            return
         if path == "/api/language":
             try:
                 self._json({"ok": True, **localization.language_state(REPO_ROOT)})
@@ -658,16 +708,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._text(page, content_type="text/html; charset=utf-8")
             return
 
-        if path == "/" or path == "/index.html":
+        if path in {"/", "/index.html", "/journal", "/journal/", "/journal/index.html"}:
             self._serve_file(DASHBOARD_DIR / "index.html", "text/html; charset=utf-8")
             return
-        if path in {"/app.js", "/i18n.js"}:
+        if path in {"/app.js", "/i18n.js", "/journal/app.js", "/journal/i18n.js"}:
             self._serve_file(
-                DASHBOARD_DIR / path[1:],
+                DASHBOARD_DIR / path.rsplit("/", 1)[-1],
                 "application/javascript; charset=utf-8",
             )
             return
-        if path == "/styles.css":
+        if path in {"/styles.css", "/journal/styles.css"}:
             self._serve_file(DASHBOARD_DIR / "styles.css", "text/css; charset=utf-8")
             return
         if path == "/favicon.svg":
