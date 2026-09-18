@@ -1,0 +1,12 @@
+{
+  "name": "auto-company-dashboard-smoke",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "engines": { "node": ">=20" },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}
