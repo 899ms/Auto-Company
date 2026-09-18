@@ -6,13 +6,13 @@ HOME and a harmless loop probe, and calls the actual Dashboard Start chain.
 """
 
 import importlib.util
-import ctypes
 import os
 from pathlib import Path
 import platform
 import plistlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -45,7 +45,8 @@ class LaunchdRuntimeTests(unittest.TestCase):
         (self.project / "dashboard").mkdir()
         shutil.copy2(REPO / "dashboard/server.py", self.project / "dashboard/server.py")
         for relative in ("scripts/core/launchd-config.py", "scripts/core/stop-loop.sh",
-                         "scripts/macos/install-daemon.sh", "scripts/macos/start-daemon.sh"):
+                         "scripts/macos/install-daemon.sh", "scripts/macos/start-daemon.sh",
+                         "scripts/macos/launchd-job.py"):
             path = self.project / relative
             path.write_text(path.read_text().replace("com.autocompany.loop", self.label))
         # Keep the real command path/arguments. Only its body becomes a local
@@ -110,70 +111,15 @@ class LaunchdRuntimeTests(unittest.TestCase):
         return pid
 
     def loaded_pid(self):
-        result = self.control("list", "-x", self.label)
-        if result.returncode:
-            # Inspect only this test's unique agent when a macOS CLI differs
-            # from the legacy interface. Never dump the user's whole domain.
-            listing = self.control("list", self.label)
-            print(f"probe launchctl list ({listing.returncode}):\n{listing.stdout}{listing.stderr}", flush=True)
-            converted = subprocess.run(["/usr/bin/plutil", "-convert", "json", "-o", "-", "-"],
-                                       input=listing.stdout, env=self.env, capture_output=True,
-                                       text=True, timeout=15)
-            print(f"probe plutil ({converted.returncode}):\n{converted.stdout}{converted.stderr}", flush=True)
-            for domain in ("gui", "user"):
-                details = self.control("print", f"{domain}/{os.getuid()}/{self.label}")
-                print(f"probe launchctl print {domain} ({details.returncode}):\n"
-                      f"{details.stdout}{details.stderr}", flush=True)
-                if details.returncode == 0:
-                    break
-            self.probe_service_management()
+        result = subprocess.run([sys.executable, str(self.project / "scripts/macos/launchd-job.py"),
+                                 self.label], env=self.env, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        pid = plistlib.loads(result.stdout.encode())["PID"]
+        metadata = plistlib.loads(result.stdout.encode())
+        self.assertEqual(metadata["Label"], self.label)
+        pid = metadata["PID"]
         self.assertIsInstance(pid, int)
         self.assertGreater(pid, 0)
         return pid
-
-    def probe_service_management(self):
-        """Read only this isolated job through the documented native API."""
-        references = []
-        try:
-            cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
-            sm = ctypes.CDLL("/System/Library/Frameworks/ServiceManagement.framework/ServiceManagement")
-            cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
-            cf.CFStringCreateWithCString.restype = ctypes.c_void_p
-            cf.CFRelease.argtypes = [ctypes.c_void_p]
-            cf.CFRelease.restype = None
-            sm.SMJobCopyDictionary.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-            sm.SMJobCopyDictionary.restype = ctypes.c_void_p
-            cf.CFPropertyListCreateData.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long,
-                                                   ctypes.c_ulong, ctypes.c_void_p]
-            cf.CFPropertyListCreateData.restype = ctypes.c_void_p
-            cf.CFDataGetLength.argtypes = [ctypes.c_void_p]
-            cf.CFDataGetLength.restype = ctypes.c_long
-            cf.CFDataGetBytePtr.argtypes = [ctypes.c_void_p]
-            cf.CFDataGetBytePtr.restype = ctypes.c_void_p
-            domain = ctypes.c_void_p.in_dll(sm, "kSMDomainUserLaunchd")
-            label = cf.CFStringCreateWithCString(None, self.label.encode("utf-8"), 0x08000100)
-            if not label:
-                raise RuntimeError("CFStringCreateWithCString returned NULL")
-            references.append(label)
-            job = sm.SMJobCopyDictionary(domain, label)
-            if not job:
-                raise RuntimeError("SMJobCopyDictionary returned NULL for the isolated probe")
-            references.append(job)
-            data = cf.CFPropertyListCreateData(None, job, 100, 0, None)
-            if not data:
-                raise RuntimeError("CFPropertyListCreateData returned NULL")
-            references.append(data)
-            raw = ctypes.string_at(cf.CFDataGetBytePtr(data), cf.CFDataGetLength(data))
-            metadata = plistlib.loads(raw)
-            print(f"probe SMJobCopyDictionary succeeded:\n{raw.decode('utf-8')}", flush=True)
-            print(f"probe SM metadata keys: {sorted(metadata)}", flush=True)
-        except Exception as exc:
-            print(f"probe SMJobCopyDictionary failed: {type(exc).__name__}: {exc}", flush=True)
-        finally:
-            for reference in reversed(references):
-                cf.CFRelease(reference)
 
     def test_first_start_installs_and_runs_saved_environment(self):
         self.install()

@@ -63,7 +63,7 @@ resume_daemon() {
     # Validate ownership before changing the agent or the operator's pause flag.
     python3 "$SCRIPT_DIR/launchd-config.py" --project "$PROJECT_DIR" --validate "$PLIST_PATH"
     if launchctl list "$LABEL" >/dev/null 2>&1; then
-        launchctl list -x "$LABEL" | python3 "$SCRIPT_DIR/launchd-config.py" \
+        python3 "$SCRIPT_DIR/../macos/launchd-job.py" "$LABEL" | python3 "$SCRIPT_DIR/launchd-config.py" \
             --project "$PROJECT_DIR" --validate-loaded
         # Start is idempotent for a running agent and preserves its environment.
         launchctl start "$LABEL"

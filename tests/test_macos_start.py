@@ -45,19 +45,23 @@ class MacosStartTests(unittest.TestCase):
         self.fake("uname", 'printf "Darwin\\n"')
         self.fake("bash", "exit 1")  # Do not source the host's interactive shell.
         self.fake("claude", 'test "$*" = --version || exit 99\nprintf "fake-version\\n"')
+        # Substitute only the native read boundary on non-macOS hosts. Keep the
+        # exported job shape, downstream validation, and shell control real.
+        (self.project / "scripts/macos/launchd-job.py").write_text('''import os, plistlib, sys
+if os.environ.get("FAIL_QUERY") == "1":
+    sys.exit("native LaunchAgent metadata unavailable")
+config = plistlib.load(open(os.environ["LOADED"], "rb"))
+exported = {key: config[key] for key in ("Label", "ProgramArguments", "Program") if key in config}
+exported.update(PID=123, LastExitStatus=0)
+sys.stdout.buffer.write(plistlib.dumps(exported))
+''')
         self.fake("launchctl", '''printf '%s\\n' "$*" >> "$TRACE"
 case "$1" in
   list)
     if [ "$#" = 1 ]; then
       [ ! -f "$LOADED" ] || printf '123 0 com.autocompany.loop\\n'
     elif [ "$2" = -x ]; then
-      [ -f "$LOADED" ] || exit 113
-      # job_export() returns runtime metadata, not the original plist.
-      python3 -c 'import plistlib, sys
-config = plistlib.load(open(sys.argv[1], "rb"))
-exported = {key: config[key] for key in ("Label", "ProgramArguments", "Program") if key in config}
-exported.update(PID=123, LastExitStatus=0)
-sys.stdout.buffer.write(plistlib.dumps(exported))' "$LOADED"
+      exit 113 ; # Current macOS treats -x as a label, not an XML option.
     else
       [ -f "$LOADED" ] || exit 113
     fi ;;
@@ -171,6 +175,17 @@ esac''')
         self.assertFalse(result["ok"], result["output"])
         self.assertEqual(self.plist.read_bytes(), original)
         self.assertEqual(self.pause.read_text(), "operator pause\n")
+
+    def test_native_metadata_failure_keeps_pause_and_configuration(self):
+        original = self.install_config(True)
+        self.env["FAIL_QUERY"] = "1"
+        result = self.start()
+        self.assertFalse(result["ok"], result["output"])
+        self.assertIn("native LaunchAgent metadata unavailable", result["output"])
+        self.assertEqual(self.plist.read_bytes(), original)
+        self.assertEqual(self.loaded.read_bytes(), original)
+        self.assertEqual(self.pause.read_text(), "operator pause\n")
+        self.assertEqual(self.trace.read_text().splitlines(), ["list " + LABEL])
 
 
 if __name__ == "__main__":
