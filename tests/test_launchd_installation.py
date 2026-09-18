@@ -6,6 +6,7 @@ HOME and a harmless loop probe, and calls the actual Dashboard Start chain.
 """
 
 import importlib.util
+import ctypes
 import os
 from pathlib import Path
 import platform
@@ -125,11 +126,54 @@ class LaunchdRuntimeTests(unittest.TestCase):
                       f"{details.stdout}{details.stderr}", flush=True)
                 if details.returncode == 0:
                     break
+            self.probe_service_management()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         pid = plistlib.loads(result.stdout.encode())["PID"]
         self.assertIsInstance(pid, int)
         self.assertGreater(pid, 0)
         return pid
+
+    def probe_service_management(self):
+        """Read only this isolated job through the documented native API."""
+        references = []
+        try:
+            cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+            sm = ctypes.CDLL("/System/Library/Frameworks/ServiceManagement.framework/ServiceManagement")
+            cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+            cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+            cf.CFRelease.argtypes = [ctypes.c_void_p]
+            cf.CFRelease.restype = None
+            sm.SMJobCopyDictionary.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            sm.SMJobCopyDictionary.restype = ctypes.c_void_p
+            cf.CFPropertyListCreateData.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long,
+                                                   ctypes.c_ulong, ctypes.c_void_p]
+            cf.CFPropertyListCreateData.restype = ctypes.c_void_p
+            cf.CFDataGetLength.argtypes = [ctypes.c_void_p]
+            cf.CFDataGetLength.restype = ctypes.c_long
+            cf.CFDataGetBytePtr.argtypes = [ctypes.c_void_p]
+            cf.CFDataGetBytePtr.restype = ctypes.c_void_p
+            domain = ctypes.c_void_p.in_dll(sm, "kSMDomainUserLaunchd")
+            label = cf.CFStringCreateWithCString(None, self.label.encode("utf-8"), 0x08000100)
+            if not label:
+                raise RuntimeError("CFStringCreateWithCString returned NULL")
+            references.append(label)
+            job = sm.SMJobCopyDictionary(domain, label)
+            if not job:
+                raise RuntimeError("SMJobCopyDictionary returned NULL for the isolated probe")
+            references.append(job)
+            data = cf.CFPropertyListCreateData(None, job, 100, 0, None)
+            if not data:
+                raise RuntimeError("CFPropertyListCreateData returned NULL")
+            references.append(data)
+            raw = ctypes.string_at(cf.CFDataGetBytePtr(data), cf.CFDataGetLength(data))
+            metadata = plistlib.loads(raw)
+            print(f"probe SMJobCopyDictionary succeeded:\n{raw.decode('utf-8')}", flush=True)
+            print(f"probe SM metadata keys: {sorted(metadata)}", flush=True)
+        except Exception as exc:
+            print(f"probe SMJobCopyDictionary failed: {type(exc).__name__}: {exc}", flush=True)
+        finally:
+            for reference in reversed(references):
+                cf.CFRelease(reference)
 
     def test_first_start_installs_and_runs_saved_environment(self):
         self.install()
