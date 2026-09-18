@@ -259,3 +259,6 @@ try {
 
 Write-Host "Windows message checks: $($script:checks - $script:failures.Count) passed, $($script:failures.Count) failed, 0 skipped"
 if ($script:failures.Count) { throw ($script:failures -join "`n") }
+# The final case deliberately sets a failing native code. Report the assertions'
+# result to CI, whose PowerShell wrapper exits with the last native exit code.
+$global:LASTEXITCODE = 0

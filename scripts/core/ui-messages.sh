@@ -5,13 +5,14 @@ UI_MESSAGES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ui_message() {
     local key="$1" value
     shift
-    local arguments=()
+    # Bash 3.2 (macOS) treats an empty array as unset under `set -u`.
+    # Keep fixed arguments in the array so zero-placeholder messages are safe.
+    local arguments=(message --root "${PROJECT_DIR:-$UI_MESSAGES_DIR/../..}" --key "$key")
     for value in "$@"; do
         arguments+=("--arg=$value")
     done
     if command -v python3 >/dev/null 2>&1 && \
-        python3 "$UI_MESSAGES_DIR/localization.py" message \
-            --root "${PROJECT_DIR:-$UI_MESSAGES_DIR/../..}" --key "$key" "${arguments[@]}"; then
+        python3 "$UI_MESSAGES_DIR/localization.py" "${arguments[@]}"; then
         return 0
     fi
     # Python is unavailable: keep dependency diagnostics useful without hiding

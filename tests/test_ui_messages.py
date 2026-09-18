@@ -106,6 +106,22 @@ class OperatorMessageTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertIn("Check AUTO_COMPANY_LANGUAGE", result.stderr)
 
+    @unittest.skipUnless(os.name == "posix" and Path("/bin/bash").exists(), "Native POSIX Bash")
+    def test_native_bash_nounset_handles_messages_with_and_without_parameters(self):
+        # /bin/bash is 3.2 on macOS; empty arrays there differ from modern Bash.
+        command = ["/bin/bash", "-uc",
+                   'source "$1/scripts/core/ui-messages.sh"; PROJECT_DIR="$1"; '
+                   'ui_message loop.stopping; ui_message language.saved en',
+                   "message-test", str(ROOT)]
+        for language, saved in (("en", "Saved AUTO_COMPANY_LANGUAGE=en"),
+                                ("zh-CN", "已保存 AUTO_COMPANY_LANGUAGE=en")):
+            result = subprocess.run(command, env=dict(self.env, AUTO_COMPANY_LANGUAGE=language),
+                                    capture_output=True, text=True, encoding="utf-8", timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len(result.stdout.splitlines()), 2)
+            self.assertIn(saved, result.stdout)
+            self.assertEqual(result.stderr, "")
+
 
 @unittest.skipUnless(os.name == "posix" and sys.platform == "linux", "Linux/WSL entrypoint fixtures")
 class ShellOperatorMessageTests(unittest.TestCase):

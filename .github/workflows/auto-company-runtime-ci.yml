@@ -122,6 +122,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_daemon_installers.py -v
           python3 -m unittest discover -s tests -p test_macos_start.py -v
           python3 -m unittest discover -s tests -p test_log_rotation.py -v
+          python3 -m unittest discover -s tests -p test_ui_messages.py -v
 
       - name: Verify Dashboard Start with a real isolated LaunchAgent
         env:
