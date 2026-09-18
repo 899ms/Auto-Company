@@ -54,20 +54,26 @@ resume_daemon() {
         exit 1
     fi
 
-    rm -f "$PAUSE_FLAG"
-    echo "Pause flag removed."
-
     if [ ! -f "$PLIST_PATH" ]; then
         echo "LaunchAgent plist not found: $PLIST_PATH"
         echo "Install daemon first: ./install-daemon.sh"
         exit 1
     fi
 
-    if launchctl list 2>/dev/null | grep -q "$LABEL"; then
-        launchctl unload "$PLIST_PATH" 2>/dev/null || true
+    # Validate ownership before changing the agent or the operator's pause flag.
+    python3 "$SCRIPT_DIR/launchd-config.py" --project "$PROJECT_DIR" --validate "$PLIST_PATH"
+    if launchctl list "$LABEL" >/dev/null 2>&1; then
+        launchctl list -x "$LABEL" | python3 "$SCRIPT_DIR/launchd-config.py" \
+            --project "$PROJECT_DIR" --validate-loaded
+        # Start is idempotent for a running agent and preserves its environment.
+        launchctl start "$LABEL"
+    else
+        launchctl load "$PLIST_PATH"
     fi
 
-    launchctl load "$PLIST_PATH"
+    # A failed load/start must leave the existing pause marker intact.
+    rm -f "$PAUSE_FLAG"
+    echo "Pause flag removed."
     echo "Daemon resumed and started."
 }
 

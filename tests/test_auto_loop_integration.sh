@@ -106,6 +106,7 @@ wait_for_contains() {
 
 mkdir -p "$FRAMEWORK/scripts/core" "$FRAMEWORK/memories" "$FRAMEWORK/logs"
 cp "$SOURCE_ROOT/scripts/core/auto-loop.sh" "$FRAMEWORK/scripts/core/"
+cp "$SOURCE_ROOT/scripts/core/rotate-logs.py" "$FRAMEWORK/scripts/core/"
 cp "$SOURCE_ROOT/scripts/core/consensus-guard.sh" "$FRAMEWORK/scripts/core/"
 cp "$SOURCE_ROOT/scripts/core/consensus-format.py" "$FRAMEWORK/scripts/core/"
 cp "$SOURCE_ROOT/scripts/core/project-context.py" "$FRAMEWORK/scripts/core/"

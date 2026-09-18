@@ -22,6 +22,7 @@ entrypoints=(
     scripts/core/project.sh
     scripts/core/stop-loop.sh
     scripts/macos/install-daemon.sh
+    scripts/macos/start-daemon.sh
     scripts/wsl/dashboard-wsl.sh
     scripts/wsl/install-wsl-daemon.sh
     scripts/wsl/uninstall-wsl-daemon.sh

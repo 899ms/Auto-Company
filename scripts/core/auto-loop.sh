@@ -338,16 +338,11 @@ get_file_size_bytes() {
 }
 
 rotate_logs() {
-    # Keep only the latest N cycle logs
-    local count
-    count=$(find "$LOG_DIR" -name "cycle-*.log" -type f 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$count" -gt "$MAX_LOGS" ]; then
-        local to_delete=$((count - MAX_LOGS))
-        while IFS= read -r old_cycle_log; do
-            [ -n "$old_cycle_log" ] || continue
-            rm -f "$old_cycle_log" "${old_cycle_log%.log}.json"
-        done < <(find "$LOG_DIR" -name "cycle-*.log" -type f | sort | head -n "$to_delete")
-        log "Log rotation: removed $to_delete old cycle logs"
+    # Keep the latest N by write time, independent of per-process cycle numbers.
+    local removed
+    removed=$(python3 "$SCRIPT_DIR/rotate-logs.py" "$LOG_DIR" "$MAX_LOGS")
+    if [ "$removed" -gt 0 ]; then
+        log "Log rotation: removed $removed old cycle logs"
     fi
 
     # Rotate main log if over 10MB
