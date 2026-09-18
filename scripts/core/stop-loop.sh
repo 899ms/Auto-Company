@@ -10,6 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$PROJECT_DIR/scripts/core/ui-messages.sh"
 PID_FILE="$PROJECT_DIR/.auto-loop.pid"
 PAUSE_FLAG="$PROJECT_DIR/.auto-loop-paused"
 LABEL="com.autocompany.loop"
@@ -23,7 +24,11 @@ is_launchd_supported() {
 stop_loop_process() {
     # The flag also stops startup/idle paths before another cycle can begin.
     touch "$PROJECT_DIR/.auto-loop-stop"
-    echo "Stop requested. The active cycle will be interrupted and its owned processes cleaned up."
+    ui_message loop.stop_requested
+    if ! command -v python3 >/dev/null 2>&1; then
+        ui_message python.required >&2
+        return 1
+    fi
 
     # Validate the held lock and exact script identity before signalling a PID.
     python3 "$SCRIPT_DIR/loop-lock.py" --stop "$PID_FILE" "$SCRIPT_DIR/auto-loop.sh"
@@ -31,32 +36,29 @@ stop_loop_process() {
 
 pause_daemon() {
     if ! is_launchd_supported; then
-        echo "Daemon pause is only supported on macOS launchd."
-        echo "On Windows/WSL, run ./stop-loop.sh to stop the foreground loop."
+        ui_message mac.only "$OS_NAME"
         exit 1
     fi
 
     printf 'PAUSE_REASON=manual\n' > "$PAUSE_FLAG"
-    echo "Pause flag created: $PAUSE_FLAG"
+    ui_message mac.pause_created "$PAUSE_FLAG"
     stop_loop_process
 
     if launchctl list 2>/dev/null | grep -q "$LABEL"; then
         launchctl unload "$PLIST_PATH" 2>/dev/null || true
-        echo "Daemon unloaded."
+        ui_message mac.unloaded
     fi
-    echo "Daemon paused. Resume with: ./stop-loop.sh --resume-daemon"
+    ui_message mac.paused
 }
 
 resume_daemon() {
     if ! is_launchd_supported; then
-        echo "Daemon resume is only supported on macOS launchd."
-        echo "On Windows/WSL, start the loop with ./auto-loop.sh or make start."
+        ui_message mac.only "$OS_NAME"
         exit 1
     fi
 
     if [ ! -f "$PLIST_PATH" ]; then
-        echo "LaunchAgent plist not found: $PLIST_PATH"
-        echo "Install daemon first: ./install-daemon.sh"
+        ui_message mac.plist_missing "$PLIST_PATH"
         exit 1
     fi
 
@@ -73,8 +75,7 @@ resume_daemon() {
 
     # A failed load/start must leave the existing pause marker intact.
     rm -f "$PAUSE_FLAG"
-    echo "Pause flag removed."
-    echo "Daemon resumed and started."
+    ui_message mac.resumed
 }
 
 case "${1:-}" in
@@ -85,10 +86,7 @@ case "${1:-}" in
         resume_daemon
         ;;
     --help|-h)
-        echo "Usage:"
-        echo "  ./stop-loop.sh                 # Stop current loop process"
-        echo "  ./stop-loop.sh --pause-daemon  # Pause launchd daemon and stop loop (macOS only)"
-        echo "  ./stop-loop.sh --resume-daemon # Resume launchd daemon (macOS only)"
+        ui_message stop.help
         ;;
     *)
         stop_loop_process

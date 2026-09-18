@@ -13,7 +13,7 @@
 <body>
   <div class="mesh"></div>
   <div class="grain"></div>
-  <main class="deck">
+  <main class="deck" id="deck" hidden>
     <header class="hero panel reveal-1">
       <div>
         <p class="eyebrow">AUTO COMPANY</p>
@@ -22,13 +22,20 @@
       </div>
       <div class="hero-meta">
         <label class="language-control" for="languageSelect">
-          <span data-i18n="language.label">Interface language</span>
-          <select id="languageSelect" aria-describedby="languageHint">
+          <span data-i18n="language.label">Company language</span>
+          <select id="languageSelect" aria-describedby="languageHint languageStatus">
             <option value="en" lang="en">English</option>
-            <option value="zh" lang="zh-CN">中文</option>
+            <option value="zh-CN" lang="zh-CN">中文</option>
           </select>
         </label>
-        <p id="languageHint" class="language-hint" data-i18n="language.hint">Changes the interface only; engine output keeps its own language.</p>
+        <p id="languageHint" class="language-hint" data-i18n="language.hint">Shared by the dashboard, runtime, documentation and new products. Skills stay in English.</p>
+        <p id="languageStatus" class="language-hint" role="status" aria-live="polite"></p>
+        <nav class="documentation-links">
+          <a href="/docs/readme" data-i18n="docs.readme">Guide</a>
+          <a href="/docs/troubleshooting" data-i18n="docs.troubleshooting">Troubleshooting</a>
+          <a href="/docs/setup" data-i18n="docs.setup">Windows setup</a>
+          <a href="/docs/language" data-i18n="docs.language">Language settings</a>
+        </nav>
         <div class="pulse-wrap">
           <span id="pulseDot" class="pulse-dot"></span>
           <span id="pulseText" data-i18n="live.unknown">Live Link: UNKNOWN</span>
@@ -129,6 +136,7 @@
       <pre id="rawText" class="terminal hidden"></pre>
     </section>
   </main>
+  <noscript>This dashboard requires JavaScript.</noscript>
 
   <script src="/i18n.js"></script>
   <script src="/app.js"></script>

@@ -2,7 +2,7 @@
 
 UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
 ENGINE ?= claude
-LANGUAGE ?= zh-CN
+LANGUAGE ?=
 
 # === Quick Start ===
 
@@ -92,7 +92,7 @@ else
 	@bash ./scripts/wsl/dashboard-wsl.sh check
 	@printf 'PAUSE_REASON=manual\n' > .auto-loop-paused
 	@bash ./scripts/wsl/dashboard-wsl.sh stop
-	@echo "auto-company.service paused (stopped)."
+	@bash ./scripts/core/ui-messages.sh make.paused
 endif
 
 resume: ## Resume paused daemon
@@ -104,23 +104,20 @@ else
 	python3 ./scripts/core/usage.py resume
 	@rm -f .auto-loop-paused
 	@bash ./scripts/wsl/dashboard-wsl.sh start
-	@echo "auto-company.service resumed (started)."
+	@bash ./scripts/core/ui-messages.sh make.resumed
 endif
 
 # === Interactive ===
 
-.PHONY: language
-language: ## Save runtime language (LANGUAGE=zh-CN|en); stop the loop first
+.PHONY: language next-product
+language: ## Save global language (LANGUAGE=zh-CN|en); active products keep their language
 	python3 ./scripts/core/localization.py set --language "$(LANGUAGE)"
 
+next-product: ## Start a new product language cycle after stopping (CONFIRM=NEXT)
+	python3 ./scripts/core/localization.py next-product --confirm "$(CONFIRM)"
+
 team: ## Start selected engine interactive session (ENGINE=claude|codex)
-	@engine="$$(printf '%s' "$(ENGINE)" | tr '[:upper:]' '[:lower:]')"; \
-	if [ "$$engine" != "claude" ] && [ "$$engine" != "codex" ]; then \
-		echo "Unsupported ENGINE='$(ENGINE)'. Use ENGINE=claude or ENGINE=codex."; \
-		exit 1; \
-	fi; \
-	context="$$(python3 ./scripts/core/localization.py context)" || exit $$?; \
-	cd "$(CURDIR)" && "$$engine" "$$context"
+	@python3 ./scripts/core/localization.py team --engine "$$(printf '%s' "$(ENGINE)" | tr '[:upper:]' '[:lower:]')"
 
 # === Product repositories ===
 
@@ -155,6 +152,6 @@ reset-consensus: ## Back up and reset business state; preserve human rules (CONF
 # === Help ===
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@bash ./scripts/core/ui-messages.sh help
 
 .DEFAULT_GOAL := help

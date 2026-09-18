@@ -5,20 +5,21 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "messages-win.ps1")
 
 $repoWin = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
 $serverScript = Join-Path $repoWin "dashboard\\server.py"
 if (-not (Test-Path $serverScript)) {
-    throw "Dashboard server script not found: $serverScript"
+    throw (Get-AutoCompanyMessage -Key 'Dashboard server script not found: {0}' -Values @($serverScript))
 }
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    throw "python not found in PATH."
+    throw (Get-AutoCompanyMessage -Key 'python not found in PATH.')
 }
 
 $url = "http://$BindHost`:$Port"
-Write-Host "Starting dashboard server: $url"
-Write-Host "Press Ctrl+C in this window to stop."
+Write-Host (Get-AutoCompanyMessage -Key 'Starting dashboard server: {0}' -Values @($url))
+Write-Host (Get-AutoCompanyMessage -Key 'Press Ctrl+C in this window to stop.')
 
 if (-not $NoBrowser) {
     Start-Process $url | Out-Null

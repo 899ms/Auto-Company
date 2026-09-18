@@ -10,6 +10,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from localization import message
+
 from usage_lib import (
     UsageError,
     append_cycle_record,
@@ -182,15 +184,16 @@ def main(argv: list[str] | None = None) -> int:
             if args.format == "json":
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
             elif state is None:
-                print("Budget pause: inactive")
+                print(message(REPO_ROOT, "budget.inactive"))
             else:
-                print("Budget pause: ACTIVE (manual resume required)")
+                print(message(REPO_ROOT, "budget.active"))
                 print(json.dumps(state, ensure_ascii=False, indent=2))
+                print(message(REPO_ROOT, "budget.paused", state.get("reason", "usage_budget")))
             return 0
 
         if args.command == "resume":
             removed = resume_budget(args.pause_file)
-            print("Budget pause cleared for the next Cycle; its usage will be evaluated again." if removed else "Budget pause was not active.")
+            print(message(REPO_ROOT, "budget.resumed" if removed else "budget.not_paused"))
             return 0
     except (OSError, UsageError) as exc:
         print(f"usage error: {exc}", file=os.sys.stderr)
@@ -199,4 +202,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    if hasattr(os.sys.stdout, "reconfigure"):
+        os.sys.stdout.reconfigure(encoding="utf-8")
     raise SystemExit(main())

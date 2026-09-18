@@ -3,9 +3,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "messages-win.ps1")
 
 if (-not (Get-Command schtasks.exe -ErrorAction SilentlyContinue)) {
-    throw "schtasks.exe not found."
+    throw (Get-AutoCompanyMessage -Key 'schtasks.exe not found.')
 }
 
 $queryOutput = & schtasks.exe /Query /TN $TaskName /V /FO LIST 2>&1

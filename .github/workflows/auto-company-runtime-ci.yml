@@ -75,6 +75,7 @@ jobs:
           ./tests/test_windows_start_config.ps1
           ./tests/test_windows_wsl_paths.ps1
           ./tests/test_windows_env_culture.ps1
+          ./tests/test_windows_messages.ps1
 
       - name: Verify PowerShell 7 configuration and paths
         shell: pwsh
@@ -82,6 +83,7 @@ jobs:
           ./tests/test_windows_start_config.ps1
           ./tests/test_windows_wsl_paths.ps1
           ./tests/test_windows_env_culture.ps1
+          ./tests/test_windows_messages.ps1
 
   python-tests:
     name: Python unit tests
@@ -120,6 +122,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_daemon_installers.py -v
           python3 -m unittest discover -s tests -p test_macos_start.py -v
           python3 -m unittest discover -s tests -p test_log_rotation.py -v
+          python3 -m unittest discover -s tests -p test_ui_messages.py -v
 
       - name: Verify Dashboard Start with a real isolated LaunchAgent
         env:

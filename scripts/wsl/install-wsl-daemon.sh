@@ -10,19 +10,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$PROJECT_DIR/scripts/core/ui-messages.sh"
 SERVICE_NAME="auto-company.service"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 SERVICE_PATH="$SYSTEMD_USER_DIR/$SERVICE_NAME"
 CURRENT_USER="$(id -un)"
 
 if ! command -v systemctl >/dev/null 2>&1; then
-    echo "Error: systemctl not found. Enable systemd in WSL first."
+    ui_message systemd.missing
     exit 1
 fi
 
 if ! systemctl --user --version >/dev/null 2>&1; then
-    echo "Error: systemctl --user is unavailable for this session."
-    echo "Check WSL systemd setup and login session."
+    ui_message systemd.unavailable
     exit 1
 fi
 
@@ -59,20 +59,15 @@ EOF
 systemctl --user daemon-reload
 systemctl --user enable "$SERVICE_NAME" >/dev/null
 
-echo "Installed: $SERVICE_PATH"
-echo "Enabled: $SERVICE_NAME"
+ui_message systemd.installed "$SERVICE_PATH" "$SERVICE_NAME"
 
 if command -v loginctl >/dev/null 2>&1; then
     linger_state="$(loginctl show-user "$CURRENT_USER" -p Linger --value 2>/dev/null || true)"
     if [ "$linger_state" = "no" ]; then
         echo ""
-        echo "Note: linger is disabled for user '$CURRENT_USER'."
-        echo "Run once to improve background persistence:"
-        echo "  sudo loginctl enable-linger $CURRENT_USER"
+        ui_message systemd.linger "$CURRENT_USER"
     fi
 fi
 
 echo ""
-echo "Next commands:"
-echo "  systemctl --user start $SERVICE_NAME"
-echo "  systemctl --user status $SERVICE_NAME --no-pager"
+ui_message systemd.next "$SERVICE_NAME"

@@ -1,4 +1,5 @@
 const els = {
+  deck: document.getElementById("deck"),
   pulseDot: document.getElementById("pulseDot"),
   pulseText: document.getElementById("pulseText"),
   lastUpdate: document.getElementById("lastUpdate"),
@@ -38,6 +39,8 @@ const els = {
   autoToggle: document.getElementById("autoToggle"),
   refreshInterval: document.getElementById("refreshInterval"),
   languageSelect: document.getElementById("languageSelect"),
+  languageHint: document.getElementById("languageHint"),
+  languageStatus: document.getElementById("languageStatus"),
 };
 
 const { t } = DashboardI18n;
@@ -49,6 +52,10 @@ let lastUsage = null;
 let statusError = null;
 let usageError = null;
 let lastElapsed = 0;
+let languageState = null;
+let languageError = null;
+let languageSaving = false;
+let languageSequence = 0;
 
 function escapeHtml(text) {
   return String(text)
@@ -314,10 +321,10 @@ function renderUsageUnavailable(error) {
   applyCardState(els.cardUsage, "unavailable");
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, options = {}) {
   let response;
   try {
-    response = await fetch(url, { cache: "no-store" });
+    response = await fetch(url, { cache: "no-store", ...options });
   } catch (error) {
     throw { messageKey: "error.network", detail: error.message || String(error) };
   }
@@ -337,12 +344,76 @@ function errorText(error) {
   return detail ? `${message}: ${detail}` : message;
 }
 
-async function fetchStatus() {
+function renderLanguage() {
+  const language = languageState?.nextLanguage || languageState?.language || "en";
+  els.languageSelect.value = language;
+  els.languageSelect.disabled = languageSaving;
+  els.languageHint.textContent = languageState?.locked
+    ? t("language.locked", {
+      current: languageState.language === "zh-CN" ? "中文" : "English",
+      next: language === "zh-CN" ? "中文" : "English",
+    }) : t("language.hint");
+  els.languageStatus.textContent = languageSaving ? t("language.saving")
+    : languageError ? t(languageError) : languageState?.pending ? t("language.pending") : "";
+}
+
+function applyLanguageState(state) {
+  if (!state || !["en", "zh-CN"].includes(state.language)
+      || (state.nextLanguage && !["en", "zh-CN"].includes(state.nextLanguage))) {
+    throw new Error("Invalid language response");
+  }
+  languageState = state;
+  languageError = null;
+  DashboardI18n.setLanguage(state.language);
+  DashboardI18n.apply();
+  renderDashboard();
+}
+
+async function refreshLanguage() {
+  if (languageSaving) return;
+  const sequence = ++languageSequence;
+  try {
+    const state = await fetchJson("/api/language", { signal: AbortSignal.timeout(5000) });
+    if (sequence === languageSequence) applyLanguageState(state);
+  } catch {
+    if (sequence !== languageSequence) return;
+    languageError = "language.unavailable";
+    DashboardI18n.apply();
+    renderDashboard();
+  }
+}
+
+async function saveLanguage() {
+  const language = els.languageSelect.value;
+  languageSaving = true;
+  ++languageSequence;
+  renderLanguage();
+  try {
+    const response = await fetch("/api/language", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language }), signal: AbortSignal.timeout(5000),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      languageError = data.errorCode === "language_invalid" ? "language.invalid" : "language.saveFailed";
+    } else {
+      applyLanguageState(data);
+    }
+  } catch {
+    languageError = "language.saveFailed";
+  } finally {
+    languageSaving = false;
+    renderLanguage();
+  }
+}
+
+async function fetchStatus(includeLanguage = true) {
   const sequence = ++refreshSequence;
   const started = performance.now();
   const [statusResult, usageResult] = await Promise.allSettled([
     fetchJson("/api/status"),
     fetchJson(`/api/usage?period=${encodeURIComponent(els.usagePeriod.value)}`),
+    includeLanguage ? refreshLanguage() : Promise.resolve(),
   ]);
   if (sequence !== refreshSequence) return;
   usageError = usageResult.status === "rejected" ? usageResult.reason : null;
@@ -419,6 +490,7 @@ function renderDashboard() {
     els.rawText.textContent = errorText(statusError);
   }
   renderButtons();
+  renderLanguage();
 }
 
 async function runAction(action) {
@@ -468,17 +540,13 @@ els.btnRaw.addEventListener("click", () => {
 els.autoToggle.addEventListener("change", resetAutoTimer);
 els.refreshInterval.addEventListener("change", resetAutoTimer);
 els.usagePeriod.addEventListener("change", () => fetchStatus().catch(() => {}));
-els.languageSelect.addEventListener("change", () => {
-  DashboardI18n.setLanguage(els.languageSelect.value);
-  DashboardI18n.apply();
-  renderDashboard();
-});
+els.languageSelect.addEventListener("change", saveLanguage);
 
-DashboardI18n.apply();
-els.languageSelect.value = DashboardI18n.language;
-renderButtons();
-fetchStatus().catch((err) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  els.rawText.textContent = msg;
-});
-resetAutoTimer();
+async function bootstrap() {
+  await refreshLanguage();
+  els.deck.hidden = false;
+  resetAutoTimer();
+  await fetchStatus(false);
+}
+
+bootstrap();

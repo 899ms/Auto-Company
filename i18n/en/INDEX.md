@@ -38,7 +38,7 @@ Notes:
 - To switch a systemd service to Codex, use `.auto-loop.env` or `start-win.ps1 -Engine codex`. The foreground loop reads engine settings only from its process environment.
 - Cursor and OpenAI-compatible adapters require explicit opt-in. See [Engine Adapters](../../ENGINE_ADAPTERS.md) for configuration and contracts.
 - There is no automatic engine fallback. Startup fails if the selected engine is unavailable.
-- The default runtime language is `zh-CN`. Stop the loop, then use `make language LANGUAGE=en` to save the choice in `.auto-company.local`. The `AUTO_COMPANY_LANGUAGE` environment variable can override it. See [language settings](../README.md).
+- Language initially follows the computer's display language. Save one preference in the Dashboard or with `make language LANGUAGE=en`. Each product keeps its starting language; changes apply to the next product cycle. Saved settings take precedence over old environment values. See [language settings](README.md).
 
 Stop sequence:
 

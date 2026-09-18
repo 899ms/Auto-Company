@@ -1,6 +1,7 @@
 param([ValidateSet('tr-TR', 'en-US')][string]$CultureName)
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '../scripts/windows/messages-win.ps1')
 if (-not $CultureName) {
     # PowerShell caches compiled regexes across culture changes. Give each
     # culture a fresh process, using the same PowerShell edition as this test.

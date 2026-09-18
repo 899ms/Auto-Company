@@ -64,11 +64,11 @@ Humans supplied only the instruction to start and the delivery scope. From produ
 
 ## Languages and Documentation
 
-Runtime output supports `zh-CN` (default) and `en`. Stop the loop, then run `make language LANGUAGE=en` from the repository root to save `AUTO_COMPANY_LANGUAGE=en` in `.auto-company.local`; use `LANGUAGE=zh-CN` to switch back. On Windows, the equivalent is `python scripts/core/localization.py set --language en`. Start the loop again to apply the choice.
+One language setting controls the Dashboard, documentation links and new product work. The initial default follows your computer's display language: Chinese uses `zh-CN`; other languages use `en`. WSL uses the Windows display language when available.
 
-The process environment variable `AUTO_COMPANY_LANGUAGE` overrides that saved setting. Windows `start-win.ps1 -Language en` saves a daemon override in `.auto-loop.env`; macOS captures an environment override when installing launchd. The [language guide](i18n/README.md) explains configuration and precedence.
+Choose a language in the Dashboard or run `make language LANGUAGE=en` (`LANGUAGE=zh-CN` for Chinese). On Windows, use `python scripts/core/localization.py set --language en`. These entrypoints update the same preference. A product keeps its starting language across AI iterations, pauses and restarts. You can change the preference while it runs; the change applies to the next product cycle. The Dashboard shows both the current and next language. See the [language guide](i18n/en/README.md) for the product-cycle boundary and Windows startup parameters.
 
-Language selection preserves your root `PROMPT.md`, custom rules, and Human Overrides. Customized source files take precedence over bundled translations; missing translations fall back to the source. Existing logs and consensus history are preserved. The Dashboard has a separate language selector and remembers your browser preference.
+All bundled skills are written in English; their user-facing work follows the product's language. Commands, identifiers, protocol headings and raw tool errors retain their original form. Customized source instructions, existing products, logs and consensus history are preserved; changing language does not translate them retroactively.
 
 | Guide | English | 中文 |
 |---|---|---|
@@ -77,6 +77,7 @@ Language selection preserves your root `PROMPT.md`, custom rules, and Human Over
 | Company rules | [Charter](CLAUDE.md) | [公司章程](i18n/zh-CN/CLAUDE.md) |
 | Engine adapters | [Adapter guide](ENGINE_ADAPTERS.md) | [引擎适配器](i18n/zh-CN/ENGINE_ADAPTERS.md) |
 | Usage and budgets | [Governance guide](docs/usage-governance.md) | [用量与预算治理](i18n/zh-CN/docs/usage-governance.md) |
+| Operations and troubleshooting | [Common tasks and errors](i18n/en/docs/troubleshooting.md) | [常见操作与排错](docs/troubleshooting.md) |
 
 ## Team Lineup (14 Agents)
 

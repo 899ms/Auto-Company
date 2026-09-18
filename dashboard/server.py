@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import ipaddress
 import json
 import os
@@ -28,6 +29,7 @@ if str(CORE_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(CORE_SCRIPT_DIR))
 
 from usage_lib import UsageError, read_pause_state, summarize_usage  # noqa: E402
+import localization  # noqa: E402
 
 WINDOWS_STATUS_SCRIPT = REPO_ROOT / "scripts" / "windows" / "status-win.ps1"
 WINDOWS_START_SCRIPT = REPO_ROOT / "scripts" / "windows" / "start-win.ps1"
@@ -72,6 +74,55 @@ KNOWN_STATES = frozenset(
         "unsupported",
     }
 )
+
+DOCUMENTS = {
+    "readme": ("README.md", "README-ZH.md"),
+    "troubleshooting": ("docs/troubleshooting.md", None),
+    "setup": ("docs/windows-setup.md", None),
+    "language": ("i18n/en/README.md", "i18n/README.md"),
+}
+
+
+def documentation_page(name: str) -> str:
+    """Only expose bundled documentation, never arbitrary repository files."""
+    source, chinese = DOCUMENTS[name]
+    language = localization.language_state(REPO_ROOT)["language"]
+    if chinese is not None:
+        selected = chinese if language == "zh-CN" else source
+    else:
+        selected = localization.resource_map(REPO_ROOT, language).get(source, source)
+    allowed = {source, chinese, f"i18n/en/{source}", f"i18n/zh-CN/{source}"}
+    if selected not in allowed:
+        raise ValueError("invalid documentation path")
+    path = REPO_ROOT / selected
+    # Reject symlinks even when they point back inside the checkout, where a
+    # private local configuration could otherwise be exposed as a document.
+    if any((REPO_ROOT / Path(*Path(selected).parts[:index])).is_symlink()
+           for index in range(1, len(Path(selected).parts) + 1)):
+        raise ValueError("documentation must not use symlinks")
+    path.resolve().relative_to(REPO_ROOT.resolve())
+    content = path.read_text(encoding="utf-8")
+    if language == "zh-CN":
+        back = "返回控制台"
+        labels = {"readme": "使用指南", "troubleshooting": "故障排查", "setup": "Windows 安装", "language": "语言设置"}
+    else:
+        back = "Back to dashboard"
+        labels = {"readme": "Guide", "troubleshooting": "Troubleshooting", "setup": "Windows setup", "language": "Language settings"}
+    navigation = f'<a href="/">{back}</a>' + "".join(
+        f' <a href="/docs/{key}">{label}</a>' for key, label in labels.items()
+    )
+    return (
+        f'<!doctype html><html lang="{language}"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; '
+        'style-src &#39;unsafe-inline&#39;; base-uri &#39;none&#39;">'
+        f'<title>{labels[name]}</title><style>body{{max-width:960px;margin:32px auto;padding:0 20px;'
+        'font:16px/1.65 system-ui,sans-serif;color:#172b38;background:#f7fafc}'
+        'pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}a{color:#075a9e}'
+        'nav{display:flex;gap:16px;flex-wrap:wrap}</style></head>'
+        f'<body><nav>{navigation}</nav><h1>{labels[name]}</h1>'
+        f'<pre>{html.escape(content)}</pre></body></html>'
+    )
 
 
 def ps_quote(value: str) -> str:
@@ -592,6 +643,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path == "/api/language":
+            try:
+                self._json({"ok": True, **localization.language_state(REPO_ROOT)})
+            except (ValueError, OSError, UnicodeError):
+                self._json({"ok": False, "errorCode": "language_invalid"}, code=HTTPStatus.BAD_REQUEST)
+            return
+        if path.startswith("/docs/") and path[6:] in DOCUMENTS:
+            try:
+                page = documentation_page(path[6:])
+            except (KeyError, ValueError, OSError, UnicodeError):
+                self._text("Documentation unavailable", code=HTTPStatus.NOT_FOUND)
+                return
+            self._text(page, content_type="text/html; charset=utf-8")
+            return
+
         if path == "/" or path == "/index.html":
             self._serve_file(DASHBOARD_DIR / "index.html", "text/html; charset=utf-8")
             return
@@ -644,6 +710,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == "/api/language":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 1024 or self.headers.get("Transfer-Encoding"):
+                    raise ValueError("invalid request size")
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                if (not isinstance(body, dict) or set(body) != {"language"}
+                        or body["language"] not in localization.LANGUAGES):
+                    raise ValueError("invalid language selection")
+                localization.set_language(REPO_ROOT, body["language"])
+                self._json({"ok": True, **localization.language_state(REPO_ROOT)})
+            except (ValueError, UnicodeError):
+                self._json({"ok": False, "errorCode": "language_invalid"}, code=HTTPStatus.BAD_REQUEST)
+            except OSError:
+                self._json({"ok": False, "errorCode": "language_save_failed"}, code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if path not in {"/api/action/start", "/api/action/stop", "/api/action/refresh"}:
             self._text("Not found", code=404)
             return

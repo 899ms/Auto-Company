@@ -83,10 +83,5 @@
     "source": ".claude/skills/devops/references/kubernetes-helm-advanced.md",
     "target": "templates/_helpers.tpl",
     "reason": "Helm chart file to create in the user project; the document includes its contents."
-  },
-  {
-    "source": ".claude/skills/github-explorer/SKILL.md",
-    "target": "GitHub/官网链接",
-    "reason": "Placeholder URL in the output formatting checklist."
   }
 ]

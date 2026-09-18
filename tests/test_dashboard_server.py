@@ -132,6 +132,10 @@ class DashboardServerTests(unittest.TestCase):
             adapter = root / "scripts" / "wsl" / "dashboard-wsl.sh"
             adapter.parent.mkdir(parents=True)
             shutil.copy2(source, adapter)
+            (root / "scripts/core").mkdir()
+            for name in ("ui-messages.sh", "localization.py"):
+                shutil.copy2(SERVER_PATH.parents[1] / "scripts/core" / name, root / "scripts/core" / name)
+            shutil.copytree(SERVER_PATH.parents[1] / "i18n", root / "i18n")
             fake_bin = root / "bin"
             fake_bin.mkdir()
             shutil.copy2(fixture, fake_bin / "systemctl")
@@ -163,7 +167,6 @@ class DashboardServerTests(unittest.TestCase):
             self.assertIn("make install", run("status").stdout)
             env.pop("FAKE_SERVICE_MISSING")
             shutil.copy2(SERVER_PATH.parents[1] / "Makefile", root / "Makefile")
-            (root / "scripts/core").mkdir()
             for name in ("usage.py", "usage_lib.py"):
                 shutil.copy2(SERVER_PATH.parents[1] / "scripts/core" / name, root / "scripts/core" / name)
             pause = root / ".auto-loop-paused"

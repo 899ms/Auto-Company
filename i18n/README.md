@@ -1,106 +1,80 @@
-# Languages / 语言
+# 语言设置
 
-Auto-Company supports English and Simplified Chinese for its own instructions,
-documentation and Dashboard. [English resources](en/README.md) ·
-[English project guide](../README.md) · [中文项目说明](../README-ZH.md)
+[English](en/README.md) · [项目说明](../README-ZH.md)
 
-## Runtime language / 运行语言
+一个语言偏好统一控制 Dashboard、文档入口、AI 的新输出和新产品的目标语言。首次默认读取电脑显示语言：中文使用 `zh-CN`，其他语言使用 `en`；WSL 优先读取 Windows 显示语言，无法读取时使用 Linux 区域设置。
 
-Stop the loop before changing its human-owned configuration. From the repository root:
+## 选择语言
 
-先停止循环，再从仓库根目录修改人工配置：
+在 Dashboard 选择语言，或在仓库根目录执行：
 
 ```bash
-make language LANGUAGE=en
-# Chinese / 中文
 make language LANGUAGE=zh-CN
+make language LANGUAGE=en
 ```
 
-On Windows, without make / Windows 不使用 make 时：
+Windows 不使用 make 时：
 
 ```powershell
 python scripts/core/localization.py set --language en
 ```
 
-This updates only `AUTO_COMPANY_LANGUAGE` in `.auto-company.local`, preserving
-project selection, comments and other settings. The default is `zh-CN`.
-The process environment variable `AUTO_COMPANY_LANGUAGE` overrides the saved
-choice. Invalid values block model invocation. Both `make start` and `make team`
-use this setting. Restart an interactive session after changing it.
+Windows 的 `start-win.ps1 -Language en` 也保存同一个偏好。已保存设置优先于旧服务中的 `AUTO_COMPANY_LANGUAGE` 环境变量；环境值只在没有保存设置时提供初始选择。Dashboard 不再保留独立浏览器语言偏好，无需同步修改多处配置。
 
-此命令只更新 `.auto-company.local` 中的 `AUTO_COMPANY_LANGUAGE`，保留项目选择、
-注释和其他配置；默认值为 `zh-CN`。同名环境变量优先于已保存设置。
-非法值会阻止模型调用。`make start` 与 `make team` 都会使用此设置，
-交互会话需要重启才能应用修改。
+## 一个产品周期内保持固定
 
-Windows `start-win.ps1 -Language en` writes an override into the existing
-`.auto-loop.env` used by systemd. A macOS language environment override is captured
-when installing launchd; reinstall to change that captured override. Prefer the
-repository-local setting above for a common configuration across platforms.
+“产品周期”是同一个产品从启动到交付的过程，可以包含多轮 AI 执行。首次开始时固定当前语言；暂停、重启和恢复都沿用它。
 
-Windows 的 `start-win.ps1 -Language en` 会将覆盖值写入现有 systemd 使用的
-`.auto-loop.env`。macOS 安装 launchd 时会保存环境变量中的语言覆盖值；修改此覆盖值
-需要重新安装服务。跨平台统一配置推荐使用上面的仓库本地设置。
+| 操作 | 结果 |
+|---|---|
+| 首次启动前选择英文 | 当前界面和新产品工作使用英文 |
+| 中文产品运行中选择英文 | 保存下个周期为英文，当前产品及其界面继续中文 |
+| 暂停或重新启动同一产品 | 继续原语言 |
+| 明确开始下一个产品周期 | 使用最新保存的偏好 |
 
-## Resource selection / 资源选择
+Dashboard 会显示当前周期和下个周期的语言。修改偏好无需停止产品，也不会中途改变提示词或生成内容的语言。
 
-`scripts/core/localization.py` builds the runtime language instructions and selects
-localized files using `source-hashes.json`. It never rewrites the original files.
-A packaged translation is used only when its source still matches the reviewed
-baseline (CRLF/LF differences do not count as edits). If the source was customized
-or a translation is missing, the original source is selected instead. The runtime
-prompt lists the selected paths for roles and skills. Explicit human instructions
-take precedence over the output-language preference.
+准备开始下个产品时，先正常停止前台循环（`make stop`）或暂停后台服务（`make pause`），再执行：
 
-`scripts/core/localization.py` 根据 `source-hashes.json` 选择资源并生成语言指令，
-不会重写原始文件。仅在原文仍与已审核基线一致时使用配套译文，CRLF/LF 差异不算修改。
-若用户已定制原文，或译文缺失，则使用原始文件。运行提示词会列出角色与技能应读取的
-路径；明确的人工指令优先于输出语言偏好。
+```bash
+make next-product CONFIRM=NEXT
+```
 
-Consensus protocol headings, identifiers, commands and paths remain unchanged.
-Existing logs, prior consensus prose and the protected `Human Overrides` section
-are not translated. The language selection file retains its existing governance
-protection: agents may not edit it during a cycle. Direct CLI invocations outside
-`make team` do not automatically receive these runtime language instructions.
+Windows 可先使用 `./scripts/windows/stop-win.ps1`，再执行：
 
-共识协议标题、标识符、命令和路径保持不变；既有日志、历史共识和受保护的
-`Human Overrides` 区段不会被翻译。语言配置沿用人工配置保护：Agent 不得在周期内修改。
-绕过 `make team` 直接运行 CLI 时，不会自动注入本项目的运行语言指令。
+```powershell
+python scripts/core/localization.py next-product --confirm NEXT
+```
 
-## Coverage / 覆盖范围
+这一步明确切换产品周期的语言记录，不会启动模型，也不会清空历史、预算、人工规则或现有产品文件。若上一轮异常中断，先按原有恢复流程处理，再切换周期。新产品的项目选择和任务需求仍按正常流程设置。
 
-| Content / 内容 | English / 英文 | Chinese / 中文 |
-|---|---|---|
-| Project README / 项目说明 | `README.md` | `README-ZH.md` |
-| Loop prompt, 14 roles, team and GitHub Explorer skills / 循环提示词、14 个角色、组队及项目调研技能 | `i18n/en/` | Original files / 原文件 |
-| Repository index and Windows guide / 仓库索引与 Windows 指南 | `i18n/en/` | Original files / 原文件 |
-| Company rules, engine adapters and usage governance / 公司规则、引擎适配与用量治理 | Original files / 原文件 | `i18n/zh-CN/` |
-| Dashboard / 看板 | Interface selector / 界面选择器 | Interface selector / 界面选择器 |
+## 哪些内容跟随语言
 
-Dashboard language is a separate browser preference. It follows the first supported
-browser language initially, falls back to English, and remembers an explicit choice
-when browser storage is available. It does not change runtime settings or translate
-raw provider errors, logs, consensus, or user-created content.
+| 内容 | 行为 |
+|---|---|
+| Dashboard、文档入口、常见操作提示 | 使用当前周期语言；尚未开始时使用已选偏好 |
+| 新的说明、决策、交付报告与共识正文 | 提示 AI 使用当前周期语言 |
+| 新产品界面、帮助、说明文档 | 将当前周期语言作为交付要求，并要求验收检查 |
+| 全部附带 skill 源文件 | 统一英文；面向用户的结果仍跟随产品语言 |
+| 命令、路径、标识符、协议标题、底层原始错误 | 保留原样 |
+| 既有产品、历史日志、自定义源文件、人工规则 | 保留原内容，不追溯翻译 |
 
-看板语言是独立的浏览器偏好：初次采用浏览器支持的语言，否则回退英文；浏览器允许
-存储时会记住手动选择。它不会改变运行语言，也不翻译提供商原始错误、日志、共识或用户内容。
+AI 生成内容的语言由任务指令约束，仍需在产品验收时检查。GitHub 托管页面、第三方工具和用户提供的原文不受本地设置控制；GitHub 上可使用 README 顶部的中英文入口。
 
-Bundled third-party skills, generated product repositories, terminal diagnostics
-and machine-readable status/API fields retain their existing language. This release
-does not translate those surfaces.
+## 资源与维护
 
-附带的第三方技能、生成的产品仓库、终端诊断和机器读取的状态/API 字段保留原有语言，
-不在本版翻译范围内。
+角色与文档通过 `source-hashes.json` 选择已审核的译文。仅当源文件未被定制时使用配套译文；源文件已修改或译文缺失时保留源文件，CRLF/LF 换行差异不视为定制。所有技能直接使用 `.claude/skills/` 下的英文版本。
 
-## Updating translations / 维护译文
+修改受覆盖的源文件时，同步审核两种语言的指令强度、术语、命令和链接，再更新对应哈希。运行语言、Dashboard 和受影响流程的检查；不要仅为消除测试失败刷新哈希。
 
-When changing a source, update both language versions and review instruction strength,
-terminology, code blocks and links. Then update its SHA-256 in `source-hashes.json`
-using UTF-8 bytes with CRLF normalized to LF. Run `tests/test_localization.py` and
-the affected runtime or Dashboard tests. Do not refresh hashes merely to silence
-a stale-translation failure. A fallback protects custom source files; it is not a
-substitute for keeping the released translations current.
+更多操作见[常见操作与排错](../docs/troubleshooting.md)。
 
-修改原文后，同步更新两种语言并核对指令强度、术语、代码块与链接；再将 UTF-8 内容
-的 CRLF 归一为 LF，更新 `source-hashes.json` 中对应 SHA-256。运行语言选择测试及受影响的
-运行或看板测试。不得仅为消除失败而刷新哈希。回退用于保护用户定制，不能替代发布前的译文同步。
+### 写入进程异常退出后的恢复
+
+如果出现配置忙碌或交互会话标记残留的提示，先停止前台循环或暂停后台服务，关闭全部 `make team` 会话及其子进程、Dashboard 和正在修改配置的命令。确认这些进程都已退出后，在仓库根目录执行：
+
+```bash
+python3 scripts/core/localization.py recover-lock --confirm RECOVER
+```
+
+Windows 使用 `python` 代替 `python3`。`RECOVER` 表示你已确认所有相关进程停止；不要对仍在写入的进程执行。恢复会完成尚未结束的语言偏好保存，并清理残留的操作标记，不改变当前产品语言、不清空历史。若提示循环仍在运行或锁目录内容异常，先处理该原因，不要直接删除配置或治理备份。

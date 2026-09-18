@@ -16,7 +16,7 @@
 # Config (env vars):
 #   ENGINE=claude               # claude|codex|cursor|openai-compatible
 #   MODEL=...                   # Optional model override (empty = engine default)
-#   AUTO_COMPANY_LANGUAGE=zh-CN # zh-CN|en; otherwise read .auto-company.local
+#   AUTO_COMPANY_LANGUAGE=zh-CN # Initial fallback only; saved preference wins
 #   CLAUDE_BIN=...              # Optional Claude executable override
 #   CLAUDE_PERMISSION_MODE=bypassPermissions
 #                               # Claude permission mode (default: bypassPermissions)
@@ -53,6 +53,7 @@ set -euo pipefail
 # === Resolve project root (always relative to this script) ===
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$PROJECT_DIR/scripts/core/ui-messages.sh"
 source "$SCRIPT_DIR/process-supervisor.sh"
 
 LOG_DIR="$PROJECT_DIR/logs"
@@ -95,13 +96,14 @@ if [ "$ENGINE" = "openai-compatible" ]; then
     MODEL_LABEL="$OPENAI_COMPATIBLE_MODEL"
 fi
 if ! engine_adapter_validate; then
+    ui_message engine.invalid >&2
     # EX_CONFIG lets service managers distinguish operator configuration errors
     # from runtime failures and avoid a restart loop.
     exit 78
 fi
 
 if ! cycle_supervisor_validate_config "$CYCLE_TIMEOUT_SECONDS" "$CYCLE_TERM_GRACE_SECONDS" "$CYCLE_KILL_WAIT_SECONDS"; then
-    echo "Error: cycle timeout, TERM grace, and KILL wait must be non-negative integer seconds."
+    ui_message loop.timeout_invalid
     exit 1
 fi
 
@@ -175,6 +177,7 @@ wait_while_paused() {
     [ -f "$PAUSE_FLAG" ] || return 0
     pause_reason=$(read_pause_reason "$PAUSE_FLAG" "manual_or_governance")
     log "Loop paused (${pause_reason}). Remove .auto-loop-paused only after reviewing the reason."
+    log "$(ui_message loop.paused "$pause_reason")"
     while [ -f "$PAUSE_FLAG" ]; do
         save_state "paused" "$pause_reason"
         if check_stop_requested; then
@@ -184,6 +187,7 @@ wait_while_paused() {
         loop_sleep 5
     done
     log "Governance pause cleared. Resuming preflight checks."
+    log "$(ui_message loop.resuming)"
 }
 
 save_state() {
@@ -207,6 +211,7 @@ wait_for_budget_resume() {
 
     pause_reason=$(read_pause_reason "$BUDGET_PAUSE_FILE" "usage_budget")
     log "Usage governance pause is active (${pause_reason}). Next cycle is blocked until manual 'make resume'."
+    log "$(ui_message budget.paused "$pause_reason")"
     while [ -f "$BUDGET_PAUSE_FILE" ]; do
         save_state "paused" "$pause_reason"
         if check_stop_requested; then
@@ -216,6 +221,7 @@ wait_for_budget_resume() {
         loop_sleep "$BUDGET_PAUSE_POLL_SECONDS"
     done
     log "Budget pause cleared manually. Cycles may resume."
+    log "$(ui_message budget.resumed)"
 }
 
 record_cycle_usage() {
@@ -260,6 +266,7 @@ cleanup() {
     fi
     python3 "$USAGE_TOOL" recover --ledger "$USAGE_FILE" --pause-file "$BUDGET_PAUSE_FILE" || log "Interrupted usage recovery failed; pending identity retained for restart"
     log "=== Auto Loop Shutting Down (PID $$) ==="
+    log "$(ui_message loop.stopping)"
     # Keep the inode: unlinking a held lock lets another process lock a new file.
     : > "$PID_FILE"
     save_state "$final_state"
@@ -453,6 +460,7 @@ extract_cycle_metadata() {
 
 if ! command -v python3 >/dev/null 2>&1; then
     echo "Error: python3 is required for process ownership and structured usage accounting."
+    ui_message python.required
     exit 1
 fi
 
@@ -489,6 +497,7 @@ fi
 
 if ! RESOLVED_ENGINE_BIN="$(resolve_engine_bin)"; then
     echo "Error: $(engine_adapter_missing_dependency_message)"
+    ui_message engine.missing
     exit 1
 fi
 
@@ -499,6 +508,7 @@ fi
 
 if ! command -v python3 >/dev/null 2>&1; then
     echo "Error: python3 is required for structured usage accounting."
+    ui_message python.required
     exit 1
 fi
 
@@ -506,6 +516,7 @@ fi
 # hard-budget pause from the durable ledger after restart.
 if ! python3 "$USAGE_TOOL" check --ledger "$USAGE_FILE" --pause-file "$BUDGET_PAUSE_FILE" --result-format state >/dev/null; then
     echo "Error: usage budget preflight failed; no cycle was started."
+    ui_message budget.invalid
     exit 78
 fi
 
@@ -523,6 +534,7 @@ trap 'cleanup 0 stopped' SIGTERM SIGINT SIGHUP
 wait_for_budget_resume
 
 log "=== Auto Company Loop Started (PID $$) ==="
+log "$(ui_message loop.started "$$")"
 log "Project: $PROJECT_DIR"
 log "$(engine_adapter_description)"
 log "Engine bin: $RESOLVED_ENGINE_BIN"
@@ -584,13 +596,16 @@ while true; do
         ACTIVE_PROJECT="projects/${ACTIVE_PROJECT_PATH##*/}"
     fi
 
-    # Resolve language each cycle, preserving customized source instructions.
-    if ! PROMPT=$(python3 "$LOCALIZATION_TOOL" prompt --root "$PROJECT_DIR"); then
+    # Pin once for the whole product, including later iterations and restarts.
+    if ! python3 "$LOCALIZATION_TOOL" start --root "$PROJECT_DIR" >/dev/null ||
+       ! AUTO_COMPANY_LANGUAGE=$(python3 "$LOCALIZATION_TOOL" check --root "$PROJECT_DIR") ||
+       ! PROMPT=$(python3 "$LOCALIZATION_TOOL" prompt --root "$PROJECT_DIR"); then
         log_cycle "$next_cycle" "FAIL" "Invalid language configuration or prompt; engine invocation blocked"
         printf 'PAUSE_REASON=language_invalid\n' > "$PAUSE_FLAG"
         wait_while_paused
         continue
     fi
+    export AUTO_COMPANY_LANGUAGE
 
     loop_count=$next_cycle
     cycle_log="$LOG_DIR/cycle-$(printf '%04d' "$loop_count")-$(date '+%Y%m%d-%H%M%S')-${run_id}.log"
