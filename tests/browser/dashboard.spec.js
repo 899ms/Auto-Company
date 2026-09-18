@@ -138,6 +138,39 @@ test("unavailable bootstrap stays usable and can recover from visible controls",
 test.describe("host action boundary", () => {
   test.use({ scenario: "action-success" });
 
+  test("stop is immediate during a slow refresh and disables duplicate controls", async ({ page }) => {
+    await page.locator("#startButton").click();
+    await expect(page.locator("#stopButton")).toBeEnabled();
+    let releaseStatus, releaseStop;
+    let statusSeen, stopSeen;
+    const statusGate = new Promise((resolve) => { releaseStatus = resolve; });
+    const stopGate = new Promise((resolve) => { releaseStop = resolve; });
+    const statusReceived = new Promise((resolve) => { statusSeen = resolve; });
+    const stopReceived = new Promise((resolve) => { stopSeen = resolve; });
+    await page.route("**/api/journal", async (route) => {
+      const response = await route.fetch();
+      statusSeen();
+      await statusGate;
+      await route.fulfill({ response });
+    }, { times: 1 });
+    await page.route("**/api/action/stop", async (route) => {
+      stopSeen();
+      await stopGate;
+      await route.continue();
+    }, { times: 1 });
+    await page.locator("#refreshButton").click();
+    await statusReceived;
+    await page.locator("#stopButton").click();
+    await stopReceived;
+    await expect(page.locator("#runtimeState")).toHaveText("Stopping…");
+    await expect(page.locator("#startButton")).toBeDisabled();
+    await expect(page.locator("#stopButton")).toBeDisabled();
+    releaseStatus();
+    releaseStop();
+    await expect(page.locator("#runtimeState")).toHaveText("Stopped");
+    await expect(page.locator("#startButton")).toBeEnabled();
+  });
+
   test("start and stop use the real HTTP protocol and refresh verified state", async ({ page, dashboard }) => {
     const start = page.waitForResponse((response) => response.url().endsWith("/api/action/start"));
     await page.locator("#startButton").click();
@@ -159,6 +192,16 @@ test.describe("host action boundary", () => {
 
 test.describe("a verified running cycle", () => {
   test.use({ scenario: "running-cycle" });
+
+  test("failed stop remains visible after reload and permits retry only", async ({ page }) => {
+    await page.locator("#stopButton").click();
+    await expect(page.locator("#runtimeState")).toHaveText("Stop incomplete — retry Stop");
+    await expect(page.locator("#startButton")).toBeDisabled();
+    await expect(page.locator("#stopButton")).toBeEnabled();
+    await page.reload();
+    await expect(page.locator("#runtimeState")).toHaveText("Stop incomplete — retry Stop");
+    await expect(page.locator("#stopButton")).toBeEnabled();
+  });
 
   test("shows current execution separately from the last completed report", async ({ page, dashboard }) => {
     await expect(page.locator("#cycleNumber")).toHaveText("02");

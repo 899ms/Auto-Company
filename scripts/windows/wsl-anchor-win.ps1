@@ -3,6 +3,7 @@ param(
     [string]$Action = "status",
     [string]$Distro = "Ubuntu",
     [string]$RepoWsl = "",
+    [string]$Token = "",
     [ValidateSet("zh-CN", "en")][string]$Language
 )
 
@@ -43,7 +44,8 @@ function Get-RunningAnchorProcess {
         return $null
     }
 
-    $pidText = (Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+    $pidText = [string](Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+    $pidText = $pidText.Trim()
     if (-not $pidText) {
         return $null
     }
@@ -59,10 +61,18 @@ function Get-RunningAnchorProcess {
     }
 
     $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction SilentlyContinue).CommandLine
-    if ($cmd -and $cmd -match "wsl-anchor-win\.ps1" -and $cmd -match "-Action\s+run") {
+    if ($cmd -and $cmd -match ('(?:^|\s)-File\s+"?' + [regex]::Escape($PSCommandPath) + '"?(?=\s|$)') -and $cmd -match "-Action\s+run") {
         return $proc
     }
     return $null
+}
+
+function Invoke-LinuxAnchor {
+    param([string]$Operation, [string]$RunToken = "")
+    $resolved = Resolve-RepoWslPath -RawRepoWsl $RepoWsl
+    $helper = "$resolved/scripts/wsl/anchor.py"
+    & wsl.exe -d $Distro --cd $resolved -e python3 $helper $Operation $RunToken
+    if ($LASTEXITCODE -ne 0) { throw "WSL anchor $Operation could not be confirmed." }
 }
 
 function Clear-StateFiles {
@@ -72,12 +82,15 @@ function Clear-StateFiles {
 
 switch ($Action) {
     "start" {
+        $linuxState = Invoke-LinuxAnchor -Operation status
         $existing = Get-RunningAnchorProcess
-        if ($existing) {
+        if ($existing -or $linuxState -match "Linux: RUNNING") {
             Write-Output "WSL anchor: RUNNING (PID $($existing.Id))"
             exit 0
         }
 
+        # Recover an orphaned Linux keeper before creating a new generation.
+        Invoke-LinuxAnchor -Operation stop
         $resolvedRepoWsl = Resolve-RepoWslPath -RawRepoWsl $RepoWsl
         Remove-Item $stopFile -ErrorAction SilentlyContinue
         $selfPath = $PSCommandPath
@@ -85,21 +98,23 @@ switch ($Action) {
         $proc = Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -PassThru -ArgumentList @(
             "-NoProfile",
             "-ExecutionPolicy", "Bypass",
-            "-File", $selfPath,
+            "-File", ('"' + $selfPath + '"'),
             "-Action", "run",
             "-Distro", $Distro,
-            "-RepoWsl", $resolvedRepoWsl
+            "-RepoWsl", ('"' + $resolvedRepoWsl + '"'),
+            "-Token", ([guid]::NewGuid().ToString("N"))
         )
 
         for ($i = 0; $i -lt 25; $i++) {
             Start-Sleep -Milliseconds 200
             $running = Get-RunningAnchorProcess
-            if ($running) {
+            if ($running -and ((Invoke-LinuxAnchor -Operation status) -match "Linux: RUNNING")) {
                 Write-Output (Get-AutoCompanyMessage -Key 'WSL anchor started (PID {0}).' -Values @($running.Id))
                 exit 0
             }
         }
 
+        Invoke-LinuxAnchor -Operation stop
         if ($proc -and -not $proc.HasExited) {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
         }
@@ -113,41 +128,38 @@ switch ($Action) {
         Remove-Item $stopFile -ErrorAction SilentlyContinue
 
         try {
-            while (-not (Test-Path $stopFile)) {
-                & wsl.exe -d $Distro --cd $resolvedRepoWsl bash -lc "while true; do sleep 3600; done" | Out-Null
-                if (Test-Path $stopFile) {
-                    break
-                }
-                Start-Sleep -Seconds 2
-            }
+            if (-not $Token) { throw "WSL anchor run requires an ownership token." }
+            Invoke-LinuxAnchor -Operation run -RunToken $Token
         }
         finally {
-            Clear-StateFiles
+            # The stop caller clears the marker only after Linux exit is verified.
+            Remove-Item $pidFile -ErrorAction SilentlyContinue
         }
         exit 0
     }
 
     "stop" {
-        $existing = Get-RunningAnchorProcess
-        if (-not $existing) {
-            Clear-StateFiles
-            Write-Output (Get-AutoCompanyMessage -Key 'WSL anchor is not running.')
-            exit 0
-        }
-
         [System.IO.File]::WriteAllText($stopFile, "1`n", $utf8NoBom)
-        Start-Sleep -Milliseconds 500
-        if (-not $existing.HasExited) {
-            Stop-Process -Id $existing.Id -Force -ErrorAction SilentlyContinue
+        Invoke-LinuxAnchor -Operation stop
+        $existing = Get-RunningAnchorProcess
+        if ($existing -and -not $existing.WaitForExit(3000)) {
+            # Linux is already confirmed gone. Only our exact wrapper is eligible.
+            $owned = Get-RunningAnchorProcess
+            if ($owned -and $owned.StartTime -eq $existing.StartTime) {
+                Stop-Process -InputObject $owned -Force
+                if (-not $owned.WaitForExit(3000)) { throw "WSL anchor wrapper cleanup is incomplete." }
+            }
         }
+        if (Get-RunningAnchorProcess) { throw "WSL anchor wrapper is still running." }
         Clear-StateFiles
         Write-Output (Get-AutoCompanyMessage -Key 'WSL anchor stopped.')
         exit 0
     }
 
     "status" {
+        $linuxState = Invoke-LinuxAnchor -Operation status
         $existing = Get-RunningAnchorProcess
-        if ($existing) {
+        if ($existing -or $linuxState -match "Linux: RUNNING") {
             Write-Output "WSL anchor: RUNNING (PID $($existing.Id))"
         } else {
             Write-Output "WSL anchor: STOPPED"

@@ -151,6 +151,10 @@ function Start-AutoCompanyService {
     $null = Invoke-WslCommand -RepoWsl $RepoWsl -Command "bash scripts/wsl/dashboard-wsl.sh start"
 }
 
+if (Test-Path (Join-Path $PSScriptRoot '../../.auto-loop-stop-pending')) {
+    throw "The previous stop is unconfirmed. Retry Stop before starting again."
+}
+
 Assert-WslAvailable
 $paths = Get-RepoPaths
 $repoWin = $paths.RepoWin

@@ -22,11 +22,11 @@
     return text.length > length ? `${text.slice(0, length).trim()}…` : text;
   }
   function statusLabel(status) {
-    return ['completed', 'completed_with_timeout', 'failed', 'interrupted', 'stopped_status', 'running', 'idle', 'paused', 'waiting_limit', 'circuit_break', 'stopped', 'active', 'inactive', 'configured', 'not_configured', 'not_installed', 'mismatched', 'activating', 'deactivating', 'reloading', 'unsupported'].includes(status) ? message(status) : status === 'unavailable' ? message('statusUnavailable') : message('unknown');
+    return ['stopping', 'stop_failed', 'completed', 'completed_with_timeout', 'failed', 'interrupted', 'stopped_status', 'running', 'idle', 'paused', 'waiting_limit', 'circuit_break', 'stopped', 'active', 'inactive', 'configured', 'not_configured', 'not_installed', 'mismatched', 'activating', 'deactivating', 'reloading', 'unsupported'].includes(status) ? message(status) : status === 'unavailable' ? message('statusUnavailable') : message('unknown');
   }
   function readOnly() { return state.data?.readOnly !== false; }
   function liveProcess() { return !readOnly() && !state.statusFailed && state.data?.runtime?.processState === 'running'; }
-  function runtimeLabel() { return statusLabel(state.statusFailed ? 'unavailable' : state.data?.runtime?.state); }
+  function runtimeLabel() { return statusLabel(state.action === 'stop' ? 'stopping' : state.data?.control?.stopUnconfirmed ? (state.data?.control?.action === 'stop' ? 'stopping' : 'stop_failed') : state.statusFailed ? 'unavailable' : state.data?.runtime?.state); }
   function pauseLabel(value) { return message(`pause_${value}`) === `pause_${value}` ? String(value || '') : message(`pause_${value}`); }
   async function fetchJSON(url, options = {}, timeout = 100000) {
     const controller = new AbortController();
@@ -261,13 +261,15 @@
     const runtime = data?.runtime || {};
     const unavailable = state.statusFailed || runtime.available === false;
     const process = runtime.processState || runtime.state;
-    const locked = !data || readOnly() || unavailable || Boolean(state.action);
+    const action = state.action || data?.control?.action;
+    const retryStop = data?.control?.stopUnconfirmed === true;
+    const locked = !data || readOnly() || (unavailable && !retryStop) || Boolean(action);
     $('runtimeState').textContent = runtimeLabel();
     $('runtimeState').dataset.state = unavailable ? 'unavailable' : runtime.state || 'unknown';
-    $('startButton').disabled = locked || !['stopped', 'inactive'].includes(process);
-    $('stopButton').disabled = locked || process !== 'running';
-    $('startButton').textContent = message(state.action === 'start' ? 'starting' : 'start');
-    $('stopButton').textContent = message(state.action === 'stop' ? 'stopping' : 'stop');
+    $('startButton').disabled = locked || retryStop || !['stopped', 'inactive'].includes(process);
+    $('stopButton').disabled = locked || (!retryStop && process !== 'running');
+    $('startButton').textContent = message(action === 'start' ? 'starting' : 'start');
+    $('stopButton').textContent = message(action === 'stop' ? 'stopping' : 'stop');
     $('startButton').title = $('stopButton').title = readOnly() ? message('readOnly') : unavailable ? message('statusUnavailable') : '';
     $('refreshButton').disabled = Boolean(state.refreshPending || state.action);
     $('modeNote').textContent = data ? message(readOnly() ? 'preview' : 'live') : '';
@@ -633,17 +635,19 @@
     clearTimeout(state.timer);
     renderRuntime();
     actionMessage('actionPending', { action: message(action) });
-    if (state.refreshPending) await state.refreshPending;
+    if (action === 'start' && state.refreshPending) await state.refreshPending;
     try {
       // Recheck after any in-flight status read before mutating the runtime.
       const process = state.data?.runtime?.processState || state.data?.runtime?.state;
-      if (readOnly() || state.statusFailed || (action === 'start' ? !['stopped', 'inactive'].includes(process) : process !== 'running')) throw new Error(message('stateChanged'));
+      const retryStop = action === 'stop' && state.data?.control?.stopUnconfirmed === true;
+      if (readOnly() || (!retryStop && (state.statusFailed || (action === 'start' ? !['stopped', 'inactive'].includes(process) : process !== 'running')))) throw new Error(message('stateChanged'));
       const result = await fetchJSON(`/api/action/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 120000);
       if (result.ok !== true) throw new Error('Action not confirmed');
       actionMessage('actionComplete', { action: message(action) });
     } catch (error) {
       actionMessage('actionFailed', { action: message(action), detail: error.name === 'AbortError' ? message('actionUnconfirmed') : error.message || message('actionUnconfirmed') }, true);
     } finally {
+      if (state.refreshPending) await state.refreshPending;
       await refresh();
       state.action = '';
       renderRuntime();

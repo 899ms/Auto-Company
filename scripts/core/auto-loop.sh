@@ -261,6 +261,25 @@ cleanup() {
         final_state="process_cleanup_failed"
         log "Process-tree cleanup could not be confirmed for cycle PGID ${CYCLE_SUPERVISOR_LAST_PGID}"
     else
+        # A signal interrupts adapter_execute before it can publish its output.
+        # Preserve already emitted evidence after the owned process tree exits.
+        if [ -n "${ADAPTER_OUTPUT_FILE:-}" ] && [ -f "$ADAPTER_OUTPUT_FILE" ] &&
+           [ -f "${USAGE_FILE}.pending" ]; then
+            ADAPTER_OUTPUT=$(adapter_redact < "$ADAPTER_OUTPUT_FILE")
+            printf '%s\n' "$ADAPTER_OUTPUT" > "$cycle_log"
+            ADAPTER_RESULT_SOURCE="$ADAPTER_OUTPUT"
+            ADAPTER_EXIT_CODE=130
+            ADAPTER_TIMED_OUT=0
+            engine_adapter_extract_metadata
+            cycle_record="${cycle_log%.log}.json"
+            engine_adapter_write_record "$cycle_record" interrupted "Stopped by operator"
+            cycle_ended_at=$(date '+%Y-%m-%dT%H:%M:%S%z')
+            CYCLE_LEDGER_STATUS=interrupted
+            EXIT_CODE=130
+            record_cycle_usage >/dev/null
+            rm -f "$ADAPTER_OUTPUT_FILE"
+            ADAPTER_OUTPUT_FILE=""
+        fi
         # The engine must be stopped before restoring its interrupted governance baseline.
         "$CONSENSUS_GUARD" recover || true
     fi

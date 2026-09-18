@@ -359,6 +359,7 @@ engine_adapter_description() {
 adapter_execute() {
     local output_file
     output_file=$(mktemp)
+    ADAPTER_OUTPUT_FILE="$output_file"
 
     cycle_supervisor_run \
         "$CYCLE_TIMEOUT_SECONDS" \
@@ -373,6 +374,7 @@ adapter_execute() {
 
     ADAPTER_OUTPUT=$(adapter_redact < "$output_file")
     rm -f "$output_file"
+    ADAPTER_OUTPUT_FILE=""
     if [ "$ADAPTER_TIMED_OUT" -eq 1 ]; then
         ADAPTER_EXIT_CODE=124
     fi

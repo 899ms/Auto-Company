@@ -210,13 +210,29 @@ case "${1:-status}" in
         ;;
     stop)
         require_installed_service || exit $?
+        touch "$PROJECT_DIR/.auto-loop-stop"
+        # Let the existing owner stop its model tree and seal logs/usage first.
+        # systemd's default control-group TERM can interrupt these final writes.
+        graceful_status=0
+        bash "$PROJECT_DIR/scripts/core/stop-loop.sh" --wait || graceful_status=$?
         if ! systemctl --user stop "$SERVICE_NAME"; then
             ui_message systemd.stop_failed "$SERVICE_NAME" >&2
             exit 1
         fi
         current_state="$(systemctl --user is-active "$SERVICE_NAME" 2>/dev/null || true)"
-        if [ "$current_state" = "active" ] || [ "$current_state" = "activating" ]; then
+        main_pid="$(systemctl --user show "$SERVICE_NAME" -p MainPID --value --no-pager 2>/dev/null)" || exit 1
+        control_group="$(systemctl --user show "$SERVICE_NAME" -p ControlGroup --value --no-pager 2>/dev/null)" || exit 1
+        remaining_processes=""
+        if [ -n "$control_group" ] && [ -e "/sys/fs/cgroup$control_group/cgroup.procs" ]; then
+            remaining_processes="$(cat "/sys/fs/cgroup$control_group/cgroup.procs")" || exit 1
+        fi
+        if { [ "$current_state" != "inactive" ] && [ "$current_state" != "failed" ]; } ||
+           [ "$main_pid" != "0" ] || [ -n "$remaining_processes" ]; then
             ui_message systemd.still_active "$SERVICE_NAME" "$current_state" >&2
+            exit 1
+        fi
+        if [ "$graceful_status" -ne 0 ]; then
+            ui_message systemd.stop_failed "$SERVICE_NAME" >&2
             exit 1
         fi
         ui_message systemd.stopped "$SERVICE_NAME" "${current_state:-inactive}"

@@ -5,6 +5,7 @@ case "$*" in
     *'cat auto-company.service'*) [ "${FAKE_SERVICE_MISSING:-0}" != 1 ]; exit $? ;;
     *WorkingDirectory*) printf '%s\n' "$FAKE_SERVICE_ROOT" ;;
     *MainPID*) printf '0\n' ;;
+    *ControlGroup*) printf '\n' ;;
     *SubState*) printf 'dead\n' ;;
     *is-active*)
         if [ -f "$FAKE_SERVICE_LOG" ] && [ "$(tail -1 "$FAKE_SERVICE_LOG")" = stop ]; then

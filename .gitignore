@@ -145,6 +145,8 @@ logs/
 .auto-loop-awake.pid
 .auto-loop-awake.stop
 .auto-loop-wsl-anchor.pid
+.auto-loop-wsl-anchor.linux
+.auto-loop-stop-pending
 .auto-loop-wsl-anchor.stop
 memories/consensus.md.bak
 

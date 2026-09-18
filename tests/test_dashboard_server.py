@@ -133,7 +133,7 @@ class DashboardServerTests(unittest.TestCase):
             adapter.parent.mkdir(parents=True)
             shutil.copy2(source, adapter)
             (root / "scripts/core").mkdir()
-            for name in ("ui-messages.sh", "localization.py"):
+            for name in ("ui-messages.sh", "localization.py", "stop-loop.sh", "loop-lock.py"):
                 shutil.copy2(SERVER_PATH.parents[1] / "scripts/core" / name, root / "scripts/core" / name)
             shutil.copytree(SERVER_PATH.parents[1] / "i18n", root / "i18n")
             fake_bin = root / "bin"
