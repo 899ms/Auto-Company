@@ -25,7 +25,7 @@ If numbers are missing, proceed with ranges + explicit assumptions and highlight
 - Subscription, usage-based, freemium, marketplace take-rate, transaction fee, ads, outcome-based, credit-based, hybrid.
 
 2) Build a segment-level unit economics snapshot
-- Use `references/unit-economics-calculator.md` for formulas, benchmarks, and common pitfalls.
+- Use [the bundled unit-economics methodology](../financial-unit-economics/resources/methodology.md) for formulas and pitfalls; verify any benchmark against the relevant segment and stage.
 - Prefer cohort/segment views over blended averages.
 
 3) Evaluate model fit and risks
@@ -33,8 +33,8 @@ If numbers are missing, proceed with ranges + explicit assumptions and highlight
 - Identify failure modes: margin compression, adverse selection, channel conflict, support cost explosions, metering/overage friction.
 
 4) Propose pricing + packaging changes
-- Use `references/pricing-research-guide.md` for WTP methods and pricing interview scripts.
-- Use `assets/pricing-tier-design.md` to draft tiers, limits, upgrade triggers, and enforcement rules.
+- Use [pricing-strategy](../pricing-strategy/SKILL.md) for willingness-to-pay research and tier differentiation.
+- Draft a tier table with segment, value metric, price, included usage, limits, upgrade trigger, and enforcement rule. Label untested prices as hypotheses.
 
 5) Define measurement and roll-out
 - Define success metric + guardrails, evaluation design, and explicit lag windows (conversion now, retention later).
@@ -50,10 +50,11 @@ If numbers are missing, proceed with ranges + explicit assumptions and highlight
 
 ## Related Skills (Routing)
 
-- [startup-idea-validation](../startup-idea-validation/)
-- [startup-competitive-analysis](../startup-competitive-analysis/)
-- [startup-fundraising](../startup-fundraising/)
-- [startup-go-to-market](../startup-go-to-market/)
+- [product-strategist](../product-strategist/SKILL.md): competitive positioning, go-to-market planning, and the business model canvas.
+- [startup-financial-modeling](../startup-financial-modeling/SKILL.md): revenue projections, runway, and fundraising scenarios.
+- [pricing-strategy](../pricing-strategy/SKILL.md): pricing research and packaging.
+
+For idea validation, record the customer problem, evidence of willingness to pay, and the next experiment before committing to a model.
 
 ## Pricing Change Measurement & Experiment Design
 Use this when you are changing pricing, packaging, value metric, limits, discounts, or billing cadence.
@@ -82,31 +83,16 @@ Use this when you are changing pricing, packaging, value metric, limits, discoun
 - Segments: break down by plan, seat band, channel, ACV/ARR band, and customer age (new vs. renewal).
 - Decision rule: write a go/no-go threshold (example: "NRR +2pts with no >0.5pt drop in activation and no >10% increase in support load").
 
-## SaaS Metrics (Read When Needed)
+## Available Resources and Outputs
 
-Use `references/saas-metrics-playbook.md` for definitions and templates (MRR/ARR, churn, NRR, Quick Ratio, Magic Number, burn multiple, stage focus).
+| Need | Bundled guidance |
+|------|------------------|
+| CAC, LTV, payback, and cohort analysis | [Unit-economics methodology](../financial-unit-economics/resources/methodology.md) and [worksheet](../financial-unit-economics/resources/template.md) |
+| Willingness-to-pay and tier design | [Pricing strategy](../pricing-strategy/SKILL.md) |
+| Business model canvas | [Product strategist](../product-strategist/SKILL.md), Business Model Canvas section |
+| MRR/ARR, burn, runway, and scenarios | [Startup financial modeling](../startup-financial-modeling/SKILL.md) |
 
-## Resources
-
-| Resource | Purpose |
-|----------|---------|
-| [unit-economics-calculator.md](references/unit-economics-calculator.md) | LTV, CAC, payback calculations |
-| [pricing-research-guide.md](references/pricing-research-guide.md) | WTP research methodology |
-| [saas-metrics-playbook.md](references/saas-metrics-playbook.md) | SaaS-specific metrics deep dive |
-
-## Templates
-
-| Template | Purpose |
-|----------|---------|
-| [business-model-canvas.md](assets/business-model-canvas.md) | Full model design |
-| [unit-economics-worksheet.md](assets/unit-economics-worksheet.md) | Calculate and track metrics |
-| [pricing-tier-design.md](assets/pricing-tier-design.md) | Pricing & packaging worksheet |
-
-## Data
-
-| File | Purpose |
-|------|---------|
-| [sources.json](data/sources.json) | Business model resources |
+Create the pricing-tier table described in Workflow step 4 and an assumptions table with input, value/range, source URL, date, and confidence. This skill does not bundle separate canvas/pricing template files or a data-source catalog. Use current, attributable sources for business decisions.
 
 ---
 

@@ -51,6 +51,8 @@ kubectl apply -f manifests/ && kubectl get pods
 
 ## Reference Navigation
 
+All files below are in this skill’s `references/` directory.
+
 ### Cloudflare Platform
 - `cloudflare-platform.md` - Edge computing overview
 - `cloudflare-workers-basics.md` - Handler types, patterns
@@ -77,8 +79,8 @@ kubectl apply -f manifests/ && kubectl get pods
 - `kubernetes-troubleshooting.md` / `kubernetes-troubleshooting-advanced.md` - Debug
 
 ### Scripts
-- `scripts/cloudflare-deploy.py` - Automate Worker deployments
-- `scripts/docker-optimize.py` - Analyze Dockerfiles
+- `scripts/cloudflare_deploy.py` - Automate Worker deployments
+- `scripts/docker_optimize.py` - Analyze Dockerfiles
 
 ## Best Practices
 

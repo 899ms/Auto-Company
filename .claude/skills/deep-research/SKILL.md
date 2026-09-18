@@ -827,8 +827,7 @@ Every report must:
 **Do not inline these - reference only:**
 - [Complete Methodology](./reference/methodology.md) - 8-phase details
 - [Report Template](./templates/report_template.md) - Output structure
-- [README](./README.md) - Usage docs
-- [Quick Start](./QUICK_START.md) - Fast reference
+- [Quick Start](./QUICK_START.md) - Usage docs and fast reference
 - [Competitive Analysis](./COMPETITIVE_ANALYSIS.md) - vs OpenAI/Gemini
 
 **Context Management:** Load files on-demand for current phase only. Do not preload all content.

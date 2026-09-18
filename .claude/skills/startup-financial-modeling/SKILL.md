@@ -459,23 +459,16 @@ Compare key metrics to similar companies at similar stage.
 **Investor Feedback:**
 Share model with advisors or investors for feedback on assumptions.
 
-## Additional Resources
+## Available Modeling Guidance
 
-### Reference Files
+This skill provides formulas and model outlines in the sections above; it does not bundle complete spreadsheet models.
 
-For detailed model structures and advanced techniques:
+- Use **Business Model Templates** for SaaS, marketplace, e-commerce, and services revenue drivers.
+- Use **Three-Scenario Framework** and **Step 7: Scenario Analysis** to vary assumptions.
+- Use **Fundraising Integration** for funding and dilution calculations.
+- For a reusable unit-economics worksheet, see [the bundled template](../financial-unit-economics/resources/template.md) and [methodology](../financial-unit-economics/resources/methodology.md).
 
-- **`references/model-templates.md`** - Complete financial model templates by business model
-- **`references/unit-economics.md`** - Deep dive on CAC, LTV, payback, and efficiency metrics
-- **`references/fundraising-scenarios.md`** - Modeling funding rounds and dilution
-
-### Example Files
-
-Working financial models with formulas:
-
-- **`examples/saas-financial-model.md`** - Complete 3-year SaaS model with cohort analysis
-- **`examples/marketplace-model.md`** - Marketplace GMV and take rate projections
-- **`examples/scenario-analysis.md`** - Three-scenario framework with sensitivities
+Build the model from the user's inputs, label assumptions, and check the formulas before presenting projections.
 
 ## Quick Start
 
@@ -491,4 +484,4 @@ To create a startup financial model:
 8. **Validate assumptions** - Sanity check and benchmark
 9. **Integrate fundraising** - Model funding rounds and milestones
 
-For complete templates and formulas, reference the `references/` and `examples/` files.
+Use the guidance above to build and validate a model for the specific business.

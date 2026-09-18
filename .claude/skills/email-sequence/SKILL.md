@@ -286,15 +286,19 @@ What to measure and benchmarks
 
 ## Tool Integrations
 
-For implementation, see the [tools registry](../../tools/REGISTRY.md). Key email tools:
+This repository provides sequence-writing guidance, not preconfigured email integrations or an MCP tool registry. Check which tools and credentials are actually available before implementation. If none are connected, deliver the sequence copy, triggers, timing, segments, and exit conditions for setup in the user's email platform.
 
-| Tool | Best For | MCP | Guide |
-|------|----------|:---:|-------|
-| **Customer.io** | Behavior-based automation | - | [customer-io.md](../../tools/integrations/customer-io.md) |
-| **Mailchimp** | SMB email marketing | ✓ | [mailchimp.md](../../tools/integrations/mailchimp.md) |
-| **Resend** | Developer-friendly transactional | ✓ | [resend.md](../../tools/integrations/resend.md) |
-| **SendGrid** | Transactional email at scale | - | [sendgrid.md](../../tools/integrations/sendgrid.md) |
-| **Kit** | Creator/newsletter focused | - | [kit.md](../../tools/integrations/kit.md) |
+Use the selected provider's official setup and API documentation:
+
+| Provider | Documentation |
+|----------|---------------|
+| Customer.io | [Customer.io docs](https://docs.customer.io/) |
+| Mailchimp | [Mailchimp developer docs](https://mailchimp.com/developer/) |
+| Resend | [Resend docs](https://resend.com/docs/introduction) |
+| SendGrid | [Twilio SendGrid docs](https://www.twilio.com/docs/sendgrid) |
+| Kit | [Kit developer docs](https://developers.kit.com/welcome) |
+
+Writing a sequence does not authorize sending it. Send or activate a sequence only when the user has requested that action.
 
 ---
 

@@ -20,12 +20,7 @@ description: >
 ### Phase 1: 定位 Repo
 
 - 用 `web_search` 搜索 `site:github.com <project_name>` 确认完整 org/repo
-- 用 `search-layer`（Deep 模式 + 意图感知）补充获取社区链接和非 GitHub 资源：
-  ```bash
-  python3 skills/search-layer/scripts/search.py \
-    --queries "<project_name> review" "<project_name> 评测 使用体验" \
-    --mode deep --intent exploratory --num 5
-  ```
+- 用当前环境可用的搜索工具补充社区链接和非 GitHub 资源，查询 `<project_name> review`、`<project_name> 评测 使用体验`。
 - 用 `web_fetch` 抓取 repo 主页获取基础信息（README、Stars、Forks、License、最近更新）
 
 ### Phase 2: 多源采集（并行）
@@ -36,46 +31,34 @@ description: >
 |---|---|---|---|
 | GitHub Repo | `github.com/{org}/{repo}` | README、About、Contributors | `web_fetch` |
 | GitHub Issues | `github.com/{org}/{repo}/issues?q=sort:comments` | Top 3-5 高质量 Issue | `browser` |
-| 中文社区 | 微信/知乎/小红书 | 深度评测、使用经验 | `content-extract` |
-| 技术博客 | Medium/Dev.to | 技术架构分析 | `web_fetch` / `content-extract` |
-| 讨论区 | V2EX/Reddit | 用户反馈、槽点 | `search-layer`（Deep 模式） |
+| 中文社区 | 微信/知乎/小红书 | 深度评测、使用经验 | 可用的平台工具或 `browser` |
+| 技术博客 | Medium/Dev.to | 技术架构分析 | `web_fetch` / `browser` |
+| 讨论区 | V2EX/Reddit | 用户反馈、槽点 | 可用的搜索或平台工具 |
 
-#### search-layer 调用规范
+#### 搜索工具与查询
 
-search-layer v2 支持意图感知评分。github-explorer 场景下的推荐用法：
+本仓库不包含 `search-layer` 或 `content-extract` 技能及其脚本。`web_search`、`web_fetch` 和 `browser` 表示当前环境的对应能力；使用实际可用的工具名称。若另外安装了这些增强技能，先读取其自身说明并确认依赖和调用路径；未安装时直接执行以下搜索，不依赖这些脚本。
 
-| 场景 | 命令 | 说明 |
+| 场景 | 查询示例 | 说明 |
 |------|------|------|
-| **项目调研（默认）** | `python3 skills/search-layer/scripts/search.py --queries "<project> review" "<project> 评测" --mode deep --intent exploratory --num 5` | 多查询并行，按权威性排序 |
-| **最新动态** | `python3 skills/search-layer/scripts/search.py "<project> latest release" --mode deep --intent status --freshness pw --num 5` | 优先新鲜度，过滤一周内 |
-| **竞品对比** | `python3 skills/search-layer/scripts/search.py --queries "<project> vs <competitor>" "<project> alternatives" --mode deep --intent comparison --num 5` | 对比意图，关键词+权威双权重 |
-| **快速查链接** | `python3 skills/search-layer/scripts/search.py "<project> official docs" --mode fast --intent resource --num 3` | 精确匹配，最快 |
-| **社区讨论** | `python3 skills/search-layer/scripts/search.py "<project> discussion experience" --mode deep --intent exploratory --domain-boost reddit.com,news.ycombinator.com --num 5` | 加权社区站点 |
+| **项目调研（默认）** | `<project> review`、`<project> 评测` | 交叉检查独立来源 |
+| **最新动态** | `<project> latest release` | 核对官方发布页和日期 |
+| **竞品对比** | `<project> vs <competitor>`、`<project> alternatives` | 查证差异与适用条件 |
+| **快速查链接** | `<project> official docs` | 确认官方域名 |
+| **社区讨论** | `<project> discussion experience`，限定社区域名 | 区分用户体验与已验证事实 |
 
-**意图类型速查**：`factual`(事实) / `status`(动态) / `comparison`(对比) / `tutorial`(教程) / `exploratory`(探索) / `news`(新闻) / `resource`(资源定位)
-
-> 不带 `--intent` 时行为与 v1 完全一致（无评分，按原始顺序输出）。
-
-降级规则：Exa/Tavily 任一 429/5xx → 继续用剩余源；脚本整体失败 → 退回 `web_search` 单源。
+某个来源或增强工具失败时，继续使用可用来源，并在报告中说明覆盖限制。没有搜索能力时，只分析已能读取的仓库和用户提供资料，不声称完成了社区调研。
 
 ---
 
 ### 抓取降级与增强协议 (Extraction Upgrade)
 
-当遇到以下情况时，**必须**从 `web_fetch` 升级为 `content-extract`：
+以下情况需要换用可用的浏览器或平台读取工具，或者使用已安装的内容提取技能：
 1. **域名限制**: `mp.weixin.qq.com`, `zhihu.com`, `xiaohongshu.com`。
 2. **结构复杂**: 页面包含大量公式 (LaTeX)、复杂表格、或 `web_fetch` 返回的 Markdown 极其凌乱。
 3. **内容缺失**: `web_fetch` 因反爬返回空内容或 Challenge 页面。
 
-调用方式：
-```bash
-python3 skills/content-extract/scripts/content_extract.py --url <URL>
-```
-
-content-extract 内部会：
-- 先检查域名白名单（微信/知乎等），命中则直接走 MinerU
-- 否则先用 `web_fetch` 探针，失败再 fallback 到 MinerU-HTML
-- 返回统一 JSON 合同（含 `ok`, `markdown`, `sources` 等字段）
+若仍无法读取，保留 URL 并标注“未能读取”，改查独立来源。不得把搜索摘要当作已读全文，也不得把不可访问的讨论计入已核实证据。
 
 ### Phase 3: 分析研判
 
@@ -179,8 +162,8 @@ content-extract 内部会：
 ## Execution Notes
 
 - 优先使用 `web_search` + `web_fetch`，browser 作为备选
-- **搜索增强**：项目调研类任务默认使用 `search-layer` v2 Deep 模式 + `--intent exploratory`（Brave + Exa + Tavily 三源并行去重 + 意图感知评分），单源失败不阻塞主流程
-- **抓取降级（强制）**：当 `web_fetch` 失败/403/反爬页/正文过短，或来源域名属于高风险站点（如微信/知乎/小红书）时：改用 `content-extract`（其内部会 fallback 到 MinerU-HTML），拿到更干净的 Markdown + 可追溯 sources
+- **搜索增强**：使用当前可用的搜索来源；仅在已安装并检查说明后使用额外技能。单源失败不阻塞主流程，覆盖不足须明确说明
+- **抓取降级**：当 `web_fetch` 失败或正文不完整时，换用可用的浏览器、平台读取工具或已安装的提取技能；仍不可读则标注并改查其他来源
 - 并行采集不同来源以提高效率
 - 所有链接必须真实可访问，不要编造 URL
 - 中文输出，技术术语保留英文
@@ -200,12 +183,12 @@ content-extract 内部会：
 
 ## Dependencies
 
-本 Skill 依赖以下 OpenClaw 工具和 Skills：
+以下名称表示所需能力和可选增强，不表示 Auto-Company 已安装或配置这些工具：
 
 | 依赖 | 类型 | 用途 |
 |------|------|------|
-| `web_search` | 内置工具 | Brave Search 检索 |
-| `web_fetch` | 内置工具 | 网页内容抓取 |
-| `browser` | 内置工具 | 动态页面渲染（备选） |
-| `search-layer` | Skill | 多源搜索 + 意图感知评分（Brave + Exa + Tavily），v2 支持 `--intent` / `--queries` / `--freshness` |
-| `content-extract` | Skill | 高保真内容提取（反爬站点降级方案） |
+| `web_search` | 环境提供的工具 | 搜索检索 |
+| `web_fetch` | 环境提供的工具 | 网页内容抓取 |
+| `browser` | 环境提供的工具 | 动态页面渲染（备选） |
+| `search-layer` | 可选技能，未随包提供 | 仅在另行安装并核实自身说明后用于搜索增强；否则使用可用搜索工具 |
+| `content-extract` | 可选技能，未随包提供 | 仅在另行安装并核实自身说明后用于内容提取；否则使用浏览器或平台工具 |
