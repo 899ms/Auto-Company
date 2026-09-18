@@ -13,7 +13,7 @@ Powered by Claude Code (default) and [Codex CLI](https://www.npmjs.com/package/@
 [![Windows WSL](https://img.shields.io/badge/Platform-Windows%20WSL-blue?logo=windows&logoColor=white)](#windows-wsl-quick-start)
 [![Codex CLI](https://img.shields.io/badge/Engine-Codex%20CLI-orange?logo=data:image/svg%2Bxml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0yMi4yODE5IDkuODIxMWE1Ljk4NDcgNS45ODQ3IDAgMCAwLS41MTU3LTQuOTEwOCA2LjA0NjIgNi4wNDYyIDAgMCAwLTYuNTA5OC0yLjlBNi4wNjUxIDYuMDY1MSAwIDAgMCA0Ljk4MDcgNC4xODE4YTUuOTg0NyA1Ljk4NDcgMCAwIDAtMy45OTc3IDIuOSA2LjA0NjIgNi4wNDYyIDAgMCAwIC43NDI3IDcuMDk2NiA1Ljk4IDUuOTggMCAwIDAgLjUxMSA0LjkxMDcgNi4wNTEgNi4wNTEgMCAwIDAgNi41MTQ2IDIuOTAwMUE2LjA2NTEgNi4wNjUxIDAgMCAwIDE5LjAyIDE5LjgxODJhNS45ODQ3IDUuOTg0NyAwIDAgMCAzLjk5NzctMi45MDAxIDYuMDQ2MiA2LjA0NjIgMCAwIDAtLjczNTgtNy4wOTdaTTguNzQ5IDYuNzU3OGE0LjQxMTggNC40MTE4IDAgMCAxIDcuMzY3MyAxLjE0NDQgNC4zOTg2IDQuMzk4NiAwIDAgMS0uMjkyOCA0LjIyODVsLTQuNzA3LTIuNzIxNHYtMi42NTE1Wk02LjUzMzIgMTQuNjU0YTQuNDExOCA0LjQxMTggMCAwIDEtMS4xMjkzLTcuMzcgNC4zOTg2IDQuMzk4NiAwIDAgMSA0LjEzNTItMS4zOWwyLjM2MTUgNC4wOTN2NS4zMDJMNi41MzMyIDE0LjY1NFptLTEuODQ4LTEuNTcyYTQuNDExOCA0LjQxMTggMCAwIDEgNi4yMzgtNi4yMjYgNC4zOTg2IDQuMzk4NiAwIDAgMSAzLjg0MzMgMi44MzhsLTQuNzA3IDIuNzIxdjUuMzAxNUw0LjY4NTIgMTMuMDgyWm0xMC41NjU4IDQuMTZhNC40MTE4IDQuNDExOCAwIDAgMS03LjM2NzMtMS4xNDQzIDQuMzk4NiA0LjM5ODYgMCAwIDEgLjI5MjgtNC4yMjg1bDQuNzA3IDIuNzIxNHYyLjY1MTRabTIuMjE1OC03Ljg5NmE0LjQxMTggNC40MTE4IDAgMCAxIDEuMTI5MyA3LjM3IDQuMzk4NiA0LjM5ODYgMCAwIDEtNC4xMzUyIDEuMzlsLTIuMzYxNS00LjA5M1Y5LjE4Nmw1LjM2NzQgMi4xODZabTEuODQ4IDEuNTcyYTQuNDExOCA0LjQxMTggMCAwIDEtNi4yMzggNi4yMjYgNC4zOTg2IDQuMzk4NiAwIDAgMS0zLjg0MzMtMi44MzhsNC43MDctMi43MjFWOS4xODZsNS4zNzQgMy4wOTZaTTEyIDE2LjUxNmE0LjQxMTggNC40MTE4IDAgMCAxLTQuNDExOC00LjQxMThjMC0yLjQzNDggMS45NzctNC40MTE4IDQuNDExOC00LjQxMThzNC40MTE4IDEuOTc3IDQuNDExOCA0LjQxMTgtMS45NzcgNC40MTE4LTQuNDExOCA0LjQxMThaIi8+PC9zdmc+&logoColor=white)](https://www.npmjs.com/package/@openai/codex)
 [![Claude Code](https://img.shields.io/badge/Engine-Claude%20Code-purple?logo=anthropic&logoColor=white)](#dependencies)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green?logo=opensourceinitiative&logoColor=white)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?logo=opensourceinitiative&logoColor=white)](LICENSE)
 
 </div>
 
@@ -190,7 +190,7 @@ Auto-Company is not a simple LLM API wrapper, but a highly decoupled **Multi-Age
 
 ### Layer 5: Observability & HITL (Human-In-The-Loop)
 *   **File-based Steering**: Humans only need to edit `memories/consensus.md` and modify the `Next Action`. The AI team waking up in the next cycle will immediately pivot, enabling minimalist macro-control.
-*   **Full-chain Logs & Dashboard**: `logs/` records the complete output and chain-of-thought for each cycle. `dashboard/` provides a local visualization dashboard based on a Python server, displaying real-time cycle status, cost consumption, and agent activity.
+*   **Logs & Dashboard**: `logs/` saves engine-emitted output after known credential redaction, together with per-cycle results and available usage records. Output detail depends on the engine; complete reasoning traces are not guaranteed. `dashboard/` displays main-loop and daemon status, usage and budgets, a consensus summary, and recent logs. It does not track individual agents' activity.
 
 ### Layer 4: Workflow Routing & Teaming
 *   **Dynamic Squad Formation**: Powered by Agent Teams, the system dynamically selects 2-5 of the most suitable experts from the 14-person pool based on the "Next Action" in `consensus.md`, instantiating them as sub-agents for the current loop.
@@ -204,7 +204,7 @@ Auto-Company is not a simple LLM API wrapper, but a highly decoupled **Multi-Age
 ### Layer 2: Orchestration & State Machine
 *   **The Auto-Loop**: The execution loop controlled by `scripts/core/auto-loop.sh` frees the AI from "single-turn conversations", enabling 24/7 continuous operation.
 *   **Lightweight State Machine (Consensus Memory)**: Forgoes complex vector databases or memory management, compressing cross-cycle context into a single Markdown file: `memories/consensus.md`. Read before every cycle and rewritten before it ends, acting as the system's "baton".
-*   **Resilience & Self-Healing**: Built-in circuit breakers (cooldown triggered by consecutive errors), rate-limit backoff (auto-sleep on 429 errors), and sandbox reset (auto-rollback if a valid consensus is not output).
+*   **Resilience & Recovery**: Built-in circuit breakers (cooldown triggered by consecutive errors), rate-limit backoff (auto-sleep on 429 errors), and consensus recovery after failed cycles. Human Overrides, `.auto-company.local`, and the framework's root `.gitignore` have targeted protection. Product code changes and external side effects are not automatically rolled back.
 
 ### Layer 1: Execution Engine & Infrastructure
 *   **Dual-Engine Executor**: Acts as the underlying executor by calling mature AI CLIs (**Claude Code** or **Codex CLI**), naturally inheriting their file I/O, Bash execution, and Git operation capabilities.
@@ -381,6 +381,10 @@ Thanks to the contributors whose reports, fixes, and proposals have shaped Auto 
 - [continuous-claude](https://github.com/AnandChowdhary/continuous-claude) - cross-session shared notes
 - [ralph-claude-code](https://github.com/frankbria/ralph-claude-code) - exit signal interception
 - [claude-auto-resume](https://github.com/terryso/claude-auto-resume) - usage-limit resume pattern
+
+## License
+
+The framework is distributed under the [MIT License](LICENSE). Bundled third-party components retain their own license terms and notices.
 
 ## 🤝 Contribution & Contact
 
