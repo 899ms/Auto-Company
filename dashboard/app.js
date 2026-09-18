@@ -1,552 +1,694 @@
-const els = {
-  deck: document.getElementById("deck"),
-  pulseDot: document.getElementById("pulseDot"),
-  pulseText: document.getElementById("pulseText"),
-  lastUpdate: document.getElementById("lastUpdate"),
-  latency: document.getElementById("latency"),
+(() => {
+  'use strict';
 
-  guardianState: document.getElementById("guardianState"),
-  guardianMeta: document.getElementById("guardianMeta"),
-  daemonState: document.getElementById("daemonState"),
-  daemonMeta: document.getElementById("daemonMeta"),
-  loopState: document.getElementById("loopState"),
-  loopMeta: document.getElementById("loopMeta"),
-  autostartState: document.getElementById("autostartState"),
-  autostartMeta: document.getElementById("autostartMeta"),
-
-  cardGuardian: document.getElementById("cardGuardian"),
-  cardDaemon: document.getElementById("cardDaemon"),
-  cardLoop: document.getElementById("cardLoop"),
-  cardAutostart: document.getElementById("cardAutostart"),
-  cardUsage: document.getElementById("cardUsage"),
-  usagePeriod: document.getElementById("usagePeriod"),
-  usageWindow: document.getElementById("usageWindow"),
-  usageMetrics: document.getElementById("usageMetrics"),
-  usageRecordedBudget: document.getElementById("usageRecordedBudget"),
-  usageCurrentPause: document.getElementById("usageCurrentPause"),
-  usageAlerts: document.getElementById("usageAlerts"),
-
-  stateList: document.getElementById("stateList"),
-  consensusText: document.getElementById("consensusText"),
-  logText: document.getElementById("logText"),
-  rawText: document.getElementById("rawText"),
-
-  btnRefresh: document.getElementById("btnRefresh"),
-  btnStart: document.getElementById("btnStart"),
-  btnStop: document.getElementById("btnStop"),
-  btnTail: document.getElementById("btnTail"),
-  btnRaw: document.getElementById("btnRaw"),
-  autoToggle: document.getElementById("autoToggle"),
-  refreshInterval: document.getElementById("refreshInterval"),
-  languageSelect: document.getElementById("languageSelect"),
-  languageHint: document.getElementById("languageHint"),
-  languageStatus: document.getElementById("languageStatus"),
-};
-
-const { t } = DashboardI18n;
-let timer = null;
-let rawVisible = false;
-let refreshSequence = 0;
-let lastStatus = null;
-let lastUsage = null;
-let statusError = null;
-let usageError = null;
-let lastElapsed = 0;
-let languageState = null;
-let languageError = null;
-let languageSaving = false;
-let languageSequence = 0;
-
-function escapeHtml(text) {
-  return String(text)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function renderInlineMarkdown(text) {
-  let html = escapeHtml(text);
-  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  return html;
-}
-
-function renderMarkdown(md) {
-  const lines = String(md || "").replace(/\r\n?/g, "\n").split("\n");
-  const out = [];
-  let inList = false;
-  let inCode = false;
-  let inParagraph = false;
-
-  const closeParagraph = () => {
-    if (inParagraph) {
-      out.push("</p>");
-      inParagraph = false;
-    }
+  const $ = (id) => document.getElementById(id);
+  const state = { data: null, language: 'zh-CN', tab: 'work', expanded: new Set(), older: false, selectedLog: 'runtime', logText: '', logLoadedId: '', logRequest: 0, logPending: null, refreshPending: null, signature: '', statusFailed: true, action: '', languageState: null, languageSaving: false, languageLoading: false, languageRevision: 0, languageError: '', languageSaved: false, timer: null, autoChanged: false, currentCycle: null };
+  const message = (key, values = {}) => {
+    const dictionary = window.JOURNAL_MESSAGES[state.language] || window.JOURNAL_MESSAGES.en;
+    return Object.entries(values).reduce((result, [name, value]) => result.replaceAll(`{${name}}`, String(value)), dictionary[key] || key);
   };
-  const closeList = () => {
-    if (inList) {
-      out.push("</ul>");
-      inList = false;
+  function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function clear(node) { node.replaceChildren(); return node; }
+  function clean(value) {
+    return String(value || '').replace(/!?\[([^\[\]\r\n]*)\]\([^()\r\n]*\)/g, '$1').replace(/^\s*#{1,6}\s+/gm, '').replace(/\*\*|__|`/g, '').replace(/^\s*[-*]\s+/gm, '').trim();
+  }
+  function shortText(value, length = 86) {
+    const text = clean(value).replace(/\s+/g, ' ');
+    return text.length > length ? `${text.slice(0, length).trim()}…` : text;
+  }
+  function statusLabel(status) {
+    return ['completed', 'completed_with_timeout', 'failed', 'interrupted', 'stopped_status', 'running', 'idle', 'paused', 'waiting_limit', 'circuit_break', 'stopped', 'active', 'inactive', 'configured', 'not_configured', 'not_installed', 'mismatched', 'activating', 'deactivating', 'reloading', 'unsupported'].includes(status) ? message(status) : status === 'unavailable' ? message('statusUnavailable') : message('unknown');
+  }
+  function readOnly() { return state.data?.readOnly !== false; }
+  function liveProcess() { return !readOnly() && !state.statusFailed && state.data?.runtime?.processState === 'running'; }
+  function runtimeLabel() { return statusLabel(state.statusFailed ? 'unavailable' : state.data?.runtime?.state); }
+  function pauseLabel(value) { return message(`pause_${value}`) === `pause_${value}` ? String(value || '') : message(`pause_${value}`); }
+  async function fetchJSON(url, options = {}, timeout = 100000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(url, { cache: 'no-store', ...options, signal: controller.signal });
+      const result = await response.json();
+      if (!response.ok || result.ok === false) throw new Error(result.error || result.output || `HTTP ${response.status}`);
+      return result;
+    } finally { clearTimeout(timer); }
+  }
+  function formatTime(value, withDate = false) {
+    if (!value || !Number.isFinite(Date.parse(value))) return message('unknownTime');
+    const date = new Date(value);
+    return new Intl.DateTimeFormat(state.language, { ...(withDate ? { month: '2-digit', day: '2-digit' } : {}), hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
+  }
+  function formatDate(value) {
+    if (!value || !Number.isFinite(Date.parse(value))) return message('unknownTime');
+    return new Intl.DateTimeFormat(state.language, { month: 'long', day: 'numeric' }).format(new Date(value));
+  }
+  function datePart(value) { return /^\d{4}-\d{2}-\d{2}/.test(value || '') ? value.slice(0, 10) : ''; }
+  function knownNumber(value) { return typeof value === 'number' && Number.isFinite(value) && value >= 0; }
+  function number(value) { return knownNumber(value) ? new Intl.NumberFormat(state.language).format(value) : '—'; }
+  function compactNumber(value) { return knownNumber(value) ? new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value) : message('unknown'); }
+  function duration(cycle) {
+    if (cycle.durationReliable === false || cycle.status === 'interrupted') return '';
+    const seconds = Math.round((Date.parse(cycle.endedAt) - Date.parse(cycle.startedAt)) / 1000);
+    if (!Number.isFinite(seconds) || seconds < 0) return '';
+    return seconds < 60 ? message('seconds', { seconds }) : message('minutes', { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
+  }
+  function cycleTitle(cycle) {
+    if (cycle.synthetic && cycle.status !== 'running') return statusLabel(cycle.status);
+    let title = clean(cycle.summary || cycle.report || '').split('\n').find((line) => line.trim()) || '';
+    if (/^[\[{]/.test(title)) title = '';
+    title = title.replace(/^Cycle\s*\d+\s*(?:完成)?\s*[:：·—-]?\s*/i, '').replace(/^[，,：:\s]+/, '');
+    const firstClause = title.split(/[，,。\n]/)[0];
+    title = firstClause && firstClause.length >= 7 ? firstClause : title;
+    if (!title) return message(cycle.active ? 'runningSummary' : cycle.status === 'failed' ? 'failedSummary' : cycle.status === 'interrupted' ? 'interruptedSummary' : cycle.status === 'unknown' ? 'unknownSummary' : 'finishedSummary');
+    return shortText(title, 68);
+  }
+  function metadata(cycle) {
+    const row = element('div', 'cycle-meta');
+    row.append(element('span', cycle.status === 'failed' ? 'status-failed' : '', statusLabel(cycle.status)));
+    row.append(element('span', '', message('startAt', { time: formatTime(cycle.startedAt) })));
+    const elapsed = duration(cycle);
+    if (elapsed) row.append(element('span', '', elapsed));
+    if (cycle.durationReliable === false || cycle.status === 'interrupted') row.title = message('recoveredEnd');
+    return row;
+  }
+  function bindDisclosure(details, key) {
+    details.open = state.expanded.has(key);
+    details.addEventListener('toggle', () => {
+      if (details.open) state.expanded.add(key);
+      else state.expanded.delete(key);
+    });
+    return details;
+  }
+  function logButton(cycle) {
+    if (cycle.synthetic) {
+      const button = element('button', 'text-button cycle-log-link', message('viewRuntimeLog'));
+      button.type = 'button';
+      button.addEventListener('click', () => { state.selectedLog = 'runtime'; $('logSelect').value = 'runtime'; selectTab('logs', true); loadLog(); });
+      return button;
     }
-  };
-
-  for (const line of lines) {
-    if (line.startsWith("```")) {
-      closeParagraph();
-      closeList();
-      if (!inCode) {
-        out.push("<pre><code>");
-        inCode = true;
+    if (!cycle.logAvailable) return element('p', 'sidebar-note cycle-log-link', message('noLog'));
+    const button = element('button', 'text-button cycle-log-link', message('viewLog'));
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      state.selectedLog = cycle.id;
+      $('logSelect').value = cycle.id;
+      selectTab('logs', true);
+      loadLog();
+    });
+    return button;
+  }
+  function reportRows(cycle, limit = 4) {
+    const rows = [];
+    for (const line of String(cycle.report || '').split('\n')) {
+      if (!line.trim().startsWith('|')) continue;
+      const parts = line.trim().split('|').slice(1, -1).map(clean);
+      if (parts.length < 2 || parts.every((part) => /^[-: ]+$/.test(part)) || /^(项目|item|aspect|category)$/i.test(parts[0])) continue;
+      if (parts[0] && parts[1]) rows.push({ label: parts[0], text: parts.slice(1).join(' · ') });
+    }
+    return rows.slice(0, limit);
+  }
+  function resultList(rows) {
+    const list = element('ul', 'result-list');
+    for (const row of rows) {
+      const item = element('li', 'result-item');
+      item.append(element('span', 'result-label', row.label), element('p', 'result-text', row.text));
+      list.append(item);
+    }
+    return list;
+  }
+  function fullReport(cycle) {
+    if (!cycle.report) return null;
+    const details = bindDisclosure(element('details', 'report-disclosure'), `report:${cycle.id}`);
+    const summary = element('summary', '', message('fullReport'));
+    const body = element('div', 'full-report');
+    for (const block of String(cycle.report).split(/\n\s*\n/)) {
+      if (!block.trim()) continue;
+      if (block.trim().startsWith('```')) {
+        body.append(element('pre', 'report-code', block.replace(/^```[^\n]*\n?/, '').replace(/\n?```\s*$/, '')));
+      } else if (block.trim().startsWith('|')) {
+        const rows = reportRows({ report: block }, Infinity);
+        if (rows.length) body.append(resultList(rows));
+      } else if (/^\s*[-*]\s/.test(block)) {
+        const list = element('ul');
+        block.split('\n').filter((line) => line.trim()).forEach((line) => list.append(element('li', '', clean(line))));
+        body.append(list);
       } else {
-        out.push("</code></pre>");
-        inCode = false;
+        body.append(element('p', '', clean(block)));
       }
-      continue;
     }
-
-    if (inCode) {
-      out.push(`${escapeHtml(line)}\n`);
-      continue;
+    details.append(summary, body);
+    return details;
+  }
+  function renderCurrent(cycle) {
+    const container = clear($('currentCycle'));
+    if (!cycle) {
+      const empty = element('div', 'empty-state');
+      empty.append(element('h2', '', message('noCycles')), element('p', '', message(readOnly() ? 'noCyclesBody' : 'noCyclesLive')));
+      container.append(empty);
+      return;
     }
-
-    if (!line.trim()) {
-      closeParagraph();
-      closeList();
-      continue;
+    const article = element('article', 'current-cycle');
+    const gutter = element('div', 'cycle-gutter');
+    gutter.append(element('span', 'cycle-word', 'CYCLE'));
+    const cycleNumber = element('span', 'cycle-number', String(cycle.number ?? '—').padStart(2, '0'));
+    cycleNumber.id = 'cycleNumber';
+    gutter.append(cycleNumber);
+    const body = element('div', 'cycle-body');
+    const title = element('h2', 'cycle-title', cycleTitle(cycle));
+    title.id = 'cycleTitle';
+    body.append(title, metadata(cycle));
+    const report = element('section', 'report-section');
+    const heading = element('div', 'section-heading-row');
+    heading.append(element('h3', '', message('latestReport')));
+    const timestamp = cycle.durationReliable !== false && cycle.endedAtKind !== 'recovered' && cycle.status !== 'interrupted' ? cycle.endedAt : null;
+    if (timestamp) {
+      const time = element('time', '', message('recordedAt', { time: formatTime(timestamp) }));
+      time.dateTime = timestamp;
+      heading.append(time);
     }
-
-    const h = line.match(/^(#{1,6})\s+(.*)$/);
-    if (h) {
-      closeParagraph();
-      closeList();
-      const level = h[1].length;
-      out.push(`<h${level}>${renderInlineMarkdown(h[2].trim())}</h${level}>`);
-      continue;
+    let intro = clean(cycle.summary || '');
+    if (/^[\[{]/.test(intro)) intro = cycleTitle(cycle);
+    if (!intro) intro = message(cycle.active ? 'runningNoReport' : 'noReport');
+    report.append(heading, element('p', 'report-intro', intro));
+    body.append(report);
+    const rows = reportRows(cycle);
+    if (rows.length) {
+      const results = element('section', 'results-section');
+      const resultHeading = element('div', 'section-heading-row');
+      resultHeading.append(element('h3', '', message('cycleResults')));
+      results.append(resultHeading, resultList(rows));
+      body.append(results);
     }
-
-    const li = line.match(/^\s*[-*]\s+(.*)$/);
-    if (li) {
-      closeParagraph();
-      if (!inList) {
-        out.push("<ul>");
-        inList = true;
-      }
-      out.push(`<li>${renderInlineMarkdown(li[1].trim())}</li>`);
-      continue;
+    if (cycle.report) body.append(element('p', 'report-source', message('reportSource')));
+    const disclosure = fullReport(cycle);
+    if (disclosure) body.append(disclosure);
+    body.append(logButton(cycle));
+    article.append(gutter, body);
+    container.append(article);
+  }
+  function renderHistory() {
+    const history = clear($('historyList'));
+    const older = state.data.cycles.filter((cycle) => cycle.id !== state.currentCycle?.id);
+    const visible = state.older ? older : older.slice(0, 2);
+    for (const cycle of visible) {
+      const row = bindDisclosure(element('details', 'history-row'), `cycle:${cycle.id}`);
+      row.dataset.cycleId = cycle.id;
+      const summary = element('summary');
+      const timing = `${statusLabel(cycle.status)} · ${formatTime(cycle.startedAt)}`;
+      summary.append(element('span', 'history-number', String(cycle.number ?? '—').padStart(2, '0')), element('span', 'history-title', cycleTitle(cycle)), element('span', `history-meta${cycle.status === 'failed' ? ' status-failed' : ''}`, timing));
+      const arrow = element('span', 'history-chevron', '›');
+      arrow.setAttribute('aria-hidden', 'true');
+      summary.append(arrow);
+      const content = element('div', 'history-content');
+      content.append(metadata(cycle));
+      let report = clean(cycle.summary || '');
+      if (/^[\[{]/.test(report)) report = cycleTitle(cycle);
+      content.append(element('p', '', report || message('noSummary')));
+      const results = reportRows(cycle);
+      if (results.length) content.append(resultList(results));
+      const disclosure = fullReport(cycle);
+      if (disclosure) content.append(disclosure);
+      content.append(logButton(cycle));
+      row.append(summary, content);
+      history.append(row);
     }
-
-    closeList();
-    if (!inParagraph) {
-      out.push("<p>");
-      inParagraph = true;
-    } else {
-      out.push("<br />");
+    $('olderButton').hidden = older.length <= 2;
+    $('olderButton').textContent = state.older ? message('fewer') : message('older', { count: older.length - 2 });
+    document.querySelector('.history-section').hidden = !older.length;
+  }
+  function aggregate(cycles) {
+    const result = { inputTokens: null, outputTokens: null, totalTokens: null, known: 0, count: cycles.length, partial: false };
+    for (const key of ['inputTokens', 'outputTokens', 'totalTokens']) {
+      const values = cycles.map((cycle) => cycle.usage?.[key]).filter(knownNumber);
+      result[key] = values.length ? values.reduce((sum, value) => sum + value, 0) : null;
     }
-    out.push(renderInlineMarkdown(line.trim()));
+    result.known = cycles.filter((cycle) => knownNumber(cycle.usage?.totalTokens)).length;
+    result.partial = result.known < cycles.length || cycles.some((cycle) => cycle.usage?.status === 'partial');
+    return result;
   }
-
-  closeParagraph();
-  closeList();
-  if (inCode) {
-    out.push("</code></pre>");
+  function fileIcon() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 20 24');
+    svg.setAttribute('class', 'artifact-icon');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.4');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M4 2h8l5 5v15H4zM12 2v6h5M7 12h7M7 16h7');
+    svg.append(path);
+    return svg;
   }
-
-  return out.join("");
-}
-
-const STATE_CLASS = Object.freeze({
-  mismatched: "bad",
-  active: "good",
-  configured: "good",
-  running: "good",
-  idle: "good",
-  paused: "warn",
-  waiting_limit: "warn",
-  circuit_break: "warn",
-  activating: "warn",
-  deactivating: "warn",
-  inactive: "warn",
-  not_configured: "warn",
-  not_installed: "warn",
-  reloading: "warn",
-  stopped: "warn",
-  unavailable: "warn",
-  unsupported: "warn",
-  failed: "bad",
-  unknown: "bad",
-});
-
-function applyCardState(card, state) {
-  card.classList.remove("good", "warn", "bad");
-  card.classList.add(STATE_CLASS[state] || STATE_CLASS.unknown);
-}
-
-function formatTime(value, dateOnly = false) {
-  if (!value) return "--";
-  // Ledger dates represent calendar days, not UTC instants.
-  const text = String(value).replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/, "$1T$2");
-  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00` : text);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return dateOnly ? date.toLocaleDateString(DashboardI18n.locale) : date.toLocaleString(DashboardI18n.locale);
-}
-
-function formatNumber(value) {
-  if (value === null || value === undefined || value === "") return "--";
-  const number = Number(value);
-  return Number.isFinite(number) ? number.toLocaleString(DashboardI18n.locale) : String(value);
-}
-
-function stateLabel(value) {
-  const state = String(value || "unknown");
-  return t(`state.${state.toLowerCase().replaceAll(" ", "_")}`, {}, state);
-}
-
-function pauseReason(value) {
-  return value ? t(`reason.${value}`, {}, value) : "-";
-}
-
-function daemonSummary(value) {
-  const match = String(value || "unknown").match(/^(.*?)(?: \((.*)\))?$/);
-  const enabled = match[1].match(/^ENABLED but (.+)$/);
-  const state = enabled ? t("daemon.enabledInactive", { state: stateLabel(enabled[1]) }) : stateLabel(match[1]);
-  const details = {
-    ".auto-loop-paused present": "daemon.pauseMarker",
-    "launchd is macOS-only": "daemon.macosOnly",
-    "launchd is macOS-only; pause flag present": "daemon.macosPaused",
-  };
-  const detail = Object.hasOwn(details, match[2]) ? t(details[match[2]]) : match[2];
-  return detail ? `${state} (${detail})` : state;
-}
-
-function renderStateList(parsed, stateFile) {
-  const loop = parsed.loop || {};
-  const daemon = parsed.daemon || {};
-  const rows = [
-    [t("field.engine"), loop.engine || "-"],
-    [t("field.model"), loop.model || "-"],
-    [t("field.loopCount"), formatNumber(loop.loopCount === "" ? stateFile.LOOP_COUNT : loop.loopCount ?? stateFile.LOOP_COUNT)],
-    [t("field.errorCount"), formatNumber(loop.errorCount === "" ? stateFile.ERROR_COUNT : loop.errorCount ?? stateFile.ERROR_COUNT)],
-    [t("field.lastRun"), formatTime(loop.lastRun || stateFile.LAST_RUN)],
-    [t("field.pauseReason"), pauseReason(loop.pauseReason || stateFile.PAUSE_REASON)],
-    [t("field.daemonSummary"), daemonSummary(loop.daemonSummary)],
-    [t("field.activeState"), stateLabel(daemon.activeState)],
-    [t("field.subState"), stateLabel(daemon.subState)],
-  ];
-
-  els.stateList.innerHTML = rows
-    .map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`)
-    .join("");
-}
-
-function effectiveLoopState(loop, stateFile) {
-  const phases = ["running", "idle", "paused", "waiting_limit", "circuit_break"];
-  if ((loop.processState || loop.state) === "running" && phases.includes(stateFile.STATUS)) {
-    return stateFile.STATUS;
+  function runtimeRows(entries) {
+    const list = element('dl', 'runtime-details');
+    for (const [label, value] of entries) list.append(element('dt', '', label), element('dd', '', !value || value === 'unknown' ? message('unknown') : value));
+    return list;
   }
-  return loop.state || "unknown";
-}
-
-function usageValue(value, currency = false) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return t("usage.unknown");
-  return value.toLocaleString(DashboardI18n.locale, {
-    ...(currency ? { style: "currency", currency: "USD" } : {}),
-    minimumFractionDigits: currency ? 2 : 0, maximumFractionDigits: 6,
-  });
-}
-
-function renderUsage(data) {
-  const summary = data.summary || {};
-  const metrics = [
-    [t("usage.cost"), summary.cost_usd, true],
-    [t("usage.input"), summary.usage?.input_tokens],
-    [t("usage.output"), summary.usage?.output_tokens],
-    [t("usage.total"), summary.usage?.total_tokens],
-  ];
-  els.usageWindow.textContent = t("usage.range", {
-    period: t(`period.${summary.period || "unknown"}`, {}, summary.period),
-    start: formatTime(summary.start_date, true), end: formatTime(summary.end_date, true),
-    cycles: formatNumber(summary.cycles ?? 0), invalid: formatNumber(summary.invalid_records ?? 0),
-  });
-  els.usageMetrics.innerHTML = metrics.map(([label, metric, currency]) => {
-    const coverage = metric || {};
-    const value = usageValue(coverage.value, currency);
-    const status = coverage.status || "unavailable";
-    const description = t("usage.coverage", {
-      status: stateLabel(status), known: formatNumber(coverage.known_cycles ?? 0),
-      unknown: formatNumber(coverage.unknown_cycles ?? 0),
-    });
-    return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}<span class="coverage">${escapeHtml(description)}</span></dd></div>`;
-  }).join("");
-
-  const budget = typeof summary.latest_budget === "object" ? summary.latest_budget : null;
-  const budgetState = typeof budget?.state === "string" ? budget.state : "unknown";
-  const budgetWindow = budget ? t("budget.window", {
-    period: t(`period.${budget.period || "unknown"}`, {}, budget.period),
-    start: formatTime(budget.start_date, true), end: formatTime(budget.end_date, true),
-  }) : "";
-  els.usageRecordedBudget.textContent = t("budget.recorded", { state: stateLabel(budgetState), window: budgetWindow });
-  const pause = data.budgetPause;
-  els.usageCurrentPause.textContent = pause
-    ? t("budget.pause.active", { reason: pause.reason ? pauseReason(pause.reason) : t("budget.review") })
-    : t("budget.pause.inactive");
-  const recordedAlerts = Array.isArray(budget?.alerts) ? budget.alerts : [];
-  const alerts = recordedAlerts.filter((alert) => alert && typeof alert === "object").map((alert) => {
-    const label = t(alert.level === "warning" ? "budget.soft" : "budget.hard");
-    const currency = alert.metric === "cost_usd";
-    return t("budget.alert", {
-      level: label, metric: t(currency ? "usage.cost" : "usage.total"),
-      actual: usageValue(alert.actual, currency), limit: usageValue(alert.limit, currency),
-      coverage: stateLabel(alert.coverage),
-    });
-  });
-  if (budgetState === "unverifiable") alerts.push(t("budget.unverifiable"));
-  if (summary.invalid_records) alerts.push(t("budget.invalid"));
-  els.usageAlerts.innerHTML = alerts.map((text) => `<li>${escapeHtml(text)}</li>`).join("");
-  const healthy = summary.cycles > 0 && !summary.invalid_records && !pause
-    && metrics.every(([, metric]) => metric?.status === "complete")
-    && ["ok", "disabled"].includes(budgetState);
-  applyCardState(els.cardUsage, healthy ? "active" : "paused");
-  return healthy;
-}
-
-function renderUsageUnavailable(error) {
-  renderUsage({});
-  els.usageWindow.textContent = t("usage.unavailable", { error: errorText(error) });
-  els.usageCurrentPause.textContent = t("budget.pause.unknown");
-  applyCardState(els.cardUsage, "unavailable");
-}
-
-async function fetchJson(url, options = {}) {
-  let response;
-  try {
-    response = await fetch(url, { cache: "no-store", ...options });
-  } catch (error) {
-    throw { messageKey: "error.network", detail: error.message || String(error) };
+  function languageLabel(value) { return value === 'zh-CN' || value === 'zh' ? '简体中文' : value === 'en' ? 'English' : value || message('unknown'); }
+  function actionMessage(key, values = {}, error = false) {
+    const node = $('actionStatus');
+    node.hidden = false;
+    node.textContent = message(key, values);
+    node.classList.toggle('status-failed', error);
   }
-  let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    throw { messageKey: "error.response" };
+  function renderRuntime() {
+    const data = state.data;
+    const runtime = data?.runtime || {};
+    const unavailable = state.statusFailed || runtime.available === false;
+    const process = runtime.processState || runtime.state;
+    const locked = !data || readOnly() || unavailable || Boolean(state.action);
+    $('runtimeState').textContent = runtimeLabel();
+    $('runtimeState').dataset.state = unavailable ? 'unavailable' : runtime.state || 'unknown';
+    $('startButton').disabled = locked || !['stopped', 'inactive'].includes(process);
+    $('stopButton').disabled = locked || process !== 'running';
+    $('startButton').textContent = message(state.action === 'start' ? 'starting' : 'start');
+    $('stopButton').textContent = message(state.action === 'stop' ? 'stopping' : 'stop');
+    $('startButton').title = $('stopButton').title = readOnly() ? message('readOnly') : unavailable ? message('statusUnavailable') : '';
+    $('refreshButton').disabled = Boolean(state.refreshPending || state.action);
+    $('modeNote').textContent = data ? message(readOnly() ? 'preview' : 'live') : '';
+    $('autoRefresh').disabled = Boolean(data && readOnly());
+    document.querySelectorAll('.legacy-link').forEach((node) => { node.hidden = data?.legacyAvailable !== true; });
+    document.querySelectorAll('.dialog-links a[href^="/docs/"]').forEach((node) => { node.hidden = readOnly(); });
+    const reason = runtime.pauseReason || data?.budgetPause?.reason;
+    const paused = ['paused', 'waiting_limit', 'circuit_break'].includes(runtime.state);
+    $('runtimeNotice').hidden = unavailable || (!reason && !paused && !data?.budgetPause);
+    $('runtimeNotice').textContent = reason ? message('pauseReason', { reason: pauseLabel(reason) }) : paused ? message('pauseReview') : data?.budgetPause ? message('budgetPause') : '';
+    renderDiagnostics();
   }
-  if (!response.ok) throw { messageKey: "error.request", status: response.status, detail: payload.error };
-  return payload;
-}
-
-function errorText(error) {
-  const message = t(error.messageKey || "error.network", { status: error.status ?? "--" });
-  const detail = error.detail || error.message;
-  return detail ? `${message}: ${detail}` : message;
-}
-
-function renderLanguage() {
-  const language = languageState?.nextLanguage || languageState?.language || "en";
-  els.languageSelect.value = language;
-  els.languageSelect.disabled = languageSaving;
-  els.languageHint.textContent = languageState?.locked
-    ? t("language.locked", {
-      current: languageState.language === "zh-CN" ? "中文" : "English",
-      next: language === "zh-CN" ? "中文" : "English",
-    }) : t("language.hint");
-  els.languageStatus.textContent = languageSaving ? t("language.saving")
-    : languageError ? t(languageError) : languageState?.pending ? t("language.pending") : "";
-}
-
-function applyLanguageState(state) {
-  if (!state || !["en", "zh-CN"].includes(state.language)
-      || (state.nextLanguage && !["en", "zh-CN"].includes(state.nextLanguage))) {
-    throw new Error("Invalid language response");
-  }
-  languageState = state;
-  languageError = null;
-  DashboardI18n.setLanguage(state.language);
-  DashboardI18n.apply();
-  renderDashboard();
-}
-
-async function refreshLanguage() {
-  if (languageSaving) return;
-  const sequence = ++languageSequence;
-  try {
-    const state = await fetchJson("/api/language", { signal: AbortSignal.timeout(5000) });
-    if (sequence === languageSequence) applyLanguageState(state);
-  } catch {
-    if (sequence !== languageSequence) return;
-    languageError = "language.unavailable";
-    DashboardI18n.apply();
-    renderDashboard();
-  }
-}
-
-async function saveLanguage() {
-  const language = els.languageSelect.value;
-  languageSaving = true;
-  ++languageSequence;
-  renderLanguage();
-  try {
-    const response = await fetch("/api/language", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ language }), signal: AbortSignal.timeout(5000),
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) {
-      languageError = data.errorCode === "language_invalid" ? "language.invalid" : "language.saveFailed";
-    } else {
-      applyLanguageState(data);
+  function renderDiagnostics() {
+    const data = state.data;
+    const runtime = data?.runtime || {};
+    const status = data?.status || {};
+    const parsed = status.parsed || {};
+    const fields = status.stateFile || {};
+    const loop = parsed.loop || {};
+    const entries = [[message('state'), runtimeLabel()], [message('processState'), statusLabel(state.statusFailed ? 'unavailable' : runtime.processState)], ['PID', String(runtime.pid ?? '—')], [message('currentCycle'), String(runtime.currentCycleNumber ?? '—')], [message('errorCount'), String(runtime.errorCount ?? loop.errorCount ?? fields.ERROR_COUNT ?? '—')], [message('lastRun'), formatTime(runtime.lastRun || loop.lastRun || fields.LAST_RUN, true)], [message('pauseReasonLabel'), pauseLabel(runtime.pauseReason || data?.budgetPause?.reason || fields.PAUSE_REASON) || '—']];
+    for (const [name, value] of [['guardian', parsed.guardian], ['daemon', parsed.daemon], ['autostart', parsed.autostart]]) {
+      entries.push([message(name), statusLabel(value?.state)]);
+      const details = Object.entries(value || {}).filter(([key]) => key !== 'state' && value[key] !== null && value[key] !== '').map(([key, item]) => `${key}: ${String(item)}`).join(' · ');
+      if (details) entries.push([message(`${name}Details`), details]);
     }
-  } catch {
-    languageError = "language.saveFailed";
-  } finally {
-    languageSaving = false;
+    if (loop.daemonSummary) entries.push([message('daemonDetails'), String(loop.daemonSummary)]);
+    const summary = clear($('diagnosticSummary'));
+    if (state.statusFailed && data) summary.append(element('p', 'fine-print', message('diagnosticsStale')));
+    summary.append(runtimeRows(entries));
+    if (data?.budgetPause) summary.append(element('p', 'fine-print', `${message('budgetPause')}: ${JSON.stringify(data.budgetPause)}`));
+    $('rawText').textContent = status.raw || runtime.error || message('noDiagnostics');
+    if (state.statusFailed && status.raw) $('rawText').textContent = `${message('diagnosticsStale')}\n\n${status.raw}`;
+  }
+  function renderLanguage() {
+    const current = state.languageState;
+    const next = current?.nextLanguage || current?.language || state.language;
+    $('settingsLanguage').textContent = languageLabel(current?.language || state.data?.runtime?.language || state.language);
+    $('settingsMode').textContent = message(readOnly() ? 'preview' : 'live');
+    $('settingsDescription').textContent = message(readOnly() ? 'settingsDescription' : 'settingsLive');
+    $('languageSelect').value = next;
+    $('languageSelect').disabled = readOnly() || state.languageSaving || state.languageLoading || !current;
+    $('languageHint').textContent = message(readOnly() ? 'languageExplanation' : current?.locked ? 'languageLocked' : 'languageUnlocked', { current: languageLabel(current?.language), next: languageLabel(next) });
+    $('languageStatus').textContent = state.languageSaving ? message('languageSaving') : state.languageLoading ? message('languageLoading') : state.languageError ? message(state.languageError) : current?.pending ? message('languagePending') : state.languageSaved ? message('languageSaved') : '';
+    $('languageStatus').classList.toggle('status-failed', Boolean(state.languageError));
+  }
+  function applyLanguageState(value) {
+    if (!value || !['en', 'zh-CN'].includes(value.language) || (value.nextLanguage && !['en', 'zh-CN'].includes(value.nextLanguage))) throw new Error('Invalid language response');
+    state.languageState = value;
+    state.language = value.language;
+    state.languageError = '';
+    if (state.data) {
+      state.data.languageState = value;
+      state.data.language = value.language;
+      render();
+    } else { applyLanguage(); renderLanguage(); }
+  }
+  async function refreshLanguage() {
+    if (readOnly() || state.languageLoading || state.languageSaving) return;
+    state.languageLoading = true;
     renderLanguage();
+    try { applyLanguageState(await fetchJSON('/api/language', {}, 10000)); }
+    catch (_) { state.languageError = 'languageUnavailable'; }
+    finally { state.languageLoading = false; renderLanguage(); }
   }
-}
-
-async function fetchStatus(includeLanguage = true) {
-  const sequence = ++refreshSequence;
-  const started = performance.now();
-  const [statusResult, usageResult] = await Promise.allSettled([
-    fetchJson("/api/status"),
-    fetchJson(`/api/usage?period=${encodeURIComponent(els.usagePeriod.value)}`),
-    includeLanguage ? refreshLanguage() : Promise.resolve(),
-  ]);
-  if (sequence !== refreshSequence) return;
-  usageError = usageResult.status === "rejected" ? usageResult.reason : null;
-  statusError = statusResult.status === "rejected" ? statusResult.reason : null;
-  if (!usageError) lastUsage = usageResult.value;
-  if (!statusError) {
-    lastStatus = statusResult.value;
-    lastElapsed = Math.round(performance.now() - started);
+  async function saveLanguage() {
+    if (readOnly() || state.languageSaving || state.languageLoading) return;
+    const language = $('languageSelect').value;
+    ++state.languageRevision;
+    state.languageSaving = true;
+    state.languageSaved = false;
+    state.languageError = '';
+    renderLanguage();
+    try {
+      const result = await fetchJSON('/api/language', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language }) }, 10000);
+      if (result.ok !== true) throw new Error('Language save not confirmed');
+      applyLanguageState(result);
+      state.languageSaved = true;
+      state.signature = '';
+    } catch (_) { state.languageError = 'languageSaveFailed'; }
+    finally { state.languageSaving = false; renderLanguage(); }
   }
-  renderDashboard();
-}
-
-function renderStatus(data, usageHealthy) {
-  const parsed = data.parsed || {};
-  const guardian = parsed.guardian || {};
-  const daemon = parsed.daemon || {};
-  const loop = parsed.loop || {};
-  const autostart = parsed.autostart || {};
-  const loopState = effectiveLoopState(loop, data.stateFile || {});
-
-  els.guardianState.textContent = stateLabel(guardian.state);
-  els.guardianMeta.textContent = guardian.pid ? `PID ${guardian.pid}` : "PID --";
-  applyCardState(els.cardGuardian, guardian.state);
-
-  els.daemonState.textContent = stateLabel(daemon.state);
-  els.daemonMeta.textContent = ["mismatched", "not_installed", "unavailable"].includes(daemon.state)
-    ? t(`daemon.${daemon.state}`) : (daemon.mainPid ? `MainPID ${daemon.mainPid}` : "MainPID --");
-  applyCardState(els.cardDaemon, daemon.state);
-
-  els.loopState.textContent = stateLabel(loopState);
-  const loopCycle = t("cycle", { value: formatNumber(loop.loopCount) });
-  const loopPid = loop.pid ? `PID ${loop.pid}` : "PID --";
-  els.loopMeta.textContent = `${loopCycle} | ${loopPid}`;
-  applyCardState(els.cardLoop, loopState);
-
-  els.autostartState.textContent = stateLabel(autostart.state);
-  els.autostartMeta.textContent = stateLabel(autostart.enabledState || autostart.state);
-  applyCardState(els.cardAutostart, autostart.state);
-
-  renderStateList(parsed, data.stateFile || {});
-
-  const consensusRaw = (data.consensusHead || parsed.consensusPreview || "").trim();
-  els.consensusText.innerHTML = renderMarkdown(!consensusRaw || consensusRaw === "(no consensus file)"
-    ? t("empty.consensus") : consensusRaw);
-  const logRaw = (data.logTail || parsed.recentLog || "").trim();
-  els.logText.textContent = !logRaw || logRaw === "(no log file)" ? t("empty.logs") : logRaw;
-  els.rawText.textContent = data.raw || "";
-
-  const healthy = data.ok && ["running", "idle"].includes(loopState) && daemon.state === "active" && usageHealthy;
-  els.pulseText.textContent = t(healthy ? "live.stable" : "live.attention");
-  els.pulseDot.style.background = healthy ? "var(--good)" : "var(--warn)";
-
-  els.lastUpdate.textContent = t("lastUpdate", { time: formatTime(data.timestamp) });
-  els.latency.textContent = t("latency", { value: formatNumber(lastElapsed) });
-}
-
-function renderButtons() {
-  els.btnStart.textContent = t(els.btnStart.disabled ? "button.starting" : "button.start");
-  els.btnStop.textContent = t(els.btnStop.disabled ? "button.stopping" : "button.stop");
-  els.btnRaw.textContent = t(rawVisible ? "button.hideRaw" : "button.showRaw");
-  els.btnRaw.setAttribute("aria-expanded", String(rawVisible));
-}
-
-function renderDashboard() {
-  let usageHealthy = false;
-  if (usageError) renderUsageUnavailable(usageError);
-  else if (lastUsage) usageHealthy = renderUsage(lastUsage);
-  if (lastStatus) renderStatus(lastStatus, usageHealthy);
-  if (statusError) {
-    els.pulseText.textContent = t("live.unavailable");
-    els.pulseDot.style.background = "var(--warn)";
-    els.loopState.textContent = stateLabel("unavailable");
-    applyCardState(els.cardLoop, "unavailable");
-    els.rawText.textContent = errorText(statusError);
+  function renderSidebar() {
+    const sidebar = clear($('projectSidebar'));
+    const data = state.data;
+    const next = element('section', 'sidebar-block');
+    const heading = element('div', 'section-heading-row');
+    heading.append(element('h2', '', message('nextAction')));
+    next.append(heading);
+    if (data.consensus?.updatedAt) heading.append(element('span', 'sidebar-update', message('updated', { time: formatTime(data.consensus.updatedAt) })));
+    next.append(element('p', 'next-action', clean(data.consensus?.nextAction) || message('noNextAction')));
+    next.append(element('p', 'sidebar-note', message(readOnly() || (!state.statusFailed && data.runtime?.processState === 'stopped') ? 'stoppedNotice' : 'planNotice')));
+    const artifacts = element('section', 'sidebar-block');
+    artifacts.append(element('h2', '', message('artifacts')));
+    if (data.artifacts?.length) {
+      const list = element('ul', 'artifact-list');
+      for (const artifact of data.artifacts) {
+        const item = element('li');
+        const link = element('a', 'artifact-link');
+        link.href = `/api/journal/document?path=${encodeURIComponent(artifact.path)}`;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.title = artifact.path;
+        link.append(fileIcon(), element('span', '', artifact.label || artifact.path));
+        const arrow = element('span', 'artifact-arrow', '↗');
+        arrow.setAttribute('aria-hidden', 'true');
+        link.append(arrow);
+        item.append(link);
+        list.append(item);
+      }
+      artifacts.append(list);
+    } else artifacts.append(element('p', 'sidebar-note', message('noArtifacts')));
+    const runtime = element('section', 'sidebar-block');
+    runtime.append(element('h2', '', message('runtime')));
+    const sum = aggregate(data.cycles.filter((cycle) => !cycle.active));
+    const usage = `${compactNumber(sum.totalTokens)}${knownNumber(sum.totalTokens) ? ' tokens' : ''}${sum.partial && sum.known ? message('usagePartialShort') : ''}`;
+    const config = data.runtime || {};
+    runtime.append(runtimeRows([[message('engine'), config.engine], [message('model'), config.model], [message('reasoning'), config.reasoning === 'unknown' ? message('unknown') : config.reasoning], [message('language'), languageLabel(config.language || data.language)], [message('recordedUsage'), usage]]));
+    const details = bindDisclosure(element('details', 'runtime-disclosure'), 'runtime');
+    details.append(element('summary', '', message('moreRuntime')), runtimeRows([[message('state'), runtimeLabel()], [message('phase'), clean(data.consensus?.phase) || message('phaseUnknown')], [message('source'), data.sourceName]]));
+    runtime.append(details);
+    sidebar.append(next, artifacts, runtime);
   }
-  renderButtons();
-  renderLanguage();
-}
-
-async function runAction(action) {
-  const btn = action === "start" ? els.btnStart : els.btnStop;
-  btn.disabled = true;
-  renderButtons();
-  try {
-    const res = await fetch(`/api/action/${action}`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      throw new Error(data.output || data.error || "");
+  function applyLanguage() {
+    document.documentElement.lang = state.language;
+    document.title = `${state.data?.project?.name || 'Auto Company'} · ${message('work')}`;
+    document.querySelectorAll('[data-i18n]').forEach((node) => { node.textContent = message(node.dataset.i18n); });
+    $('refreshButton').title = message('refresh');
+    $('refreshButton').setAttribute('aria-label', message('refresh'));
+    $('closeSettingsButton').setAttribute('aria-label', message('close'));
+    document.querySelector('.tabs').setAttribute('aria-label', message('work'));
+    document.querySelector('.table-scroll').setAttribute('aria-label', message('usageDetail'));
+    $('projectSidebar').setAttribute('aria-label', message('artifacts'));
+  }
+  function render() {
+    const data = state.data;
+    applyLanguage();
+    $('projectName').textContent = data.project?.name || message('noProject');
+    const fullDescription = clean(data.project?.description);
+    let description = fullDescription;
+    if (data.project?.name && description.startsWith(data.project.name)) {
+      description = description.slice(data.project.name.length).replace(/^[\s，,:：·—-]+/, '');
     }
-    await fetchStatus();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const label = t("error.action", { action: t(`button.${action}`) });
-    alert(msg ? `${label}\n${msg}` : label);
-  } finally {
-    btn.disabled = false;
-    renderButtons();
+    $('projectDescription').textContent = description.split(/[；;]/)[0];
+    $('projectDescription').title = fullDescription;
+    let latest = data.cycles.find((cycle) => cycle.active) || (liveProcess() ? { id: '__current__', number: data.runtime?.currentCycleNumber, startedAt: data.runtime?.lastRun, status: data.runtime?.state || 'running', active: true, synthetic: true } : data.cycles[0]);
+    if (latest?.active && state.statusFailed) latest = { ...latest, active: false, status: 'unknown' };
+    state.currentCycle = latest;
+    $('runHeading').textContent = latest?.active ? message('currentRun') : latest ? message('latestRun', { date: formatDate(latest.startedAt) }) : message(readOnly() ? 'archived' : 'ready');
+    renderCurrent(latest);
+    renderHistory();
+    renderSidebar();
+    renderRuntime();
+    renderLanguage();
+    const notes = clear($('sourceNotes'));
+    if (data.warnings?.length) {
+      const disclosure = bindDisclosure(element('details'), 'warnings');
+      const list = element('ul');
+      data.warnings.forEach((warning) => list.append(element('li', '', clean(warning))));
+      disclosure.append(element('summary', '', `${message('warning')} · ${data.warnings.length}`), list);
+      notes.append(disclosure);
+    }
+    $('sourceName').textContent = message('sourceLabel', { name: data.sourceName || 'Auto Company' });
+    if (!$('usageDate').value) $('usageDate').value = datePart(data.cycles.find((cycle) => !cycle.active)?.endedAt) || new Date().toISOString().slice(0, 10);
+    renderUsage();
+    renderLogOptions();
+    selectTab(state.tab);
   }
-}
-
-function resetAutoTimer() {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
+  function filterUsage() {
+    const period = $('usagePeriod').value;
+    const selected = $('usageDate').value;
+    $('usageDate').hidden = period === 'all';
+    $('usageDateLabel').hidden = period === 'all';
+    $('usageRange').textContent = '';
+    const recorded = state.data.cycles.filter((cycle) => !cycle.active);
+    if (period === 'all') return recorded;
+    if (!selected) return [];
+    let start = selected;
+    let end = selected;
+    if (period === 'week') {
+      const date = new Date(`${selected}T00:00:00Z`);
+      date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+      start = date.toISOString().slice(0, 10);
+      date.setUTCDate(date.getUTCDate() + 6);
+      end = date.toISOString().slice(0, 10);
+      $('usageRange').textContent = `${start} – ${end}`;
+    }
+    return recorded.filter((cycle) => {
+      const date = datePart(cycle.endedAt);
+      return date && date >= start && date <= end;
+    });
   }
-  if (els.autoToggle.checked) {
-    timer = setInterval(() => {
-      fetchStatus().catch(() => {});
-    }, Number(els.refreshInterval.value));
+  function renderUsage() {
+    if (!state.data) return;
+    const cycles = filterUsage();
+    const summary = clear($('usageSummary'));
+    const rows = clear($('usageRows'));
+    renderBudget(cycles);
+    if (!cycles.length) {
+      summary.append(element('p', 'muted', message('noUsage')));
+      return;
+    }
+    const total = aggregate(cycles);
+    summary.append(element('span', 'usage-total', number(total.totalTokens)), element('span', 'usage-summary-label', message('knownTotal')));
+    summary.append(element('p', 'usage-coverage', message('coverageDescription', total)));
+    const amounts = element('p', 'usage-coverage', `${message('input')} ${number(total.inputTokens)} · ${message('output')} ${number(total.outputTokens)}`);
+    summary.append(amounts);
+    if (!total.known) summary.append(element('p', 'usage-warning', message('noUsageKnown')));
+    else if (total.known < total.count) summary.append(element('p', 'usage-warning', message('partialWarning', { count: total.count - total.known })));
+    else if (total.partial) summary.append(element('p', 'usage-warning', message('partial')));
+    for (const cycle of cycles) {
+      const row = element('tr');
+      row.append(element('td', '', `Cycle ${String(cycle.number ?? '—').padStart(2, '0')}`), element('td', '', formatTime(cycle.startedAt, true)), element('td', '', statusLabel(cycle.status)));
+      for (const field of ['inputTokens', 'outputTokens', 'totalTokens']) {
+        const cell = element('td', 'numeric', number(cycle.usage?.[field]));
+        if (!knownNumber(cycle.usage?.[field])) cell.title = message('unknown');
+        row.append(cell);
+      }
+      const status = knownNumber(cycle.usage?.totalTokens) ? (cycle.usage?.status === 'partial' ? 'partial' : 'reported') : 'unavailable';
+      row.append(element('td', '', message(status)));
+      rows.append(row);
+    }
   }
-}
+  function renderBudget(cycles) {
+    const container = clear($('budgetSummary'));
+    const costs = cycles.map((cycle) => cycle.costUsd).filter(knownNumber);
+    const cost = costs.length ? new Intl.NumberFormat(state.language, { style: 'currency', currency: 'USD', maximumFractionDigits: 6 }).format(costs.reduce((sum, value) => sum + value, 0)) : message('unknown');
+    container.append(element('p', '', message('recordedCost', { cost, known: costs.length, count: cycles.length })));
+    const budget = cycles.find((cycle) => cycle.budget)?.budget || ($('usagePeriod').value === 'all' ? state.data?.recordedBudget : null);
+    if (budget) {
+      const key = `budget_${budget.state || 'unknown'}`;
+      container.append(element('p', '', message('recordedBudget', { state: message(key) === key ? String(budget.state || message('unknown')) : message(key), start: budget.start_date || '—', end: budget.end_date || '—' })));
+      if (Array.isArray(budget.alerts)) {
+        const list = element('ul');
+        for (const alert of budget.alerts) {
+          if (!alert || typeof alert !== 'object') continue;
+          list.append(element('li', '', message('budgetAlert', { level: message(alert.level === 'warning' ? 'budgetWarning' : 'budgetLimit'), metric: alert.metric === 'cost_usd' ? 'USD' : message('total'), actual: number(alert.actual), limit: number(alert.limit), coverage: ['complete', 'partial', 'unavailable'].includes(alert.coverage) ? message(`budget_${alert.coverage}`) : message('unknown') })));
+        }
+        container.append(list);
+      }
+    }
+    if (state.data?.budgetPause) container.append(element('p', 'status-failed', message('budgetPauseReason', { reason: pauseLabel(state.data.budgetPause.reason) || message('pauseReview') })));
+  }
+  function renderLogOptions() {
+    const select = clear($('logSelect'));
+    const cycles = state.data.cycles;
+    if (state.selectedLog !== 'runtime' && !cycles.some((cycle) => cycle.id === state.selectedLog)) state.selectedLog = 'runtime';
+    const global = element('option', '', message('runtimeLog'));
+    global.value = 'runtime';
+    select.append(global);
+    for (const cycle of cycles) {
+      const option = element('option', '', `Cycle ${String(cycle.number ?? '—').padStart(2, '0')} · ${formatTime(cycle.startedAt, true)} · ${statusLabel(cycle.status)}`);
+      option.value = cycle.id;
+      select.append(option);
+    }
+    select.value = state.selectedLog;
+    select.disabled = false;
+    $('refreshLogButton').disabled = Boolean(state.logPending);
+  }
+  async function loadLog() {
+    if (state.logPending) {
+      if (state.logPending.id !== state.selectedLog) {
+        ++state.logRequest;
+        await state.logPending.promise;
+        return loadLog();
+      }
+      return state.logPending.promise;
+    }
+    const request = ++state.logRequest;
+    const id = state.selectedLog;
+    const previous = state.logLoadedId === id ? state.logText : '';
+    if (state.logLoadedId !== id) $('logText').textContent = '';
+    state.logText = '';
+    $('copyLogButton').disabled = true;
+    $('copyLogButton').textContent = message('copy');
+    $('refreshLogButton').disabled = true;
+    $('logStatus').textContent = message('loadingLog');
+    const promise = (async () => { try {
+      const result = await fetchJSON(id === 'runtime' ? '/api/log-tail?lines=180' : `/api/journal/log?id=${encodeURIComponent(id)}`, {}, 15000);
+      if (request !== state.logRequest) return;
+      if (id !== 'runtime' && !result.available) { $('logText').textContent = ''; $('logStatus').textContent = message('noLog'); return; }
+      if (id === 'runtime' && typeof result.logTail !== 'string') throw new Error('Invalid runtime log');
+      state.logText = String(id === 'runtime' ? result.logTail : result.text || '');
+      state.logLoadedId = id;
+      $('logText').textContent = state.logText;
+      $('logStatus').textContent = result.truncated ? message('logTruncated') : state.logText ? message('logAvailable', { count: number(state.logText.length) }) : message('logEmpty');
+      $('copyLogButton').disabled = !state.logText;
+    } catch (_) {
+      if (request !== state.logRequest) return;
+      state.logText = previous;
+      $('logStatus').textContent = message('logFailed');
+    } finally { state.logPending = null; $('refreshLogButton').disabled = false; } })();
+    state.logPending = { id, promise };
+    return promise;
+  }
+  function selectTab(tab, focus = false) {
+    state.tab = tab;
+    for (const button of document.querySelectorAll('[data-tab]')) {
+      const active = button.dataset.tab === tab;
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
+      $(`panel-${button.dataset.tab}`).hidden = !active || !state.data;
+    }
+    if (focus) $(`tab-${tab}`).focus();
+  }
+  function scheduleRefresh() {
+    clearTimeout(state.timer);
+    state.timer = null;
+    if (!$('autoRefresh').checked || document.hidden || state.action || state.refreshPending || readOnly()) return;
+    state.timer = setTimeout(refresh, state.statusFailed ? 15000 : 5000);
+  }
+  function refresh() {
+    if (state.refreshPending) return state.refreshPending;
+    clearTimeout(state.timer);
+    $('refreshButton').disabled = true;
+    $('refreshStatus').textContent = message('refreshing');
+    const languageRevision = state.languageRevision;
+    const promise = (async () => { try {
+      const data = await fetchJSON('/api/journal');
+      if (!data.ok || !Array.isArray(data.cycles)) throw new Error('invalid journal response');
+      const signature = JSON.stringify({ ...data, generatedAt: undefined, status: data.status ? { ...data.status, timestamp: undefined, elapsedMs: undefined } : undefined });
+      state.data = data;
+      state.statusFailed = data.runtime?.available === false || data.status?.ok === false || !data.runtime || ['unknown', 'unavailable'].includes(data.runtime.state);
+      if (languageRevision === state.languageRevision && !state.languageSaving && !state.languageLoading) {
+        if (data.languageState) {
+          const language = data.languageState;
+          if (['en', 'zh-CN'].includes(language.language) && (!language.nextLanguage || ['en', 'zh-CN'].includes(language.nextLanguage))) state.languageState = language;
+        }
+        state.language = state.languageState?.language || (data.language === 'zh-CN' ? 'zh-CN' : 'en');
+      }
+      if (!state.autoChanged) $('autoRefresh').checked = !readOnly();
+      $('connectionError').hidden = !state.statusFailed;
+      $('connectionError').textContent = message('runtimeUnavailable');
+      $('loadingState').hidden = true;
+      if (signature !== state.signature) {
+        const scrollPosition = window.scrollY;
+        state.signature = signature;
+        render();
+        requestAnimationFrame(() => window.scrollTo({ top: scrollPosition, behavior: 'instant' }));
+      }
+      renderRuntime();
+      $('refreshStatus').textContent = message('refreshed', { time: formatTime(data.generatedAt || new Date().toISOString()) });
+      if (state.tab === 'logs') await loadLog();
+    } catch (_) {
+      state.statusFailed = true;
+      state.signature = '';
+      $('loadingState').hidden = true;
+      $('connectionError').hidden = false;
+      $('connectionError').textContent = message(state.data ? 'stale' : 'readFailed');
+      $('refreshStatus').textContent = '';
+      if (state.data) render();
+      else renderRuntime();
+    } finally {
+      state.refreshPending = null;
+      $('refreshButton').disabled = Boolean(state.action);
+      scheduleRefresh();
+    } })();
+    state.refreshPending = promise;
+    return promise;
+  }
+  async function runAction(action) {
+    if ($(action === 'start' ? 'startButton' : 'stopButton').disabled || state.action) return;
+    state.action = action;
+    clearTimeout(state.timer);
+    renderRuntime();
+    actionMessage('actionPending', { action: message(action) });
+    if (state.refreshPending) await state.refreshPending;
+    try {
+      // Recheck after any in-flight status read before mutating the runtime.
+      const process = state.data?.runtime?.processState || state.data?.runtime?.state;
+      if (readOnly() || state.statusFailed || (action === 'start' ? !['stopped', 'inactive'].includes(process) : process !== 'running')) throw new Error(message('stateChanged'));
+      const result = await fetchJSON(`/api/action/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 120000);
+      if (result.ok !== true) throw new Error('Action not confirmed');
+      actionMessage('actionComplete', { action: message(action) });
+    } catch (error) {
+      actionMessage('actionFailed', { action: message(action), detail: error.name === 'AbortError' ? message('actionUnconfirmed') : error.message || message('actionUnconfirmed') }, true);
+    } finally {
+      await refresh();
+      state.action = '';
+      renderRuntime();
+      scheduleRefresh();
+    }
+  }
 
-els.btnRefresh.addEventListener("click", () => fetchStatus().catch(() => {}));
-els.btnStart.addEventListener("click", () => runAction("start"));
-els.btnStop.addEventListener("click", () => runAction("stop"));
-els.btnTail.addEventListener("click", () => fetchStatus().catch(() => {}));
-els.btnRaw.addEventListener("click", () => {
-  rawVisible = !rawVisible;
-  els.rawText.classList.toggle("hidden", !rawVisible);
-  renderButtons();
-});
-els.autoToggle.addEventListener("change", resetAutoTimer);
-els.refreshInterval.addEventListener("change", resetAutoTimer);
-els.usagePeriod.addEventListener("change", () => fetchStatus().catch(() => {}));
-els.languageSelect.addEventListener("change", saveLanguage);
-
-async function bootstrap() {
-  await refreshLanguage();
-  els.deck.hidden = false;
-  resetAutoTimer();
-  await fetchStatus(false);
-}
-
-bootstrap();
+  document.querySelectorAll('[data-tab]').forEach((button) => {
+    button.addEventListener('click', () => { selectTab(button.dataset.tab); if (button.dataset.tab === 'logs') loadLog(); });
+    button.addEventListener('keydown', (event) => {
+      const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+      if (!keys.includes(event.key)) return;
+      event.preventDefault();
+      const tabs = ['work', 'usage', 'logs'];
+      const index = tabs.indexOf(state.tab);
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index + (event.key === 'ArrowRight' ? 1 : 2)) % 3;
+      selectTab(tabs[next], true);
+      if (tabs[next] === 'logs') loadLog();
+    });
+  });
+  $('refreshButton').addEventListener('click', refresh);
+  $('startButton').addEventListener('click', () => runAction('start'));
+  $('stopButton').addEventListener('click', () => runAction('stop'));
+  $('autoRefresh').addEventListener('change', () => { state.autoChanged = true; scheduleRefresh(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && $('autoRefresh').checked && !readOnly() && !state.action) refresh(); else scheduleRefresh(); });
+  $('olderButton').addEventListener('click', () => { state.older = !state.older; renderHistory(); });
+  $('usagePeriod').addEventListener('change', renderUsage);
+  $('usageDate').addEventListener('change', renderUsage);
+  $('logSelect').addEventListener('change', () => { state.selectedLog = $('logSelect').value; loadLog(); });
+  $('refreshLogButton').addEventListener('click', loadLog);
+  $('copyLogButton').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(state.logText);
+      $('copyLogButton').textContent = message('copied');
+    } catch (_) { $('logStatus').textContent = message('copyFailed'); }
+  });
+  $('settingsButton').addEventListener('click', () => { $('settingsDialog').showModal(); refreshLanguage(); });
+  $('languageSelect').addEventListener('change', saveLanguage);
+  $('closeSettingsButton').addEventListener('click', () => $('settingsDialog').close());
+  $('settingsDialog').addEventListener('click', (event) => {
+    if (event.target !== $('settingsDialog')) return;
+    const box = $('settingsDialog').getBoundingClientRect();
+    if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) $('settingsDialog').close();
+  });
+  applyLanguage();
+  renderLanguage();
+  refresh();
+})();

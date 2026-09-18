@@ -1,144 +1,166 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Auto Company Control Deck</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Crimson+Pro:opsz,wght@9..144,400;9..144,600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
-  <div class="mesh"></div>
-  <div class="grain"></div>
-  <main class="deck" id="deck" hidden>
-    <header class="hero panel reveal-1">
-      <div>
-        <p class="eyebrow">AUTO COMPANY</p>
-        <h1 data-i18n="page.heading">Control Deck</h1>
-        <p class="subtitle" data-i18n="page.subtitle">Runtime telemetry with action controls.</p>
-      </div>
-      <div class="hero-meta">
-        <label class="language-control" for="languageSelect">
-          <span data-i18n="language.label">Company language</span>
-          <select id="languageSelect" aria-describedby="languageHint languageStatus">
-            <option value="en" lang="en">English</option>
-            <option value="zh-CN" lang="zh-CN">中文</option>
-          </select>
-        </label>
-        <p id="languageHint" class="language-hint" data-i18n="language.hint">Shared by the dashboard, runtime, documentation and new products. Skills stay in English.</p>
-        <p id="languageStatus" class="language-hint" role="status" aria-live="polite"></p>
-        <nav class="documentation-links">
-          <a href="/docs/readme" data-i18n="docs.readme">Guide</a>
-          <a href="/docs/troubleshooting" data-i18n="docs.troubleshooting">Troubleshooting</a>
-          <a href="/docs/setup" data-i18n="docs.setup">Windows setup</a>
-          <a href="/docs/language" data-i18n="docs.language">Language settings</a>
-        </nav>
-        <div class="pulse-wrap">
-          <span id="pulseDot" class="pulse-dot"></span>
-          <span id="pulseText" data-i18n="live.unknown">Live Link: UNKNOWN</span>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Auto Company · 工作记录</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/i18n.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#mainContent" data-i18n="skip">跳至工作区</a>
+    <header class="site-header">
+      <div class="topbar page-width">
+        <a class="brand" href="/">AUTO COMPANY</a>
+        <div class="project-heading">
+          <h1 id="projectName">—</h1>
+          <p id="projectDescription"></p>
         </div>
-        <p id="lastUpdate" data-i18n="lastUpdate.empty">Last update: --</p>
-        <p id="latency" data-i18n="latency.empty">Roundtrip: --</p>
+        <div class="header-actions">
+          <span id="runtimeState" class="runtime-state" role="status" data-i18n="unknown">未知</span>
+          <button id="startButton" class="button start-button" disabled data-i18n="start">启动运行</button>
+          <button id="stopButton" class="button stop-button" disabled data-i18n="stop">停止运行</button>
+          <a class="quiet-link legacy-link" href="/legacy" data-i18n="legacy" hidden>旧版对照 ↗</a>
+          <button id="settingsButton" class="text-button" data-i18n="settings">设置</button>
+        </div>
+      </div>
+      <div class="navline page-width">
+        <nav class="tabs" aria-label="工作区" role="tablist">
+          <button id="tab-work" class="tab" role="tab" aria-selected="true" aria-controls="panel-work" tabindex="0" data-tab="work" data-i18n="work">工作记录</button>
+          <button id="tab-usage" class="tab" role="tab" aria-selected="false" aria-controls="panel-usage" tabindex="-1" data-tab="usage" data-i18n="usage">用量</button>
+          <button id="tab-logs" class="tab" role="tab" aria-selected="false" aria-controls="panel-logs" tabindex="-1" data-tab="logs" data-i18n="logs">日志</button>
+        </nav>
+        <div class="preview-note">
+          <span id="modeNote"></span>
+          <label class="auto-refresh"><input id="autoRefresh" type="checkbox" checked><span data-i18n="autoRefresh">自动刷新</span></label>
+          <button id="refreshButton" class="icon-button" title="刷新记录" aria-label="刷新记录">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M20 7v5h-5M4 17v-5h5"/>
+              <path d="M6.1 6a8 8 0 0 1 13.4 5M4.5 13a8 8 0 0 0 13.4 5"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </header>
-
-    <section class="controls panel reveal-2">
-      <div class="control-group">
-        <button id="btnRefresh" class="btn btn-ghost" data-i18n="button.refresh">Refresh</button>
-        <button id="btnStart" class="btn btn-start" data-i18n="button.start">Start</button>
-        <button id="btnStop" class="btn btn-stop" data-i18n="button.stop">Stop</button>
+    <main id="mainContent" class="page-width" tabindex="-1">
+      <div id="connectionError" class="notice error-notice" role="alert" hidden></div>
+      <p id="actionStatus" class="action-status" role="status" aria-live="polite" hidden></p>
+      <p id="runtimeNotice" class="notice" role="status" hidden></p>
+      <div id="loadingState" class="page-state" role="status">
+        <p data-i18n="loading">正在读取工作记录…</p>
       </div>
-      <div class="control-group compact">
-        <label class="toggle">
-          <input id="autoToggle" type="checkbox" checked />
-          <span data-i18n="refresh.auto">Auto refresh</span>
-        </label>
-        <label>
-          <span data-i18n="refresh.interval">Interval</span>
-          <select id="refreshInterval">
-            <option value="3000" data-i18n="refresh.3">3s</option>
-            <option value="5000" selected data-i18n="refresh.5">5s</option>
-            <option value="8000" data-i18n="refresh.8">8s</option>
-            <option value="12000" data-i18n="refresh.12">12s</option>
-          </select>
-        </label>
-      </div>
-    </section>
-
-    <section class="grid-cards reveal-3">
-      <article class="panel card status-card" id="cardGuardian">
-        <h3 data-i18n="heading.guardian">Guardian</h3>
-        <p class="big" id="guardianState">--</p>
-        <p class="muted mono" id="guardianMeta">PID --</p>
-      </article>
-      <article class="panel card status-card" id="cardDaemon">
-        <h3 data-i18n="heading.daemon">Daemon</h3>
-        <p class="big" id="daemonState">--</p>
-        <p class="muted mono" id="daemonMeta">MainPID --</p>
-      </article>
-      <article class="panel card status-card" id="cardLoop">
-        <h3 data-i18n="heading.loop">Loop</h3>
-        <p class="big" id="loopState">--</p>
-        <p class="muted mono" id="loopMeta" data-i18n="cycle.empty">Cycle --</p>
-      </article>
-      <article class="panel card status-card" id="cardAutostart">
-        <h3 data-i18n="heading.autostart">Autostart</h3>
-        <p class="big" id="autostartState">--</p>
-        <p class="muted mono" id="autostartMeta" data-i18n="heading.autostart">Autostart</p>
-      </article>
-    </section>
-
-    <section class="panel detail status-card reveal-4" id="cardUsage" aria-labelledby="usageHeading">
-      <div class="usage-head">
-        <h3 id="usageHeading" data-i18n="heading.usage">Usage &amp; Budget</h3>
-        <label><span data-i18n="usage.window">Window</span>
+      <section id="panel-work" class="workspace-panel" role="tabpanel" aria-labelledby="tab-work" hidden>
+        <div class="journal-layout">
+          <div class="current-column">
+            <div id="runHeading" class="section-eyebrow"></div>
+            <div id="currentCycle"></div>
+          </div>
+          <aside id="projectSidebar" class="project-sidebar" aria-label="项目概况"></aside>
+          <section class="history-section" aria-labelledby="historyHeading">
+            <div class="history-heading">
+              <h2 id="historyHeading" data-i18n="history">此前轮次</h2>
+              <span data-i18n="historyNote">编号按每次启动重新计数</span>
+            </div>
+            <div id="historyList"></div>
+            <button id="olderButton" class="text-button older-button" hidden></button>
+          </section>
+        </div>
+        <div id="sourceNotes" class="source-notes"></div>
+      </section>
+      <section id="panel-usage" class="workspace-panel secondary-panel" role="tabpanel" aria-labelledby="tab-usage" hidden>
+        <div class="panel-heading">
+          <div>
+            <div class="section-eyebrow" data-i18n="ledger">运行用量账本</div>
+            <h2 data-i18n="usageHeading">记录下来的用量</h2>
+          </div>
+          <p data-i18n="usageExplanation">仅统计已记录的数据，缺失用量保持未知。</p>
+        </div>
+        <div class="usage-filters">
+          <label for="usagePeriod" data-i18n="period">统计范围</label>
           <select id="usagePeriod">
-            <option value="day" selected data-i18n="period.day">Today</option>
-            <option value="week" data-i18n="period.week">This week</option>
+            <option value="all" data-i18n="all">全部记录</option>
+            <option value="day" data-i18n="day">按日</option>
+            <option value="week" data-i18n="week">按周</option>
           </select>
-        </label>
+          <label id="usageDateLabel" for="usageDate" data-i18n="date" hidden>日期</label>
+          <input id="usageDate" type="date" hidden>
+          <span id="usageRange" class="muted"></span>
+        </div>
+        <div id="usageSummary" class="usage-summary"></div>
+        <div id="budgetSummary" class="budget-summary"></div>
+        <div class="table-scroll" tabindex="0" aria-label="用量明细">
+          <table class="usage-table">
+            <caption data-i18n="usageDetail">各轮次记录明细</caption>
+            <thead>
+              <tr>
+                <th data-i18n="cycle">轮次</th>
+                <th data-i18n="started">开始时间</th>
+                <th data-i18n="result">执行结果</th>
+                <th class="numeric" data-i18n="input">输入</th>
+                <th class="numeric" data-i18n="output">输出</th>
+                <th class="numeric" data-i18n="total">总 tokens</th>
+                <th data-i18n="coverage">记录情况</th>
+              </tr>
+            </thead>
+            <tbody id="usageRows"></tbody>
+          </table>
+        </div>
+        <p class="fine-print" data-i18n="usageCaveat">账本不是完整账单；子代理覆盖范围、费用与账户配额无法据此确认。</p>
+      </section>
+      <section id="panel-logs" class="workspace-panel secondary-panel" role="tabpanel" aria-labelledby="tab-logs" hidden>
+        <div class="panel-heading">
+          <div>
+            <div class="section-eyebrow" data-i18n="originalLogs">原始执行记录</div>
+            <h2 data-i18n="logsHeading">轮次日志</h2>
+          </div>
+          <p data-i18n="logsExplanation">保留原始文本，日志可能已被轮转清理。</p>
+        </div>
+        <div class="log-toolbar">
+          <label for="logSelect" data-i18n="chooseLog">选择日志</label>
+          <select id="logSelect"></select>
+          <button id="copyLogButton" class="button" disabled data-i18n="copy">复制日志</button>
+          <button id="refreshLogButton" class="text-button" data-i18n="refreshLog">重新读取</button>
+        </div>
+        <p id="logStatus" class="muted" role="status"></p>
+        <pre id="logText" class="log-text" tabindex="0"></pre>
+      </section>
+      <details id="runtimeDiagnostics" class="runtime-diagnostics">
+        <summary data-i18n="diagnostics">运行诊断</summary>
+        <div id="diagnosticSummary"></div>
+        <pre id="rawText" class="log-text" tabindex="0"></pre>
+      </details>
+      <footer class="page-footer">
+        <span id="sourceName"></span>
+        <span id="refreshStatus" role="status"></span>
+      </footer>
+    </main>
+    <dialog id="settingsDialog" aria-labelledby="settingsTitle">
+      <div class="dialog-header">
+        <h2 id="settingsTitle" data-i18n="settings">设置</h2>
+        <button id="closeSettingsButton" class="icon-button close-button" aria-label="关闭">×</button>
       </div>
-      <p id="usageWindow" class="muted mono" data-i18n="usage.loading">Usage: loading...</p>
-      <dl id="usageMetrics" class="state-list usage-metrics"></dl>
-      <p id="usageRecordedBudget" class="mono" data-i18n="budget.empty">Last recorded budget: UNKNOWN</p>
-      <p id="usageCurrentPause" class="mono" role="status" aria-live="polite" data-i18n="budget.pause.empty">Current budget pause: UNKNOWN</p>
-      <ul id="usageAlerts" class="usage-alerts"></ul>
-      <p class="muted" data-i18n="usage.note">Reported cycle data only. Unknown values are not zero; partial values are reported subtotals.</p>
-    </section>
-
-    <section class="grid-details reveal-4">
-      <article class="panel detail">
-        <h3 data-i18n="heading.runtime">Runtime State</h3>
-        <dl id="stateList" class="state-list"></dl>
-      </article>
-      <article class="panel detail">
-        <h3 data-i18n="heading.consensus">Consensus Head</h3>
-        <div id="consensusText" class="markdown-view" data-i18n="loading">(loading...)</div>
-      </article>
-    </section>
-
-    <section class="panel reveal-5">
-      <div class="panel-head">
-        <h3 data-i18n="heading.log">Recent Log</h3>
-        <button id="btnTail" class="btn btn-ghost small" data-i18n="button.tail">Reload Log Tail</button>
+      <p id="settingsDescription"></p>
+      <dl class="runtime-details">
+        <dt data-i18n="language">产品语言</dt>
+        <dd id="settingsLanguage"></dd>
+        <dt data-i18n="mode">当前模式</dt>
+        <dd id="settingsMode"></dd>
+      </dl>
+      <label class="language-label" for="languageSelect" data-i18n="languagePreference">产品语言偏好</label>
+      <select id="languageSelect" disabled><option value="zh-CN">简体中文</option><option value="en">English</option></select>
+      <p id="languageHint" class="fine-print"></p>
+      <p id="languageStatus" class="fine-print" role="status" aria-live="polite"></p>
+      <div class="dialog-links">
+        <a class="legacy-link" href="/legacy" data-i18n="openLegacy" hidden>打开原版 Dashboard ↗</a>
+        <a href="/api/journal/document?path=memories%2Fconsensus.md" target="_blank" rel="noopener" data-i18n="openConsensus">查看原始共识文件 ↗</a>
+        <a href="/docs/readme" target="_blank" rel="noopener" data-i18n="docsReadme">使用说明 ↗</a>
+        <a href="/docs/setup" target="_blank" rel="noopener" data-i18n="docsSetup">安装与配置 ↗</a>
+        <a href="/docs/troubleshooting" target="_blank" rel="noopener" data-i18n="docsTroubleshooting">故障排查 ↗</a>
+        <a href="/docs/language" target="_blank" rel="noopener" data-i18n="docsLanguage">语言设置说明 ↗</a>
       </div>
-      <pre id="logText" class="terminal tall" data-i18n="loading">(loading...)</pre>
-    </section>
-
-    <section class="panel reveal-6">
-      <div class="panel-head">
-        <h3 data-i18n="heading.raw">Raw Status Output</h3>
-        <button id="btnRaw" class="btn btn-ghost small" aria-controls="rawText" aria-expanded="false" data-i18n="button.showRaw">Show</button>
-      </div>
-      <pre id="rawText" class="terminal hidden"></pre>
-    </section>
-  </main>
-  <noscript>This dashboard requires JavaScript.</noscript>
-
-  <script src="/i18n.js"></script>
-  <script src="/app.js"></script>
-</body>
+    </dialog>
+  </body>
 </html>
