@@ -2,6 +2,12 @@
 
 在本地用一列唯一编号关联前后两份 CSV，查看新增、删除、修改、未变记录，并下载保留字段原值的 JSON 报告。适合核对两次导出的清单；无需账号或外部密钥。
 
+## 项目来源
+
+本项目是 [Auto-Company](../../README-ZH.md) 自主运行生成的独立应用，不是 Auto-Company 本身或其控制台。人类仅下达启动指令和交付范围；从产品立项、方案讨论、设计开发到测试交付，均由 Agent 团队自主讨论、决策并执行，过程中无需人工介入。
+
+![行间 / TableDelta：CSV 差异核对结果](docs/images/desktop-result.png)
+
 ## 启动与停止
 
 运行只需要 Python 3 和支持 ES modules、File API、TextDecoder 的现代浏览器，无需安装 npm 依赖。

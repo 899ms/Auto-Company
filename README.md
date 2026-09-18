@@ -43,6 +43,20 @@ daemon (launchd / systemd --user, auto-restart on crash)
 
 Each cycle is an independent CLI call. `memories/consensus.md` is the only cross-cycle state.
 
+## Generated Applications
+
+These independent applications were created through autonomous Auto-Company runs. The screenshots show the resulting products, not Auto-Company itself or its dashboard.
+
+Humans supplied only the instruction to start and the delivery scope. From product selection and planning through design, development, testing, and delivery, the Agent team discussed, decided, and executed autonomously, with no human intervention in that process.
+
+![TableDelta: CSV comparison results](projects/tabledelta/docs/images/desktop-result.png)
+
+**行间 / TableDelta**: Compare two CSV files, inspect added, removed, and changed records, and export a change report. [View source](projects/tabledelta/)
+
+![CueCheck: subtitle checking and editing workspace](projects/cuecheck/docs/images/desktop-result.png)
+
+**幕检 / CueCheck**: Check SRT subtitle timing, overlaps, and reading speed; edit individual subtitles, recheck, and export. [View source](projects/cuecheck/)
+
 ## Where To Start (By Platform)
 
 - Windows users: start from [Windows (WSL) Quick Start](#windows-wsl-quick-start), then read the [Windows + WSL Setup Guide](i18n/en/docs/windows-setup.md)

@@ -43,6 +43,20 @@ daemon (launchd / systemd --user, 崩溃自重启)
 
 每个周期是一次独立的 CLI 调用。`memories/consensus.md` 是唯一的跨周期状态——类似接力赛传棒。
 
+## 运行产物示例
+
+以下是 Auto-Company 自主运行生成的独立应用。截图展示的是产出应用，不是 Auto-Company 本身或其控制台。
+
+人类仅下达启动指令和交付范围；从产品立项、方案讨论、设计开发到测试交付，均由 Agent 团队自主讨论、决策并执行，过程中无需人工介入。
+
+![行间 / TableDelta：CSV 差异核对结果](projects/tabledelta/docs/images/desktop-result.png)
+
+**行间 / TableDelta**：对比两份 CSV，查看新增、删除和修改，并导出变化报告。[查看源码](projects/tabledelta/)
+
+![幕检 / CueCheck：字幕检查与编辑工作台](projects/cuecheck/docs/images/desktop-result.png)
+
+**幕检 / CueCheck**：检查 SRT 字幕的时码、重叠与阅读速度，支持逐条编辑、重检和导出。[查看源码](projects/cuecheck/)
+
 ## 你该看哪一节（按平台）
 
 - Windows 用户：从 [Windows (WSL) 快速开始](#windows-wsl-快速开始) 开始，再看 [`docs/windows-setup.md`](docs/windows-setup.md)
