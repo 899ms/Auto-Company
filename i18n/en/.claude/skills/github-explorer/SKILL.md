@@ -20,12 +20,7 @@ description: >
 ### Phase 1: Locate Repo
 
 - Use `web_search` to search `site:github.com <project_name>` and confirm the full org/repo
-- Use `search-layer` (Deep mode + intent awareness) to find additional community links and non-GitHub resources:
-  ```bash
-  python3 skills/search-layer/scripts/search.py \
-    --queries "<project_name> review" "<project_name> 评测 使用体验" \
-    --mode deep --intent exploratory --num 5
-  ```
+- Use an available search tool to find additional community links and non-GitHub resources with queries such as `<project_name> review` and `<project_name> 评测 使用体验`.
 - Use `web_fetch` to fetch the repo homepage for basic information (README, Stars, Forks, License, last update)
 
 ### Phase 2: Gather Multiple Sources (In Parallel)
@@ -36,46 +31,34 @@ Check the following sources **as needed**; collect what exists and skip what doe
 |---|---|---|---|
 | GitHub Repo | `github.com/{org}/{repo}` | README, About, Contributors | `web_fetch` |
 | GitHub Issues | `github.com/{org}/{repo}/issues?q=sort:comments` | Top 3-5 high-quality Issues | `browser` |
-| Chinese-language communities | WeChat / Zhihu / Xiaohongshu | In-depth reviews, usage experiences | `content-extract` |
-| Technical blogs | Medium / Dev.to | Technical architecture analyses | `web_fetch` / `content-extract` |
-| Discussion forums | V2EX / Reddit | User feedback, complaints | `search-layer` (Deep mode) |
+| Chinese-language communities | WeChat / Zhihu / Xiaohongshu | In-depth reviews, usage experiences | Available platform tool or `browser` |
+| Technical blogs | Medium / Dev.to | Technical architecture analyses | `web_fetch` / `browser` |
+| Discussion forums | V2EX / Reddit | User feedback, complaints | Available search or platform tool |
 
-#### search-layer Usage Conventions
+#### Search Tools and Queries
 
-search-layer v2 supports intent-aware scoring. Recommended usage for github-explorer:
+This repository does not include the `search-layer` or `content-extract` skills or their scripts. `web_search`, `web_fetch`, and `browser` mean the corresponding capabilities in the current environment; use the tool names actually available. If enhancement skills are separately installed, read their own instructions and confirm dependencies and invocation paths first. Otherwise, run the following searches directly without those scripts.
 
-| Scenario | Command | Notes |
+| Scenario | Example queries | Notes |
 |------|------|------|
-| **Project research (default)** | `python3 skills/search-layer/scripts/search.py --queries "<project> review" "<project> 评测" --mode deep --intent exploratory --num 5` | Run multiple queries in parallel; rank by authority |
-| **Latest developments** | `python3 skills/search-layer/scripts/search.py "<project> latest release" --mode deep --intent status --freshness pw --num 5` | Prioritize freshness; filter to the past week |
-| **Competitor comparison** | `python3 skills/search-layer/scripts/search.py --queries "<project> vs <competitor>" "<project> alternatives" --mode deep --intent comparison --num 5` | Comparison intent; weight both keywords and authority |
-| **Quick link lookup** | `python3 skills/search-layer/scripts/search.py "<project> official docs" --mode fast --intent resource --num 3` | Exact matching; fastest |
-| **Community discussion** | `python3 skills/search-layer/scripts/search.py "<project> discussion experience" --mode deep --intent exploratory --domain-boost reddit.com,news.ycombinator.com --num 5` | Boost community sites |
+| **Project research (default)** | `<project> review`, `<project> 评测` | Cross-check independent sources |
+| **Latest developments** | `<project> latest release` | Check the official release page and dates |
+| **Competitor comparison** | `<project> vs <competitor>`, `<project> alternatives` | Verify differences and applicable conditions |
+| **Quick link lookup** | `<project> official docs` | Confirm the official domain |
+| **Community discussion** | `<project> discussion experience`, restricted to community domains | Distinguish user experiences from verified facts |
 
-**Intent quick reference**: `factual` (facts) / `status` (updates) / `comparison` (comparisons) / `tutorial` (tutorials) / `exploratory` (exploration) / `news` (news) / `resource` (resource discovery)
-
-> Without `--intent`, behavior is exactly the same as v1: no scoring, with results returned in their original order.
-
-Fallback rules: if either Exa or Tavily returns 429/5xx, continue with the remaining sources; if the entire script fails, fall back to `web_search` as the sole source.
+If a source or enhancement tool fails, continue with available sources and state the coverage limitations in the report. Without search capability, analyze only the readable repository and user-provided material; do not claim that community research was completed.
 
 ---
 
 ### Extraction Fallback and Upgrade Protocol (Extraction Upgrade)
 
-You **must** upgrade from `web_fetch` to `content-extract` in any of these situations:
+In these situations, switch to an available browser or platform reader, or use an installed content-extraction skill:
 1. **Restricted domains**: `mp.weixin.qq.com`, `zhihu.com`, `xiaohongshu.com`.
 2. **Complex structure**: The page contains many formulas (LaTeX), complex tables, or extremely messy Markdown returned by `web_fetch`.
 3. **Missing content**: Anti-scraping defenses cause `web_fetch` to return empty content or a challenge page.
 
-Invocation:
-```bash
-python3 skills/content-extract/scripts/content_extract.py --url <URL>
-```
-
-Internally, content-extract:
-- Checks the domain allowlist first (WeChat, Zhihu, etc.); a match goes directly to MinerU
-- Otherwise probes with `web_fetch` first and falls back to MinerU-HTML on failure
-- Returns a unified JSON contract, including fields such as `ok`, `markdown`, and `sources`
+If reading still fails, retain the URL, mark it as "Could not read," and seek independent sources. Do not treat search snippets as full text that was read, or count inaccessible discussions as verified evidence.
 
 ### Phase 3: Analyze and Assess
 
@@ -179,8 +162,8 @@ Follow the template below strictly. **Every section must contain substantive con
 ## Execution Notes
 
 - Prefer `web_search` + `web_fetch`, with browser as a fallback
-- **Search enhancement**: For project research, use `search-layer` v2 Deep mode + `--intent exploratory` by default (Brave + Exa + Tavily queried in parallel, with deduplication and intent-aware scoring); one source failing must not block the main workflow
-- **Extraction fallback (mandatory)**: If `web_fetch` fails, returns 403, an anti-scraping page, or an overly short body, or the source is on a high-risk domain such as WeChat, Zhihu, or Xiaohongshu, switch to `content-extract` (which falls back internally to MinerU-HTML) to obtain cleaner Markdown and traceable sources
+- **Search enhancement**: Use available search sources; use extra skills only after confirming their installation and reading their instructions. One source failing must not block the main workflow; disclose insufficient coverage
+- **Extraction fallback**: If `web_fetch` fails or returns incomplete content, switch to an available browser, platform reader, or installed extraction skill. If the content remains unreadable, mark it and seek other sources
 - Collect different sources in parallel for efficiency
 - All links must be real and accessible; do not invent URLs
 - Output in English; keep technical terms in English
@@ -200,12 +183,12 @@ Before sending a report, you **must check every item below**, and send it only w
 
 ## Dependencies
 
-This skill depends on the following OpenClaw tools and skills:
+These names describe required capabilities and optional enhancements; they do not mean Auto-Company has installed or configured these tools:
 
 | Dependency | Type | Purpose |
 |------|------|------|
-| `web_search` | Built-in tool | Brave Search queries |
-| `web_fetch` | Built-in tool | Web content retrieval |
-| `browser` | Built-in tool | Dynamic page rendering (fallback) |
-| `search-layer` | Skill | Multi-source search + intent-aware scoring (Brave + Exa + Tavily); v2 supports `--intent` / `--queries` / `--freshness` |
-| `content-extract` | Skill | High-fidelity content extraction (fallback for anti-scraping sites) |
+| `web_search` | Environment-provided tool | Search queries |
+| `web_fetch` | Environment-provided tool | Web content retrieval |
+| `browser` | Environment-provided tool | Dynamic page rendering (fallback) |
+| `search-layer` | Optional skill, not bundled | Use for search enhancement only after separate installation and checking its instructions; otherwise use available search tools |
+| `content-extract` | Optional skill, not bundled | Use for extraction only after separate installation and checking its instructions; otherwise use a browser or platform tool |

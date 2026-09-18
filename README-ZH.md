@@ -13,7 +13,7 @@
 [![Windows WSL](https://img.shields.io/badge/平台-Windows%20WSL-blue?logo=windows&logoColor=white)](#windows-wsl-快速开始)
 [![Codex CLI](https://img.shields.io/badge/驱动-Codex%20CLI-orange?logo=data:image/svg%2Bxml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0yMi4yODE5IDkuODIxMWE1Ljk4NDcgNS45ODQ3IDAgMCAwLS41MTU3LTQuOTEwOCA2LjA0NjIgNi4wNDYyIDAgMCAwLTYuNTA5OC0yLjlBNi4wNjUxIDYuMDY1MSAwIDAgMCA0Ljk4MDcgNC4xODE4YTUuOTg0NyA1Ljk4NDcgMCAwIDAtMy45OTc3IDIuOSA2LjA0NjIgNi4wNDYyIDAgMCAwIC43NDI3IDcuMDk2NiA1Ljk4IDUuOTggMCAwIDAgLjUxMSA0LjkxMDcgNi4wNTEgNi4wNTEgMCAwIDAgNi41MTQ2IDIuOTAwMUE2LjA2NTEgNi4wNjUxIDAgMCAwIDE5LjAyIDE5LjgxODJhNS45ODQ3IDUuOTg0NyAwIDAgMCAzLjk5NzctMi45MDAxIDYuMDQ2MiA2LjA0NjIgMCAwIDAtLjczNTgtNy4wOTdaTTguNzQ5IDYuNzU3OGE0LjQxMTggNC40MTE4IDAgMCAxIDcuMzY3MyAxLjE0NDQgNC4zOTg2IDQuMzk4NiAwIDAgMS0uMjkyOCA0LjIyODVsLTQuNzA3LTIuNzIxNHYtMi42NTE1Wk02LjUzMzIgMTQuNjU0YTQuNDExOCA0LjQxMTggMCAwIDEtMS4xMjkzLTcuMzcgNC4zOTg2IDQuMzk4NiAwIDAgMSA0LjEzNTItMS4zOWwyLjM2MTUgNC4wOTN2NS4zMDJMNi41MzMyIDE0LjY1NFptLTEuODQ4LTEuNTcyYTQuNDExOCA0LjQxMTggMCAwIDEgNi4yMzgtNi4yMjYgNC4zOTg2IDQuMzk4NiAwIDAgMSAzLjg0MzMgMi44MzhsLTQuNzA3IDIuNzIxdjUuMzAxNUw0LjY4NTIgMTMuMDgyWm0xMC41NjU4IDQuMTZhNC40MTE4IDQuNDExOCAwIDAgMS03LjM2NzMtMS4xNDQzIDQuMzk4NiA0LjM5ODYgMCAwIDEgLjI5MjgtNC4yMjg1bDQuNzA3IDIuNzIxNHYyLjY1MTRabTIuMjE1OC03Ljg5NmE0LjQxMTggNC40MTE4IDAgMCAxIDEuMTI5MyA3LjM3IDQuMzk4NiA0LjM5ODYgMCAwIDEtNC4xMzUyIDEuMzlsLTIuMzYxNS00LjA5M1Y5LjE4Nmw1LjM2NzQgMi4xODZabTEuODQ4IDEuNTcyYTQuNDExOCA0LjQxMTggMCAwIDEtNi4yMzggNi4yMjYgNC4zOTg2IDQuMzk4NiAwIDAgMS0zLjg0MzMtMi44MzhsNC43MDctMi43MjFWOS4xODZsNS4zNzQgMy4wOTZaTTEyIDE2LjUxNmE0LjQxMTggNC40MTE4IDAgMCAxLTQuNDExOC00LjQxMThjMC0yLjQzNDggMS45NzctNC40MTE4IDQuNDExOC00LjQxMThzNC40MTE4IDEuOTc3IDQuNDExOCA0LjQxMTgtMS45NzcgNC40MTE4LTQuNDExOCA0LjQxMThaIi8+PC9zdmc+&logoColor=white)](https://www.npmjs.com/package/@openai/codex)
 [![Claude Code](https://img.shields.io/badge/驱动-Claude%20Code-purple?logo=anthropic&logoColor=white)](#依赖)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green?logo=opensourceinitiative&logoColor=white)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?logo=opensourceinitiative&logoColor=white)](LICENSE)
 
 </div>
 
@@ -191,7 +191,7 @@ Auto-Company 并非简单调用 LLM API，而是一个高度解耦的 **多智�
 
 ### 第 5 层：监控与人机交互层 (Observability & HITL)
 *   **基于文件的操纵杆 (File-based Steering)**：人类只需编辑 `memories/consensus.md`，修改 `Next Action`，下一个周期醒来的 AI 团队就会立刻“转舵”，实现极简的宏观控制。
-*   **全链路日志与看板 (Dashboard)**：`logs/` 记录每一轮的完整输出和思考链；`dashboard/` 提供基于 Python Server 的本地可视化看板，实时展现 Cycle 状态、成本消耗和 Agent 活跃度。
+*   **日志与看板 (Dashboard)**：`logs/` 保存引擎实际输出（对已知凭据进行脱敏），以及每轮结果和可用的用量记录。输出详细程度取决于引擎，不保证包含完整思考链。`dashboard/` 展示主循环与守护进程状态、用量与预算、共识摘要和最近日志，不跟踪各个 Agent 的活跃度。
 
 ### 第 4 层：工作流路由层 (Workflow Routing & Teaming)
 *   **动态组队路由 (Dynamic Squad Formation)**：系统利用 Agent Teams 功能，根据当前 `consensus.md` 中的 "Next Action"，从 14 人池子中动态挑选 2-5 名最适合的专家，并在当前循环中将它们“实例化”为子代理。
@@ -205,7 +205,7 @@ Auto-Company 并非简单调用 LLM API，而是一个高度解耦的 **多智�
 ### 第 2 层：编排与状态控制层 (Orchestration & State Machine)
 *   **永续主循环 (The Auto-Loop)**：通过 `scripts/core/auto-loop.sh` 控制的执行循环，让 AI 摆脱“单次对话”，实现 24/7 永续运行。
 *   **轻量级状态机 (Consensus Memory)**：放弃复杂的向量数据库或内存管理，将跨周期的上下文压缩为一个 Markdown 文件：`memories/consensus.md`。每次循环开始前读取，结束前必须重写，作为整个系统的“接力棒”。
-*   **高可用容错机制 (Resilience & Self-Healing)**：内置熔断器 (连续错误触发冷却)、限流退避 (429 报错自动休眠) 和沙箱重置 (未成功输出有效共识时自动回滚)。
+*   **容错与恢复机制 (Resilience & Recovery)**：内置熔断器（连续错误触发冷却）、限流退避（429 报错自动休眠），并在周期失败后恢复共识。Human Overrides、`.auto-company.local` 和框架根目录的 `.gitignore` 有定向保护。产品代码修改和外部副作用不会自动回滚。
 
 ### 第 1 层：基础设施与执行引擎层 (Execution Engine & Infrastructure)
 *   **双核驱动器 (Dual-Engine Executor)**：通过调用成熟的 AI 命令行工具 **Claude Code** 或 **Codex CLI** 作为底层执行器，天然继承其文件读写、Bash 执行、Git 操作等能力。
@@ -382,6 +382,10 @@ auto-company/
 - [continuous-claude](https://github.com/AnandChowdhary/continuous-claude) — 跨会话共享笔记
 - [ralph-claude-code](https://github.com/frankbria/ralph-claude-code) — 退出信号拦截
 - [claude-auto-resume](https://github.com/terryso/claude-auto-resume) — 用量限制恢复
+
+## 许可证
+
+框架采用 [MIT 许可证](LICENSE)。随附的第三方组件保留各自的许可条款和声明。
 
 ## 🤝 贡献与联系
 

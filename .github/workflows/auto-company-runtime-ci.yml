@@ -96,6 +96,36 @@ jobs:
       - name: Run standard-library test suite
         run: python3 -m unittest discover -s tests -v
 
+      - name: Check bundled skill resource references
+        run: python3 scripts/check_skill_resources.py
+
+  macos-runtime:
+    name: macOS configuration and launchd
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify configuration preservation and log rotation
+        run: |
+          python3 -m unittest discover -s tests -p test_launchd_config.py -v
+          python3 -m unittest discover -s tests -p test_daemon_installers.py -v
+          python3 -m unittest discover -s tests -p test_macos_start.py -v
+          python3 -m unittest discover -s tests -p test_log_rotation.py -v
+
+      - name: Verify Dashboard Start with a real isolated LaunchAgent
+        env:
+          AUTO_COMPANY_TEST_LAUNCHD: "1"
+        run: python3 -m unittest discover -s tests -p test_launchd_installation.py -v
+
   shell-syntax:
     name: Shell syntax
     runs-on: ubuntu-latest

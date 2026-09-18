@@ -4,6 +4,8 @@ import argparse
 import os
 from pathlib import Path
 import plistlib
+import sys
+from xml.parsers.expat import ExpatError
 
 
 # Only non-secret runtime settings may cross the service-manager boundary.
@@ -39,12 +41,61 @@ def render(project: str, path: str, environ: dict[str, str]) -> bytes:
     }, sort_keys=False)
 
 
+def validate(project: str, config: object, loaded: bool = False) -> None:
+    """Reject malformed or foreign agents without rewriting their settings."""
+    if not isinstance(config, dict) or config.get("Label") != "com.autocompany.loop":
+        raise ValueError("invalid Auto Company LaunchAgent label")
+    root = Path(project).resolve()
+    directory = config.get("WorkingDirectory")
+    arguments = config.get("ProgramArguments")
+    # launchd job_export() omits WorkingDirectory. The installed plist must
+    # provide it; loaded-job metadata is identified by its exact command below.
+    if not loaded or "WorkingDirectory" in config:
+        if not isinstance(directory, str) or not Path(directory).is_absolute() or Path(directory).resolve() != root:
+            raise ValueError("LaunchAgent WorkingDirectory does not belong to this checkout")
+    if (not isinstance(arguments, list) or len(arguments) != 3 or arguments[0] != "/bin/bash"
+            or arguments[2] != "--daemon" or not isinstance(arguments[1], str)
+            or not Path(arguments[1]).is_absolute()
+            or Path(arguments[1]).resolve() != root / "scripts/core/auto-loop.sh"
+            or config.get("Program", "/bin/bash") != "/bin/bash"):
+        raise ValueError("LaunchAgent command does not belong to this checkout")
+    # Loaded-job output contains launchd metadata rather than all plist keys.
+    if loaded:
+        return
+    environment = config.get("EnvironmentVariables", {})
+    if not isinstance(environment, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str) for key, value in environment.items()):
+        raise ValueError("LaunchAgent EnvironmentVariables must contain strings")
+    if "RunAtLoad" in config and not isinstance(config["RunAtLoad"], bool):
+        raise ValueError("LaunchAgent RunAtLoad must be a boolean")
+    keep_alive = config.get("KeepAlive", False)
+    if not isinstance(keep_alive, (bool, dict)):
+        raise ValueError("LaunchAgent KeepAlive must be a boolean or dictionary")
+    if isinstance(keep_alive, dict) and "PathState" in keep_alive:
+        paths = keep_alive["PathState"]
+        if (not isinstance(paths, dict) or any(not isinstance(key, str) or not isinstance(value, bool)
+                                              for key, value in paths.items())):
+            raise ValueError("LaunchAgent PathState must map paths to booleans")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True)
-    parser.add_argument("--path", required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--path")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--output", type=Path)
+    mode.add_argument("--validate", type=Path)
+    mode.add_argument("--validate-loaded", action="store_true")
     args = parser.parse_args()
+    if args.validate or args.validate_loaded:
+        try:
+            raw = args.validate.read_bytes() if args.validate else sys.stdin.buffer.read()
+            validate(args.project, plistlib.loads(raw), args.validate_loaded)
+        except (OSError, ValueError, TypeError, ExpatError, plistlib.InvalidFileException) as exc:
+            parser.exit(1, f"Error: cannot resume LaunchAgent: {exc}\n")
+        return
+    if args.path is None:
+        parser.error("--path is required with --output")
     encoded = render(args.project, args.path, dict(os.environ))
     temporary = args.output.with_suffix(".plist.tmp")
     try:

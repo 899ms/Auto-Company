@@ -34,7 +34,7 @@ WINDOWS_START_SCRIPT = REPO_ROOT / "scripts" / "windows" / "start-win.ps1"
 WINDOWS_STOP_SCRIPT = REPO_ROOT / "scripts" / "windows" / "stop-win.ps1"
 
 MACOS_STATUS_SCRIPT = REPO_ROOT / "scripts" / "macos" / "status-mac.sh"
-MACOS_START_SCRIPT = REPO_ROOT / "scripts" / "macos" / "install-daemon.sh"
+MACOS_START_SCRIPT = REPO_ROOT / "scripts" / "macos" / "start-daemon.sh"
 MACOS_STOP_SCRIPT = REPO_ROOT / "scripts" / "core" / "stop-loop.sh"
 
 LINUX_DASHBOARD_SCRIPT = REPO_ROOT / "scripts" / "wsl" / "dashboard-wsl.sh"

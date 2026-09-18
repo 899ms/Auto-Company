@@ -355,25 +355,16 @@ CAC Payback
 = $500 / ($100 × 70%) = 7.1 months
 ```
 
-## Reference Materials
+## Working With the Bundled Guidance
 
-- `references/market_analysis.md` - Market research frameworks
-- `references/competitive_intel.md` - Competitive analysis methods
-- `references/gtm_playbook.md` - Go-to-market strategies
-- `references/plg_guide.md` - Product-led growth tactics
+This skill includes the frameworks, tables, and formulas above. It does not bundle calculators, a live competitive tracker, or a timeline generator.
 
-## Scripts
+| Task | Supported workflow |
+|------|--------------------|
+| Market sizing | Use [market-sizing-analysis](../market-sizing-analysis/SKILL.md) to define TAM/SAM/SOM, record sources, and calculate a range from explicit assumptions. |
+| Competitive analysis | Fill the competitive matrix above from dated, cited research. Mark unknowns and compare the same criteria across competitors. |
+| Go-to-market planning | Apply the launch phases above to the target date; record an owner, dependency, and success measure for each milestone. |
+| Product-led growth | Use the growth and engagement frameworks above to choose an activation event, funnel metrics, and an experiment with a decision rule. |
+| Unit economics | Use the formulas above or [the bundled worksheet](../financial-unit-economics/resources/template.md); keep time periods and customer segments consistent. |
 
-```bash
-# Market sizing calculator
-python scripts/market_sizing.py --segment enterprise --geo north_america
-
-# Competitive tracker
-python scripts/competitive_tracker.py --competitors comp1,comp2,comp3
-
-# GTM timeline generator
-python scripts/gtm_timeline.py --launch-date 2024-03-01
-
-# Unit economics calculator
-python scripts/unit_economics.py --arpu 100 --margin 0.7 --lifetime 36
-```
+For repeatable calculations, create a worksheet or a small script for the user's actual inputs and validate its outputs. Do not imply that a calculation also retrieved current market data.

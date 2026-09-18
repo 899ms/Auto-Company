@@ -12,6 +12,41 @@ SPEC.loader.exec_module(MODULE)
 
 
 class LaunchdConfigTests(unittest.TestCase):
+    def loaded_config(self):
+        project = str(Path(__file__).resolve().parents[1])
+        # launchd job_export() omits WorkingDirectory and environment settings.
+        config = {"Label": "com.autocompany.loop", "PID": 123, "LastExitStatus": 0,
+                  "ProgramArguments": ["/bin/bash", project + "/scripts/core/auto-loop.sh", "--daemon"]}
+        return project, config
+
+    def test_loaded_agent_without_working_directory_is_validated_by_command(self):
+        project, config = self.loaded_config()
+        MODULE.validate(project, config, loaded=True)
+
+    def test_disk_plist_still_requires_working_directory(self):
+        project, config = self.loaded_config()
+        with self.assertRaisesRegex(ValueError, "WorkingDirectory"):
+            MODULE.validate(project, config)
+
+    def test_loaded_agent_with_working_directory_still_checks_it(self):
+        project, config = self.loaded_config()
+        config["WorkingDirectory"] = project
+        MODULE.validate(project, config, loaded=True)
+        for directory in (project + "/foreign", None, 123):
+            with self.subTest(directory=directory):
+                config["WorkingDirectory"] = directory
+                with self.assertRaisesRegex(ValueError, "WorkingDirectory"):
+                    MODULE.validate(project, config, loaded=True)
+
+    def test_loaded_agent_without_working_directory_rejects_foreign_identity(self):
+        project, config = self.loaded_config()
+        for update in ({"Label": "com.foreign.loop"}, {"Program": "/bin/sh"},
+                       {"ProgramArguments": ["/bin/bash", project + "/foreign/auto-loop.sh", "--daemon"]},
+                       {"ProgramArguments": ["/bin/bash", "scripts/core/auto-loop.sh", "--daemon"]}):
+            with self.subTest(update=update):
+                with self.assertRaises(ValueError):
+                    MODULE.validate(project, dict(config, **update), loaded=True)
+
     def test_runtime_budget_and_timeout_survive_install(self):
         env = {
             "HOME": "/Users/test", "ENGINE": "codex",

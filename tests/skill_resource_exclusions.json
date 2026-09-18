@@ -1,0 +1,92 @@
+[
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "scripts/rotate_pdf.py",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "references/policies.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "references/finance.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "references/api_docs.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "references/mnda.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "assets/logo.png",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "assets/font.ttf",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "assets/slides.pptx",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "FORMS.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "REFERENCE.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "EXAMPLES.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "DOCX-JS.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "REDLINING.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "OOXML.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/skill-creator/SKILL.md",
+    "target": "references/schema.md",
+    "reason": "Teaching example for a different skill, not a bundled resource."
+  },
+  {
+    "source": ".claude/skills/devops/references/kubernetes-helm-advanced.md",
+    "target": "templates/deployment.yaml",
+    "reason": "Helm chart file to create in the user project; the document includes its contents."
+  },
+  {
+    "source": ".claude/skills/devops/references/kubernetes-helm-advanced.md",
+    "target": "templates/_helpers.tpl",
+    "reason": "Helm chart file to create in the user project; the document includes its contents."
+  },
+  {
+    "source": ".claude/skills/github-explorer/SKILL.md",
+    "target": "GitHub/官网链接",
+    "reason": "Placeholder URL in the output formatting checklist."
+  }
+]

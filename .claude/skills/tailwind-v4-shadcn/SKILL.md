@@ -49,7 +49,7 @@ license: MIT
 
 1. **Explicitly state you're using this skill** at the start of the conversation
 2. **Reference patterns from the skill** rather than general knowledge
-3. **Prevent known issues** listed in `reference/common-gotchas.md`
+3. **Prevent known issues** listed in `references/common-gotchas.md`
 4. **Don't guess** - if unsure, check the skill documentation
 
 **USER ACTION REQUIRED**: Tell Claude to check this skill first!
@@ -212,7 +212,7 @@ This pattern is **mandatory** - skipping steps will break your theme.
 
 ### 1. Create ThemeProvider
 
-See `reference/dark-mode.md` for full implementation or use template:
+See `references/dark-mode.md` for full implementation or use template:
 
 ```typescript
 // Copy from: templates/theme-provider.tsx
@@ -239,7 +239,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 pnpm dlx shadcn@latest add dropdown-menu
 ```
 
-See `reference/dark-mode.md` for ModeToggle component code.
+See `references/dark-mode.md` for ModeToggle component code.
 
 ---
 
@@ -360,7 +360,7 @@ Always use semantic names for colors:
 | Build fails | `tailwind.config.ts` exists | Delete the file |
 | Text invisible | Wrong contrast colors | Check color definitions in `:root`/`.dark` |
 
-See `reference/common-gotchas.md` for complete troubleshooting guide.
+See `references/common-gotchas.md` for complete troubleshooting guide.
 
 ---
 
@@ -550,7 +550,7 @@ All patterns in this skill have been validated in production.
 
 **Questions? Issues?**
 
-1. Check `reference/common-gotchas.md` first
+1. Check `references/common-gotchas.md` first
 2. Verify all steps in the 4-step architecture
 3. Ensure `components.json` has `"config": ""`
 4. Delete `tailwind.config.ts` if it exists
