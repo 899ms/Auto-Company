@@ -13,6 +13,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$PROJECT_DIR/scripts/core/ui-messages.sh"
 LOG_DIR="$PROJECT_DIR/logs"
 STATE_FILE="$PROJECT_DIR/.auto-loop-state"
 PID_FILE="$PROJECT_DIR/.auto-loop.pid"
@@ -92,30 +93,29 @@ case "${1:-}" in
     --last)
         latest=$(ls -t "$LOG_DIR"/cycle-*.log 2>/dev/null | head -1)
         if [ -n "$latest" ]; then
-            echo "=== Latest Cycle: $(basename "$latest") ==="
+            ui_message monitor.last "$(basename "$latest")"
             cat "$latest"
         else
-            echo "No cycle logs found."
+            ui_message monitor.no_cycles
         fi
         ;;
 
     --cycles)
-        echo "=== Cycle History ==="
+        ui_message monitor.cycles
         if [ -f "$LOG_DIR/auto-loop.log" ]; then
             grep -E "Cycle #[0-9]+ \[(OK|FAIL|START|LIMIT|BUDGET|BREAKER)\]" "$LOG_DIR/auto-loop.log" | tail -50
         else
-            echo "No log found."
+            ui_message monitor.no_log
         fi
         ;;
 
     *)
-        echo "=== Auto Company Live Monitor (Ctrl+C to stop) ==="
-        echo "Watching: $LOG_DIR/auto-loop.log"
+        ui_message monitor.live "$LOG_DIR/auto-loop.log"
         echo ""
         if [ -f "$LOG_DIR/auto-loop.log" ]; then
             tail -f "$LOG_DIR/auto-loop.log"
         else
-            echo "No log file yet. Start the loop first: ./auto-loop.sh"
+            ui_message monitor.start_first
         fi
         ;;
 esac

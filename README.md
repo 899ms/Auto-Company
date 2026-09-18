@@ -77,6 +77,7 @@ Language selection preserves your root `PROMPT.md`, custom rules, and Human Over
 | Company rules | [Charter](CLAUDE.md) | [公司章程](i18n/zh-CN/CLAUDE.md) |
 | Engine adapters | [Adapter guide](ENGINE_ADAPTERS.md) | [引擎适配器](i18n/zh-CN/ENGINE_ADAPTERS.md) |
 | Usage and budgets | [Governance guide](docs/usage-governance.md) | [用量与预算治理](i18n/zh-CN/docs/usage-governance.md) |
+| Operations and troubleshooting | [Common tasks and errors](i18n/en/docs/troubleshooting.md) | [常见操作与排错](docs/troubleshooting.md) |
 
 ## Team Lineup (14 Agents)
 

@@ -45,6 +45,9 @@ class SystemdFixture(unittest.TestCase):
         (project / "scripts/core").mkdir()
         installer = project / "scripts/wsl/install-wsl-daemon.sh"
         shutil.copy2(REPO / "scripts/wsl/install-wsl-daemon.sh", installer)
+        for filename in ("ui-messages.sh", "localization.py"):
+            shutil.copy2(REPO / "scripts/core" / filename, project / "scripts/core" / filename)
+        shutil.copytree(REPO / "i18n", project / "i18n")
         (project / "scripts/core/auto-loop.sh").write_text(
             '#!/bin/bash\nset -eu\nprintf "%s\\n" "$PWD" '
             '"${AUTO_COMPANY_SYSTEMD_SENTINEL-missing}" > probe-result\n',

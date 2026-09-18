@@ -77,6 +77,7 @@ daemon (launchd / systemd --user, 崩溃自重启)
 | 公司规则 | [公司章程](i18n/zh-CN/CLAUDE.md) | [Charter](CLAUDE.md) |
 | 引擎适配 | [引擎适配器](i18n/zh-CN/ENGINE_ADAPTERS.md) | [Adapter guide](ENGINE_ADAPTERS.md) |
 | 用量与预算 | [治理说明](i18n/zh-CN/docs/usage-governance.md) | [Governance guide](docs/usage-governance.md) |
+| 操作与排错 | [常见操作与排错](docs/troubleshooting.md) | [Common tasks and errors](i18n/en/docs/troubleshooting.md) |
 
 ## 团队阵容（14 人）
 

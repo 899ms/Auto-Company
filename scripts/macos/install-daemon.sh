@@ -14,6 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$PROJECT_DIR/scripts/core/ui-messages.sh"
 LABEL="com.autocompany.loop"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 PAUSE_FLAG="${PROJECT_DIR}/.auto-loop-paused"
@@ -29,32 +30,34 @@ CODEX_SANDBOX_MODE="${CODEX_SANDBOX_MODE:-danger-full-access}"
 source "$SCRIPT_DIR/../core/engine-adapters.sh"
 
 if [ "$OS_NAME" != "Darwin" ]; then
-    echo "install-daemon.sh supports macOS launchd only."
-    echo "Current OS: $OS_NAME"
-    echo "Use foreground mode instead: make start"
+    ui_message mac.only "$OS_NAME"
     exit 1
 fi
 
 # --- Uninstall ---
 if [ "${1:-}" = "--uninstall" ]; then
-    echo "Uninstalling Auto Company daemon..."
+    ui_message mac.uninstalling
     if launchctl list | grep -q "$LABEL"; then
         launchctl unload "$PLIST_PATH" 2>/dev/null || true
-        echo "Service unloaded."
+        ui_message mac.unloaded
     fi
     if [ -f "$PLIST_PATH" ]; then
         rm -f "$PLIST_PATH"
-        echo "Plist removed: $PLIST_PATH"
+        ui_message mac.removed "$PLIST_PATH"
     fi
-    echo "Done. Daemon uninstalled."
+    ui_message mac.uninstalled
     exit 0
 fi
 
 # --- Install ---
 
-engine_adapter_validate
+if ! engine_adapter_validate; then
+    ui_message engine.invalid >&2
+    exit 1
+fi
 command -v python3 >/dev/null 2>&1 || {
     echo "Error: Python 3 is required for runtime accounting and launchd configuration."
+    ui_message python.required
     exit 1
 }
 
@@ -62,6 +65,7 @@ command -v python3 >/dev/null 2>&1 || {
 ENGINE_PATH=""
 if ! ENGINE_PATH="$(engine_adapter_resolve)"; then
     echo "Error: $(engine_adapter_missing_dependency_message)"
+    ui_message engine.missing
     exit 1
 fi
 
@@ -78,7 +82,7 @@ DAEMON_PATH="${ENGINE_DIR}"
 [ -n "$NODE_DIR" ] && DAEMON_PATH="${DAEMON_PATH}:${NODE_DIR}"
 DAEMON_PATH="${DAEMON_PATH}:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-echo "Installing Auto Company daemon..."
+ui_message mac.installing
 echo "  Project: $PROJECT_DIR"
 echo "  Engine:  $ENGINE"
 echo "  CLI:     $ENGINE_PATH"
@@ -110,17 +114,11 @@ export OPENAI_COMPATIBLE_ALLOW_SHELL OPENAI_COMPATIBLE_ALLOW_INSECURE_HTTP
 python3 "$SCRIPT_DIR/../core/launchd-config.py" \
     --project "$PROJECT_DIR" --path "$DAEMON_PATH" --output "$PLIST_PATH"
 
-echo "Plist written: $PLIST_PATH"
+ui_message mac.written "$PLIST_PATH"
 
 # Load
 launchctl load "$PLIST_PATH"
 echo ""
-echo "Daemon installed and started!"
+ui_message mac.installed
 echo ""
-echo "Commands:"
-echo "  ./monitor.sh            # Watch live logs"
-echo "  ./monitor.sh --status   # Check status"
-echo "  ./stop-loop.sh          # Stop the loop (daemon will restart it)"
-echo "  ./stop-loop.sh --pause-daemon   # Pause daemon (no auto-restart)"
-echo "  ./stop-loop.sh --resume-daemon  # Resume daemon"
-echo "  ./install-daemon.sh --uninstall  # Remove daemon completely"
+ui_message mac.commands

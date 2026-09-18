@@ -1,10 +1,13 @@
 param(
     [ValidateSet("start", "stop", "status", "run")]
     [string]$Action = "status",
-    [int]$HeartbeatSeconds = 20
+    [int]$HeartbeatSeconds = 20,
+    [ValidateSet("zh-CN", "en")][string]$Language
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "messages-win.ps1")
+if ($PSBoundParameters.ContainsKey("Language")) { Initialize-AutoCompanyMessages -Language $Language }
 
 $repoWin = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
 $pidFile = Join-Path $repoWin ".auto-loop-awake.pid"
@@ -64,7 +67,7 @@ switch ($Action) {
     "start" {
         $existing = Get-RunningGuardianProcess
         if ($existing) {
-            Write-Output "Awake guardian already running (PID $($existing.Id))."
+            Write-Output (Get-AutoCompanyMessage -Key 'Awake guardian already running (PID {0}).' -Values @($existing.Id))
             exit 0
         }
 
@@ -82,7 +85,7 @@ switch ($Action) {
             Start-Sleep -Milliseconds 200
             $running = Get-RunningGuardianProcess
             if ($running) {
-                Write-Output "Awake guardian started (PID $($running.Id))."
+                Write-Output (Get-AutoCompanyMessage -Key 'Awake guardian started (PID {0}).' -Values @($running.Id))
                 exit 0
             }
         }
@@ -90,7 +93,7 @@ switch ($Action) {
         if ($proc -and -not $proc.HasExited) {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
         }
-        Write-Error "Failed to start awake guardian."
+        Write-Error (Get-AutoCompanyMessage -Key 'Failed to start awake guardian.')
         exit 1
     }
 
@@ -101,7 +104,7 @@ switch ($Action) {
         try {
             $state = [AutoCompanySleepGuard.NativeMethods]::SetThreadExecutionState($RUN_FLAGS)
             if ($state -eq 0) {
-                throw "SetThreadExecutionState failed at startup."
+                throw (Get-AutoCompanyMessage -Key 'SetThreadExecutionState failed at startup.')
             }
 
             while (-not (Test-Path $stopFile)) {
@@ -120,7 +123,7 @@ switch ($Action) {
         $existing = Get-RunningGuardianProcess
         if (-not $existing) {
             Clear-StateFiles
-            Write-Output "Awake guardian is not running."
+            Write-Output (Get-AutoCompanyMessage -Key 'Awake guardian is not running.')
             exit 0
         }
 
@@ -130,7 +133,7 @@ switch ($Action) {
             Stop-Process -Id $existing.Id -Force -ErrorAction SilentlyContinue
         }
         Clear-StateFiles
-        Write-Output "Awake guardian stopped."
+        Write-Output (Get-AutoCompanyMessage -Key 'Awake guardian stopped.')
         exit 0
     }
 

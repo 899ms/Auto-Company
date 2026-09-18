@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '../scripts/windows/messages-win.ps1')
 $scriptPath = Join-Path $PSScriptRoot '../scripts/windows/start-win.ps1'
 $tokens = $null
 $parseErrors = $null

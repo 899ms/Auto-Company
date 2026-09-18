@@ -27,6 +27,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "messages-win.ps1")
+if ($PSBoundParameters.ContainsKey("Language")) { Initialize-AutoCompanyMessages -Language $Language }
 
 function ConvertTo-RuntimeLanguage {
     param([ValidateSet("zh-CN", "en")][string]$Value)
@@ -37,7 +39,7 @@ function ConvertTo-RuntimeLanguage {
 
 function Assert-WslAvailable {
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-        throw "wsl.exe not found. Enable WSL first."
+        throw (Get-AutoCompanyMessage -Key 'wsl.exe not found. Enable WSL first.')
     }
 }
 
@@ -46,11 +48,11 @@ function Get-RepoPaths {
     $repoWinForWsl = $repoWin -replace "\\", "/"
     $repoWslRaw = & wsl.exe -d $Distro wslpath -a "$repoWinForWsl"
     if (-not $repoWslRaw) {
-        throw "Failed to convert repository path to WSL path."
+        throw (Get-AutoCompanyMessage -Key 'Failed to convert repository path to WSL path.')
     }
     $repoWsl = $repoWslRaw.Trim()
     if (-not $repoWsl) {
-        throw "Failed to convert repository path to WSL path."
+        throw (Get-AutoCompanyMessage -Key 'Failed to convert repository path to WSL path.')
     }
     return @{
         RepoWin = $repoWin
@@ -73,7 +75,7 @@ function Invoke-WslCommand {
         }
     }
     if (-not $IgnoreExitCode -and $code -ne 0) {
-        throw "WSL command failed ($code): $Command"
+        throw (Get-AutoCompanyMessage -Key 'WSL command failed ({0}): {1}' -Values @($code, $Command))
     }
     return $code
 }
@@ -86,12 +88,12 @@ function Write-AutoLoopEnv {
 
     $envFile = Join-Path $RepoWin ".auto-loop.env"
     if ((Test-Path $envFile) -and $EnvLines.Count -eq 0) {
-        Write-Host "Reusing env file: $envFile"
+        Write-Host (Get-AutoCompanyMessage -Key 'Reusing env file: {0}' -Values @($envFile))
         return
     }
     $updates = @{}
     foreach ($entry in $EnvLines) {
-        if ($entry -match '[\r\n]') { throw "Environment values must be a single line." }
+        if ($entry -match '[\r\n]') { throw (Get-AutoCompanyMessage -Key 'Environment values must be a single line.') }
         $key, $value = $entry -split '=', 2
         # systemd EnvironmentFile quoting, not shell evaluation.
         $updates[$key] = $key + '="' + $value.Replace('\', '\\').Replace('"', '\"') + '"'
@@ -117,7 +119,7 @@ function Write-AutoLoopEnv {
 
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllLines($envFile, $lines, $utf8NoBom)
-    Write-Host "Wrote env file: $envFile"
+    Write-Host (Get-AutoCompanyMessage -Key 'Wrote env file: {0}' -Values @($envFile))
 }
 
 function Start-AutoCompanyService {
@@ -136,7 +138,7 @@ function Start-AutoCompanyService {
     # An installer may enable/start immediately, so persist chosen settings first.
     Write-AutoLoopEnv -RepoWin $RepoWin -EnvLines $EnvLines
     if ($installedCode -ne 0) {
-        Write-Host "auto-company.service not installed; running make install..."
+        Write-Host (Get-AutoCompanyMessage -Key 'auto-company.service not installed; running make install...')
         $null = Invoke-WslCommand -RepoWsl $RepoWsl -Command "make install"
     }
     $null = Invoke-WslCommand -RepoWsl $RepoWsl -Command "bash scripts/wsl/dashboard-wsl.sh start"
@@ -150,32 +152,32 @@ $repoWsl = $paths.RepoWsl
 if ($PSBoundParameters.ContainsKey("Engine")) {
     $engineNormalized = $Engine.ToLowerInvariant()
     if ($engineNormalized -notin @("claude", "codex", "cursor", "openai-compatible")) {
-        throw "Unsupported Engine '$Engine'. Use claude, codex, cursor, or openai-compatible."
+        throw (Get-AutoCompanyMessage -Key 'Unsupported Engine ''{0}''. Use claude, codex, cursor, or openai-compatible.' -Values @($Engine))
     }
     $Engine = $engineNormalized
 }
 
 if ($Engine -eq "cursor" -and -not $EnableCursorAdapter) {
-    throw "Engine cursor requires -EnableCursorAdapter."
+    throw (Get-AutoCompanyMessage -Key 'Engine cursor requires -EnableCursorAdapter.')
 }
 if ($Engine -eq "openai-compatible") {
     if (-not $EnableOpenAICompatibleAdapter) {
-        throw "Engine openai-compatible requires -EnableOpenAICompatibleAdapter."
+        throw (Get-AutoCompanyMessage -Key 'Engine openai-compatible requires -EnableOpenAICompatibleAdapter.')
     }
     if (-not $OpenAICompatibleEndpoint -or -not $OpenAICompatibleModel) {
-        throw "Engine openai-compatible requires -OpenAICompatibleEndpoint and -OpenAICompatibleModel."
+        throw (Get-AutoCompanyMessage -Key 'Engine openai-compatible requires -OpenAICompatibleEndpoint and -OpenAICompatibleModel.')
     }
     if ($OpenAICompatibleEndpoint -match "[?#]" -or $OpenAICompatibleEndpoint -match "://[^/]*@") {
-        throw "OpenAICompatibleEndpoint must not contain a query, fragment, or embedded credentials."
+        throw (Get-AutoCompanyMessage -Key 'OpenAICompatibleEndpoint must not contain a query, fragment, or embedded credentials.')
     }
     $adapterSecret = [Environment]::GetEnvironmentVariable("OPENAI_COMPATIBLE_API_KEY")
     if ($adapterSecret -and ($OpenAICompatibleEndpoint.Contains($adapterSecret) -or $OpenAICompatibleModel.Contains($adapterSecret))) {
-        throw "API key material must not be embedded in endpoint or model configuration."
+        throw (Get-AutoCompanyMessage -Key 'API key material must not be embedded in endpoint or model configuration.')
     }
 }
 
 if ($PSBoundParameters.ContainsKey("CycleTimeoutSeconds") -and $CycleTimeoutSeconds -lt 300) {
-    Write-Warning "CycleTimeoutSeconds=$CycleTimeoutSeconds is very low for real cycles and may cause frequent timeouts. Recommended: 900-1800."
+    Write-Warning (Get-AutoCompanyMessage -Key 'CycleTimeoutSeconds={0} is very low for real cycles and may cause frequent timeouts. Recommended: 900-1800.' -Values @($CycleTimeoutSeconds))
 }
 
 $envLines = @()
@@ -208,30 +210,30 @@ if ($PSBoundParameters.ContainsKey("SandboxMode")) {
 }
 
 Start-AutoCompanyService -RepoWin $repoWin -RepoWsl $repoWsl -EnvLines $envLines
-Write-Host "WSL daemon started: auto-company.service"
+Write-Host (Get-AutoCompanyMessage -Key 'WSL daemon started: auto-company.service')
 
 $awakeScript = Join-Path $repoWin "scripts\\windows\\awake-guardian-win.ps1"
 if (-not (Test-Path $awakeScript)) {
-    throw "Missing awake guardian script: $awakeScript"
+    throw (Get-AutoCompanyMessage -Key 'Missing awake guardian script: {0}' -Values @($awakeScript))
 }
 
-& $awakeScript -Action start
+& $awakeScript -Action start -Language $script:AutoCompanyMessageLanguage
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Daemon started, but awake guardian failed to start. System sleep is not protected."
+    Write-Error (Get-AutoCompanyMessage -Key 'Daemon started, but awake guardian failed to start. System sleep is not protected.')
     exit 2
 }
 
 $anchorScript = Join-Path $repoWin "scripts\\windows\\wsl-anchor-win.ps1"
 if (-not (Test-Path $anchorScript)) {
-    throw "Missing WSL anchor script: $anchorScript"
+    throw (Get-AutoCompanyMessage -Key 'Missing WSL anchor script: {0}' -Values @($anchorScript))
 }
 
-& $anchorScript -Action start -Distro $Distro -RepoWsl $repoWsl
+& $anchorScript -Action start -Distro $Distro -RepoWsl $repoWsl -Language $script:AutoCompanyMessageLanguage
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Daemon started, but WSL anchor failed to start. Background persistence may be unstable."
+    Write-Error (Get-AutoCompanyMessage -Key 'Daemon started, but WSL anchor failed to start. Background persistence may be unstable.')
     exit 3
 }
 
 Write-Host ""
-Write-Host "Use .\scripts\windows\status-win.ps1 to inspect daemon and loop status."
+Write-Host (Get-AutoCompanyMessage -Key 'Use .\scripts\windows\status-win.ps1 to inspect daemon and loop status.')
 exit 0

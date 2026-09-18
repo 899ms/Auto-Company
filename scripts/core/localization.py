@@ -15,6 +15,41 @@ LANGUAGES = ("zh-CN", "en")
 KEY = "AUTO_COMPANY_LANGUAGE"
 
 
+def diagnostic_language(root, environ=None):
+    """Diagnostics remain readable when the configuration itself is broken."""
+    environ = os.environ if environ is None else environ
+    if KEY in environ:
+        return environ[KEY] if environ[KEY] in LANGUAGES else "en"
+    try:
+        _, language = read_local(root)
+        if language is not None:
+            return language if language in LANGUAGES else "en"
+    except (OSError, UnicodeError, ValueError):
+        return "en"
+    return "zh-CN"
+
+
+def message(root, key, *values, language=None, fallback=None):
+    language = language or diagnostic_language(root)
+    try:
+        catalog = json.loads((ROOT / "i18n/messages.json").read_text(encoding="utf-8"))
+        entry = catalog[key]
+        if not isinstance(entry, dict):
+            raise ValueError("message catalog entries must be language maps")
+        english = entry.get("en")
+        if not isinstance(english, str) or not english.strip():
+            raise ValueError("message catalog requires an English fallback")
+        template = entry.get(language)
+        if (not isinstance(template, str) or not template.strip()
+                or sorted(re.findall(r"\{[0-9]+\}", template)) != sorted(re.findall(r"\{[0-9]+\}", english))):
+            template = english
+        # Substitute only numbered tokens, once. User values are never code or
+        # format strings, even if they contain braces or shell metacharacters.
+        return re.sub(r"\{([0-9]+)\}", lambda match: str(values[int(match[1])]), template)
+    except (OSError, UnicodeError, ValueError, KeyError, IndexError, TypeError):
+        return fallback if fallback is not None else f"[{key}] " + " | ".join(str(value) for value in values)
+
+
 def read_local(root):
     path = root / ".auto-company.local"
     if path.is_symlink():
@@ -125,17 +160,28 @@ def build_prompt(root, language):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "prompt", "context", "set"))
+    parser.add_argument("command", choices=("check", "prompt", "context", "set", "message", "help"))
     parser.add_argument("--root", type=Path, default=ROOT)
-    parser.add_argument("--language", choices=LANGUAGES)
+    parser.add_argument("--language")
+    parser.add_argument("--key")
+    parser.add_argument("--arg", action="append", default=[])
     args = parser.parse_args()
     root = args.root.resolve()
     try:
-        if args.command == "set":
+        if args.command == "message":
+            if not args.key:
+                parser.error("message requires --key")
+            print(message(root, args.key, *args.arg))
+        elif args.command == "help":
+            for line in (root / "Makefile").read_text(encoding="utf-8").splitlines():
+                match = re.match(r"^([a-zA-Z_-]+):.*?## (.*)$", line)
+                if match:
+                    print(f"  {match[1]:<24} {message(root, 'help.' + match[1], fallback=match[2])}")
+        elif args.command == "set":
             if args.language is None:
                 parser.error("set requires --language")
             set_language(root, args.language)
-            print(f"Saved {KEY}={args.language}. Applies on next start; an environment override takes precedence.")
+            print(message(root, "language.saved", args.language))
         else:
             language = resolve_language(root)
             if args.command == "prompt":
@@ -146,6 +192,8 @@ def main():
                 print(language)
     except (OSError, UnicodeError, ValueError, TypeError) as error:
         print(f"Error: {error}", file=sys.stderr)
+        key = "language.running" if "stop the loop before" in str(error) else "language.invalid"
+        print(message(root, key), file=sys.stderr)
         return 78
     return 0
 
@@ -153,4 +201,5 @@ def main():
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
     sys.exit(main())

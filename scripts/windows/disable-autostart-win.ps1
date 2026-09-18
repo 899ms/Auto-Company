@@ -3,14 +3,15 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "messages-win.ps1")
 
 if (-not (Get-Command schtasks.exe -ErrorAction SilentlyContinue)) {
-    throw "schtasks.exe not found."
+    throw (Get-AutoCompanyMessage -Key 'schtasks.exe not found.')
 }
 
 & schtasks.exe /Query /TN $TaskName | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Autostart task not found: $TaskName"
+    Write-Host (Get-AutoCompanyMessage -Key 'Autostart task not found: {0}' -Values @($TaskName))
     exit 0
 }
 
@@ -23,9 +24,9 @@ if ($deleteOutput) {
 
 if ($LASTEXITCODE -ne 0) {
     if (($deleteOutput -join "`n") -match "Access is denied") {
-        throw "Failed to delete task due to permission error. Run PowerShell as Administrator and retry."
+        throw (Get-AutoCompanyMessage -Key 'Failed to delete task due to permission error. Run PowerShell as Administrator and retry.')
     }
-    throw "Failed to delete scheduled task: $TaskName"
+    throw (Get-AutoCompanyMessage -Key 'Failed to delete scheduled task: {0}' -Values @($TaskName))
 }
 
-Write-Host "Autostart disabled: $TaskName"
+Write-Host (Get-AutoCompanyMessage -Key 'Autostart disabled: {0}' -Values @($TaskName))

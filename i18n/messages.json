@@ -1,0 +1,350 @@
+{
+  "language.saved": {
+    "en": "Saved AUTO_COMPANY_LANGUAGE={0}. Applies on next start; an environment override takes precedence.",
+    "zh-CN": "已保存 AUTO_COMPANY_LANGUAGE={0}，下次启动生效；环境变量优先于本地配置。"
+  },
+  "language.invalid": {
+    "en": "Check AUTO_COMPANY_LANGUAGE and .auto-company.local: use zh-CN or en, with plain KEY=value lines and no duplicate language entry. No cycle was started by this check.",
+    "zh-CN": "请检查 AUTO_COMPANY_LANGUAGE 和 .auto-company.local：语言仅支持 zh-CN 或 en，配置使用 KEY=value，语言项不可重复。本次检查未启动任何循环。"
+  },
+  "language.running": {
+    "en": "Stop the loop before changing language: use make stop for a foreground loop, or make pause for a background service to prevent automatic restarts. Then run make language LANGUAGE=en or LANGUAGE=zh-CN.",
+    "zh-CN": "请先用 make stop 停止前台循环，或用 make pause 暂停后台服务以防自动重启，再运行 make language LANGUAGE=zh-CN 或 LANGUAGE=en 切换语言。"
+  },
+  "python.required": {
+    "en": "Install Python 3 and ensure python3 is on PATH before retrying.",
+    "zh-CN": "请安装 Python 3，并确认 python3 在 PATH 中，然后重试。"
+  },
+  "engine.invalid": {
+    "en": "Check the ENGINE setting and the adapter options above before restarting.",
+    "zh-CN": "请根据上方错误检查 ENGINE 和引擎适配器设置，再重新启动。"
+  },
+  "engine.missing": {
+    "en": "Install the selected engine CLI, sign in if required, and check its PATH or executable override.",
+    "zh-CN": "请安装所选引擎的 CLI，按需登录，并检查 PATH 或引擎可执行文件路径设置。"
+  },
+  "loop.timeout_invalid": {
+    "en": "Cycle timeout, TERM grace and KILL wait must be non-negative integer seconds.",
+    "zh-CN": "循环超时、TERM 宽限时间和 KILL 等待时间必须是非负整数秒数。"
+  },
+  "loop.started": {
+    "en": "Loop started (PID {0}). Stop with make stop; view live output with make monitor.",
+    "zh-CN": "循环已启动（PID {0}）。用 make stop 停止，用 make monitor 查看实时日志。"
+  },
+  "loop.stopping": {
+    "en": "The loop is stopping and cleaning up its owned processes.",
+    "zh-CN": "循环正在停止，并清理本轮启动的进程。"
+  },
+  "loop.stop_requested": {
+    "en": "Stop requested. The active cycle will be interrupted and its owned processes cleaned up.",
+    "zh-CN": "已请求停止。当前循环将被中断，并清理它启动的进程。"
+  },
+  "loop.paused": {
+    "en": "Loop paused ({0}). Review the cause before removing .auto-loop-paused.",
+    "zh-CN": "循环已暂停（{0}）。请先检查原因，再移除 .auto-loop-paused。"
+  },
+  "loop.resuming": {
+    "en": "Pause cleared. The loop will check configuration before the next cycle.",
+    "zh-CN": "暂停已解除，循环将在下一轮前重新检查配置。"
+  },
+  "budget.paused": {
+    "en": "Budget pause is active ({0}); the next cycle is blocked. Review usage and limits, then run make resume. Resume clears the pause once; usage is evaluated again after the next cycle.",
+    "zh-CN": "预算暂停已生效（{0}），下一轮不会启动。请先检查用量和限额，再运行 make resume。恢复只解除本次暂停，下一轮结束后会重新评估用量。"
+  },
+  "budget.invalid": {
+    "en": "Budget checks failed; no cycle was started. Check USAGE_* settings and the usage ledger using the error above.",
+    "zh-CN": "预算检查失败，未启动循环。请根据上方错误检查 USAGE_* 配置和用量记录。"
+  },
+  "budget.inactive": {
+    "en": "Budget pause: inactive",
+    "zh-CN": "预算暂停：未启用"
+  },
+  "budget.active": {
+    "en": "Budget pause: ACTIVE (manual resume required)",
+    "zh-CN": "预算暂停：已启用（需要手动恢复）"
+  },
+  "budget.resumed": {
+    "en": "Budget pause cleared for the next Cycle; its usage will be evaluated again.",
+    "zh-CN": "预算暂停已解除；下一轮结束后会重新评估用量。"
+  },
+  "budget.not_paused": {
+    "en": "Budget pause was not active.",
+    "zh-CN": "当前没有预算暂停。"
+  },
+  "mac.only": {
+    "en": "This command requires macOS launchd (current OS: {0}). Use make start for foreground mode.",
+    "zh-CN": "此命令需要 macOS launchd（当前系统：{0}）。前台运行请使用 make start。"
+  },
+  "mac.installing": {
+    "en": "Installing Auto Company daemon...",
+    "zh-CN": "正在安装 Auto Company 后台服务……"
+  },
+  "mac.uninstalling": {
+    "en": "Uninstalling Auto Company daemon...",
+    "zh-CN": "正在卸载 Auto Company 后台服务……"
+  },
+  "mac.unloaded": {
+    "en": "Service unloaded.",
+    "zh-CN": "后台服务已卸载出运行环境。"
+  },
+  "mac.removed": {
+    "en": "Plist removed: {0}",
+    "zh-CN": "已删除 plist：{0}"
+  },
+  "mac.uninstalled": {
+    "en": "Done. Daemon uninstalled.",
+    "zh-CN": "后台服务已卸载。"
+  },
+  "mac.written": {
+    "en": "Plist written: {0}",
+    "zh-CN": "已写入 plist：{0}"
+  },
+  "mac.installed": {
+    "en": "Daemon installed and started!",
+    "zh-CN": "后台服务已安装并启动！"
+  },
+  "mac.commands": {
+    "en": "Commands: make monitor (live logs), make status, make pause, make resume, make uninstall.",
+    "zh-CN": "常用命令：make monitor（实时日志）、make status（状态）、make pause（暂停）、make resume（恢复）、make uninstall（卸载）。"
+  },
+  "mac.pause_created": {
+    "en": "Pause flag created: {0}",
+    "zh-CN": "已创建暂停标记：{0}"
+  },
+  "mac.paused": {
+    "en": "Daemon paused. Resume with: make resume",
+    "zh-CN": "后台服务已暂停。恢复请运行：make resume"
+  },
+  "mac.plist_missing": {
+    "en": "LaunchAgent plist not found: {0}. Install first with make install.",
+    "zh-CN": "未找到 LaunchAgent plist：{0}。请先运行 make install 安装。"
+  },
+  "mac.resumed": {
+    "en": "Pause flag removed. Daemon resumed and started.",
+    "zh-CN": "已移除暂停标记，后台服务已恢复并启动。"
+  },
+  "stop.help": {
+    "en": "Usage:\n  ./stop-loop.sh                  # Stop current loop\n  ./stop-loop.sh --pause-daemon   # Pause launchd daemon (macOS)\n  ./stop-loop.sh --resume-daemon  # Resume launchd daemon (macOS)",
+    "zh-CN": "用法：\n  ./stop-loop.sh                  # 停止当前循环\n  ./stop-loop.sh --pause-daemon   # 暂停 launchd 后台服务（macOS）\n  ./stop-loop.sh --resume-daemon  # 恢复 launchd 后台服务（macOS）"
+  },
+  "systemd.missing": {
+    "en": "Error: systemctl not found. Enable systemd in WSL or use make start for foreground mode.",
+    "zh-CN": "错误：未找到 systemctl。请先在 WSL 中启用 systemd，或用 make start 在前台运行。"
+  },
+  "systemd.unavailable": {
+    "en": "systemctl --user is unavailable. Check systemd and the current Linux/WSL login session.",
+    "zh-CN": "systemctl --user 不可用。请检查 systemd 和当前 Linux/WSL 登录会话。"
+  },
+  "systemd.installed": {
+    "en": "Installed: {0}\nEnabled: {1}",
+    "zh-CN": "已安装：{0}\n已启用：{1}"
+  },
+  "systemd.linger": {
+    "en": "Linger is disabled for user '{0}'. To improve background persistence, run once:\n  sudo loginctl enable-linger {0}",
+    "zh-CN": "用户“{0}”尚未启用 linger。如需退出登录后保持后台运行，请运行一次：\n  sudo loginctl enable-linger {0}"
+  },
+  "systemd.next": {
+    "en": "Next commands:\n  systemctl --user start {0}\n  systemctl --user status {0} --no-pager",
+    "zh-CN": "接下来可运行：\n  systemctl --user start {0}\n  systemctl --user status {0} --no-pager"
+  },
+  "systemd.removed": {
+    "en": "Removed: {0}",
+    "zh-CN": "已删除：{0}"
+  },
+  "systemd.file_missing": {
+    "en": "Service file not found: {0}",
+    "zh-CN": "未找到服务文件：{0}"
+  },
+  "systemd.uninstalled": {
+    "en": "Uninstall complete.",
+    "zh-CN": "卸载完成。"
+  },
+  "systemd.not_installed": {
+    "en": "auto-company.service is not installed. Install it first with: make install",
+    "zh-CN": "尚未安装 auto-company.service。请先运行 make install。"
+  },
+  "systemd.mismatch": {
+    "en": "auto-company.service WorkingDirectory does not match this checkout; refusing to control another project. Open the installed checkout's dashboard or deliberately reinstall with make install.",
+    "zh-CN": "auto-company.service 的 WorkingDirectory 不属于当前项目目录，已拒绝控制其他项目。请打开已安装目录中的 Dashboard，或确认目录后用 make install 重新安装。"
+  },
+  "systemd.start_failed": {
+    "en": "Failed to start {0} with systemd --user. Check systemctl --user status {0} --no-pager.",
+    "zh-CN": "systemd --user 启动 {0} 失败。请运行 systemctl --user status {0} --no-pager 检查状态。"
+  },
+  "systemd.not_active": {
+    "en": "{0} did not become active (state: {1}). Check its service logs.",
+    "zh-CN": "{0} 未进入运行状态（当前：{1}）。请检查服务日志。"
+  },
+  "systemd.started": {
+    "en": "{0} started with systemd --user.",
+    "zh-CN": "{0} 已通过 systemd --user 启动。"
+  },
+  "systemd.stop_failed": {
+    "en": "Failed to stop {0} with systemd --user. Check its service status.",
+    "zh-CN": "systemd --user 停止 {0} 失败。请检查服务状态。"
+  },
+  "systemd.still_active": {
+    "en": "{0} is still {1} after stop.",
+    "zh-CN": "停止后 {0} 仍处于 {1} 状态。"
+  },
+  "systemd.stopped": {
+    "en": "{0} stopped with systemd --user (state: {1}).",
+    "zh-CN": "{0} 已通过 systemd --user 停止（状态：{1}）。"
+  },
+  "systemd.usage": {
+    "en": "Usage: {0} {status|refresh|check|start|stop}",
+    "zh-CN": "用法：{0} {status|refresh|check|start|stop}"
+  },
+  "monitor.last": {
+    "en": "=== Latest Cycle: {0} ===",
+    "zh-CN": "=== 最近一轮：{0} ==="
+  },
+  "monitor.no_cycles": {
+    "en": "No cycle logs found.",
+    "zh-CN": "没有找到循环日志。"
+  },
+  "monitor.cycles": {
+    "en": "=== Cycle History ===",
+    "zh-CN": "=== 循环历史 ==="
+  },
+  "monitor.no_log": {
+    "en": "No log found.",
+    "zh-CN": "没有找到日志。"
+  },
+  "monitor.live": {
+    "en": "=== Auto Company Live Monitor (Ctrl+C to stop) ===\nWatching: {0}",
+    "zh-CN": "=== Auto Company 实时日志（Ctrl+C 退出查看）===\n正在查看：{0}"
+  },
+  "monitor.start_first": {
+    "en": "No log file yet. Start the loop first: make start",
+    "zh-CN": "尚无日志文件。请先运行 make start 启动循环。"
+  },
+  "make.paused": {
+    "en": "auto-company.service paused (stopped).",
+    "zh-CN": "auto-company.service 已暂停（已停止）。"
+  },
+  "make.resumed": {
+    "en": "auto-company.service resumed (started).",
+    "zh-CN": "auto-company.service 已恢复（已启动）。"
+  },
+  "help.start": {
+    "en": "Start the auto-loop in foreground",
+    "zh-CN": "在前台启动自动循环"
+  },
+  "help.start-awake": {
+    "en": "Start loop and prevent macOS sleep while running",
+    "zh-CN": "启动循环并阻止 macOS 休眠"
+  },
+  "help.awake": {
+    "en": "Prevent macOS sleep while current loop PID is running",
+    "zh-CN": "在当前循环运行期间阻止 macOS 休眠"
+  },
+  "help.stop": {
+    "en": "Stop the loop gracefully",
+    "zh-CN": "停止循环并清理本轮进程"
+  },
+  "help.status": {
+    "en": "Show loop status + latest consensus",
+    "zh-CN": "显示循环状态和最近共识"
+  },
+  "help.last": {
+    "en": "Show last cycle's full output",
+    "zh-CN": "显示最近一轮的完整输出"
+  },
+  "help.cycles": {
+    "en": "Show cycle history summary",
+    "zh-CN": "显示循环历史摘要"
+  },
+  "help.usage-day": {
+    "en": "Show today's structured cost/token summary",
+    "zh-CN": "显示今天的费用和 token 用量"
+  },
+  "help.usage-week": {
+    "en": "Show this week's structured cost/token summary",
+    "zh-CN": "显示本周的费用和 token 用量"
+  },
+  "help.usage-date": {
+    "en": "Show one date (DATE=YYYY-MM-DD)",
+    "zh-CN": "显示指定日期的用量（DATE=YYYY-MM-DD）"
+  },
+  "help.usage-status": {
+    "en": "Show hard-budget pause state",
+    "zh-CN": "查看预算暂停状态"
+  },
+  "help.monitor": {
+    "en": "Tail live logs (Ctrl+C to exit)",
+    "zh-CN": "查看实时日志（Ctrl+C 退出）"
+  },
+  "help.dashboard": {
+    "en": "Start local dashboard server (Windows, Linux/WSL, or macOS)",
+    "zh-CN": "启动本地 Dashboard（Windows、Linux/WSL 或 macOS）"
+  },
+  "help.test-process-supervisor": {
+    "en": "Test cycle-owned process-tree cleanup with fake engines",
+    "zh-CN": "使用模拟引擎检查循环进程树清理"
+  },
+  "help.test-auto-loop-integration": {
+    "en": "Test sidecar, usage, and governance pause integration with a fake engine",
+    "zh-CN": "使用模拟引擎检查用量与治理暂停"
+  },
+  "help.install": {
+    "en": "Install daemon (macOS launchd or Linux/WSL systemd --user)",
+    "zh-CN": "安装后台服务（macOS launchd 或 Linux/WSL systemd --user）"
+  },
+  "help.uninstall": {
+    "en": "Remove daemon (macOS launchd or Linux/WSL systemd --user)",
+    "zh-CN": "卸载后台服务（macOS launchd 或 Linux/WSL systemd --user）"
+  },
+  "help.pause": {
+    "en": "Pause daemon (no auto-restart)",
+    "zh-CN": "暂停后台服务（不自动重启）"
+  },
+  "help.resume": {
+    "en": "Resume paused daemon",
+    "zh-CN": "恢复已暂停的后台服务"
+  },
+  "help.language": {
+    "en": "Save runtime language (LANGUAGE=zh-CN|en); stop the loop first",
+    "zh-CN": "保存运行语言（LANGUAGE=zh-CN|en）；请先停止循环"
+  },
+  "help.team": {
+    "en": "Start selected engine interactive session (ENGINE=claude|codex)",
+    "zh-CN": "启动引擎交互会话（ENGINE=claude|codex）"
+  },
+  "help.project-new": {
+    "en": "Create an independent local product repo (NAME=<slug>)",
+    "zh-CN": "创建独立的本地产品仓库（NAME=<slug>）"
+  },
+  "help.project-select": {
+    "en": "Select a product explicitly (PROJECT=<slug> CONFIRM=SELECT)",
+    "zh-CN": "选择产品（PROJECT=<slug> CONFIRM=SELECT）"
+  },
+  "help.project-status": {
+    "en": "Show the selected product repo status (optional PROJECT=<slug>)",
+    "zh-CN": "查看已选产品仓库状态（可选 PROJECT=<slug>）"
+  },
+  "help.project-publish": {
+    "en": "Explicitly push a clean product repo (REMOTE_URL=<url> CONFIRM=PUBLISH)",
+    "zh-CN": "推送干净的产品仓库（REMOTE_URL=<url> CONFIRM=PUBLISH）"
+  },
+  "help.project-migrate-legacy": {
+    "en": "Stage reversible migration of a tracked legacy project (NAME=<slug> CONFIRM=MIGRATE)",
+    "zh-CN": "准备可回滚的旧产品迁移（NAME=<slug> CONFIRM=MIGRATE）"
+  },
+  "help.project-migrate-rollback": {
+    "en": "Roll back an uncommitted legacy migration (NAME=<slug> CONFIRM=ROLLBACK)",
+    "zh-CN": "回滚尚未提交的旧产品迁移（NAME=<slug> CONFIRM=ROLLBACK）"
+  },
+  "help.clean-logs": {
+    "en": "Remove all cycle logs",
+    "zh-CN": "删除所有循环日志"
+  },
+  "help.reset-consensus": {
+    "en": "Back up and reset business state; preserve human rules (CONFIRM=RESET)",
+    "zh-CN": "备份并重置业务状态，保留人工规则（CONFIRM=RESET）"
+  },
+  "help.help": {
+    "en": "Show this help",
+    "zh-CN": "显示此帮助"
+  }
+}

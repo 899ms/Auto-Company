@@ -9,6 +9,7 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$PROJECT_DIR/scripts/core/ui-messages.sh"
 LOG_DIR="$PROJECT_DIR/logs"
 STATE_FILE="$PROJECT_DIR/.auto-loop-state"
 PID_FILE="$PROJECT_DIR/.auto-loop.pid"
@@ -174,17 +175,15 @@ print_status() {
 
 require_installed_service() {
     if ! systemd_user_available; then
-        echo "systemctl --user is unavailable. Enable systemd for this Linux/WSL session." >&2
+        ui_message systemd.unavailable >&2
         return 1
     fi
     if ! service_installed; then
-        echo "auto-company.service is not installed." >&2
-        echo "Install it first with: make install" >&2
+        ui_message systemd.not_installed >&2
         return 2
     fi
     if ! service_matches_project; then
-        echo "auto-company.service WorkingDirectory does not match this checkout; refusing to control another project." >&2
-        echo "Open the installed checkout's dashboard or deliberately reinstall with make install." >&2
+        ui_message systemd.mismatch >&2
         return 3
     fi
 }
@@ -199,31 +198,31 @@ case "${1:-status}" in
     start)
         require_installed_service || exit $?
         if ! systemctl --user start "$SERVICE_NAME"; then
-            echo "Failed to start $SERVICE_NAME with systemd --user." >&2
+            ui_message systemd.start_failed "$SERVICE_NAME" >&2
             exit 1
         fi
         current_state="$(systemctl --user is-active "$SERVICE_NAME" 2>/dev/null || true)"
         if [ "$current_state" != "active" ]; then
-            echo "$SERVICE_NAME did not become active (state: ${current_state:-unknown})." >&2
+            ui_message systemd.not_active "$SERVICE_NAME" "${current_state:-unknown}" >&2
             exit 1
         fi
-        echo "$SERVICE_NAME started with systemd --user."
+        ui_message systemd.started "$SERVICE_NAME"
         ;;
     stop)
         require_installed_service || exit $?
         if ! systemctl --user stop "$SERVICE_NAME"; then
-            echo "Failed to stop $SERVICE_NAME with systemd --user." >&2
+            ui_message systemd.stop_failed "$SERVICE_NAME" >&2
             exit 1
         fi
         current_state="$(systemctl --user is-active "$SERVICE_NAME" 2>/dev/null || true)"
         if [ "$current_state" = "active" ] || [ "$current_state" = "activating" ]; then
-            echo "$SERVICE_NAME is still $current_state after stop." >&2
+            ui_message systemd.still_active "$SERVICE_NAME" "$current_state" >&2
             exit 1
         fi
-        echo "$SERVICE_NAME stopped with systemd --user (state: ${current_state:-inactive})."
+        ui_message systemd.stopped "$SERVICE_NAME" "${current_state:-inactive}"
         ;;
     *)
-        echo "Usage: $0 {status|refresh|check|start|stop}" >&2
+        ui_message systemd.usage "$0" >&2
         exit 2
         ;;
 esac

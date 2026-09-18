@@ -2,13 +2,16 @@ param(
     [ValidateSet("start", "stop", "status", "run")]
     [string]$Action = "status",
     [string]$Distro = "Ubuntu",
-    [string]$RepoWsl = ""
+    [string]$RepoWsl = "",
+    [ValidateSet("zh-CN", "en")][string]$Language
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "messages-win.ps1")
+if ($PSBoundParameters.ContainsKey("Language")) { Initialize-AutoCompanyMessages -Language $Language }
 
 if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-    throw "wsl.exe not found. Enable WSL first."
+    throw (Get-AutoCompanyMessage -Key 'wsl.exe not found. Enable WSL first.')
 }
 
 $repoWin = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
@@ -26,11 +29,11 @@ function Resolve-RepoWslPath {
     $repoWinForWsl = $repoWin -replace "\\", "/"
     $repoWslRaw = & wsl.exe -d $Distro wslpath -a "$repoWinForWsl"
     if (-not $repoWslRaw) {
-        throw "Failed to convert repository path to WSL path."
+        throw (Get-AutoCompanyMessage -Key 'Failed to convert repository path to WSL path.')
     }
     $repoWsl = $repoWslRaw.Trim()
     if (-not $repoWsl) {
-        throw "Failed to convert repository path to WSL path."
+        throw (Get-AutoCompanyMessage -Key 'Failed to convert repository path to WSL path.')
     }
     return $repoWsl
 }
@@ -92,7 +95,7 @@ switch ($Action) {
             Start-Sleep -Milliseconds 200
             $running = Get-RunningAnchorProcess
             if ($running) {
-                Write-Output "WSL anchor started (PID $($running.Id))."
+                Write-Output (Get-AutoCompanyMessage -Key 'WSL anchor started (PID {0}).' -Values @($running.Id))
                 exit 0
             }
         }
@@ -100,7 +103,7 @@ switch ($Action) {
         if ($proc -and -not $proc.HasExited) {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
         }
-        Write-Error "Failed to start WSL anchor."
+        Write-Error (Get-AutoCompanyMessage -Key 'Failed to start WSL anchor.')
         exit 1
     }
 
@@ -128,7 +131,7 @@ switch ($Action) {
         $existing = Get-RunningAnchorProcess
         if (-not $existing) {
             Clear-StateFiles
-            Write-Output "WSL anchor is not running."
+            Write-Output (Get-AutoCompanyMessage -Key 'WSL anchor is not running.')
             exit 0
         }
 
@@ -138,7 +141,7 @@ switch ($Action) {
             Stop-Process -Id $existing.Id -Force -ErrorAction SilentlyContinue
         }
         Clear-StateFiles
-        Write-Output "WSL anchor stopped."
+        Write-Output (Get-AutoCompanyMessage -Key 'WSL anchor stopped.')
         exit 0
     }
 

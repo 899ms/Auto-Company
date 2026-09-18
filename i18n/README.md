@@ -1,7 +1,7 @@
 # Languages / 语言
 
 Auto-Company supports English and Simplified Chinese for its own instructions,
-documentation and Dashboard. [English resources](en/README.md) ·
+documentation, common operational messages and Dashboard. [English resources](en/README.md) ·
 [English project guide](../README.md) · [中文项目说明](../README-ZH.md)
 
 ## Runtime language / 运行语言
@@ -75,7 +75,30 @@ protection: agents may not edit it during a cycle. Direct CLI invocations outsid
 | Loop prompt, 14 roles, team and GitHub Explorer skills / 循环提示词、14 个角色、组队及项目调研技能 | `i18n/en/` | Original files / 原文件 |
 | Repository index and Windows guide / 仓库索引与 Windows 指南 | `i18n/en/` | Original files / 原文件 |
 | Company rules, engine adapters and usage governance / 公司规则、引擎适配与用量治理 | Original files / 原文件 | `i18n/zh-CN/` |
+| Common operations and troubleshooting / 常见操作与排错 | [Guide](en/docs/troubleshooting.md) | [指南](../docs/troubleshooting.md) |
 | Dashboard / 看板 | Interface selector / 界面选择器 | Interface selector / 界面选择器 |
+
+## Operational messages / 操作提示
+
+Common help, install/start/stop, language-setting and budget-pause guidance follows
+the runtime language setting. Windows uses the same language tags without requiring
+Python merely to explain a prerequisite failure. Original tool/service errors and
+machine-readable status fields remain available. Missing diagnostic translations
+fall back to English; invalid runtime language still blocks model invocation.
+
+常见帮助、安装/启停、语言保存与预算暂停提示跟随运行语言。Windows 使用相同语言标识，
+解释前置条件错误不额外依赖 Python。底层工具/服务原始错误和机器读取的状态字段保留。
+诊断译文缺失时回退英文；运行语言非法时仍会阻止模型调用。
+
+Windows `-Language` also selects that startup command's Windows messages. Output
+from the WSL subprocess remains in its own environment's language; selecting a
+diagnostic fallback never silently changes daemon settings.
+
+Windows 的 `-Language` 同时选择本次启动的 Windows 提示语言。WSL 子进程的输出仍跟随
+其自身环境；显示错误时采用的回退语言不会悄悄改变守护进程配置。
+
+The [English troubleshooting guide](en/docs/troubleshooting.md) and
+[中文排错指南](../docs/troubleshooting.md) map common messages to concrete next steps.
 
 Dashboard language is a separate browser preference. It follows the first supported
 browser language initially, falls back to English, and remembers an explicit choice
@@ -85,12 +108,12 @@ raw provider errors, logs, consensus, or user-created content.
 看板语言是独立的浏览器偏好：初次采用浏览器支持的语言，否则回退英文；浏览器允许
 存储时会记住手动选择。它不会改变运行语言，也不翻译提供商原始错误、日志、共识或用户内容。
 
-Bundled third-party skills, generated product repositories, terminal diagnostics
-and machine-readable status/API fields retain their existing language. This release
-does not translate those surfaces.
+Other bundled skills, generated product repositories, raw terminal diagnostics and
+machine-readable status/API fields retain their existing language. Common localized
+guidance does not translate arbitrary logs.
 
-附带的第三方技能、生成的产品仓库、终端诊断和机器读取的状态/API 字段保留原有语言，
-不在本版翻译范围内。
+其余附带技能、生成的产品仓库、终端原始诊断和机器读取的状态/API 字段保留原有语言。
+新增常见提示不代表任意日志都会被翻译。
 
 ## Updating translations / 维护译文
 

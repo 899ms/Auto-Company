@@ -1,0 +1,198 @@
+{
+  "wsl.exe not found. Enable WSL first.": {
+    "en": "wsl.exe not found. Enable WSL first.",
+    "zh-CN": "未找到 wsl.exe。请先启用 WSL。"
+  },
+  "Failed to convert repository path to WSL path.": {
+    "en": "Failed to convert repository path to WSL path.",
+    "zh-CN": "无法将仓库路径转换为 WSL 路径。"
+  },
+  "WSL command failed ({0}): {1}": {
+    "en": "WSL command failed ({0}): {1}",
+    "zh-CN": "WSL 命令失败（{0}）：{1}"
+  },
+  "Reusing env file: {0}": {
+    "en": "Reusing env file: {0}",
+    "zh-CN": "继续使用环境配置文件：{0}"
+  },
+  "Environment values must be a single line.": {
+    "en": "Environment values must be a single line.",
+    "zh-CN": "环境变量的值必须为单行。"
+  },
+  "Wrote env file: {0}": {
+    "en": "Wrote env file: {0}",
+    "zh-CN": "已写入环境配置文件：{0}"
+  },
+  "auto-company.service not installed; running make install...": {
+    "en": "auto-company.service not installed; running make install...",
+    "zh-CN": "尚未安装 auto-company.service；正在运行 make install..."
+  },
+  "Unsupported Engine '{0}'. Use claude, codex, cursor, or openai-compatible.": {
+    "en": "Unsupported Engine '{0}'. Use claude, codex, cursor, or openai-compatible.",
+    "zh-CN": "不支持 Engine '{0}'。请使用 claude、codex、cursor 或 openai-compatible。"
+  },
+  "Engine cursor requires -EnableCursorAdapter.": {
+    "en": "Engine cursor requires -EnableCursorAdapter.",
+    "zh-CN": "Engine cursor 需要指定 -EnableCursorAdapter。"
+  },
+  "Engine openai-compatible requires -EnableOpenAICompatibleAdapter.": {
+    "en": "Engine openai-compatible requires -EnableOpenAICompatibleAdapter.",
+    "zh-CN": "Engine openai-compatible 需要指定 -EnableOpenAICompatibleAdapter。"
+  },
+  "Engine openai-compatible requires -OpenAICompatibleEndpoint and -OpenAICompatibleModel.": {
+    "en": "Engine openai-compatible requires -OpenAICompatibleEndpoint and -OpenAICompatibleModel.",
+    "zh-CN": "Engine openai-compatible 需要指定 -OpenAICompatibleEndpoint 和 -OpenAICompatibleModel。"
+  },
+  "OpenAICompatibleEndpoint must not contain a query, fragment, or embedded credentials.": {
+    "en": "OpenAICompatibleEndpoint must not contain a query, fragment, or embedded credentials.",
+    "zh-CN": "OpenAICompatibleEndpoint 不能包含查询参数、片段或嵌入的凭据。"
+  },
+  "API key material must not be embedded in endpoint or model configuration.": {
+    "en": "API key material must not be embedded in endpoint or model configuration.",
+    "zh-CN": "不能将 API 密钥嵌入端点或模型配置。"
+  },
+  "CycleTimeoutSeconds={0} is very low for real cycles and may cause frequent timeouts. Recommended: 900-1800.": {
+    "en": "CycleTimeoutSeconds={0} is very low for real cycles and may cause frequent timeouts. Recommended: 900-1800.",
+    "zh-CN": "CycleTimeoutSeconds={0} 对实际工作周期而言过短，可能导致频繁超时。建议设置为 900-1800。"
+  },
+  "WSL daemon started: auto-company.service": {
+    "en": "WSL daemon started: auto-company.service",
+    "zh-CN": "WSL 后台服务已启动：auto-company.service"
+  },
+  "Missing awake guardian script: {0}": {
+    "en": "Missing awake guardian script: {0}",
+    "zh-CN": "缺少防休眠守护脚本：{0}"
+  },
+  "Daemon started, but awake guardian failed to start. System sleep is not protected.": {
+    "en": "Daemon started, but awake guardian failed to start. System sleep is not protected.",
+    "zh-CN": "后台服务已启动，但防休眠守护未能启动。系统可能进入休眠。"
+  },
+  "Missing WSL anchor script: {0}": {
+    "en": "Missing WSL anchor script: {0}",
+    "zh-CN": "缺少 WSL 保活脚本：{0}"
+  },
+  "Daemon started, but WSL anchor failed to start. Background persistence may be unstable.": {
+    "en": "Daemon started, but WSL anchor failed to start. Background persistence may be unstable.",
+    "zh-CN": "后台服务已启动，但 WSL 保活进程未能启动。后台运行可能不稳定。"
+  },
+  "Use .\\scripts\\windows\\status-win.ps1 to inspect daemon and loop status.": {
+    "en": "Use .\\scripts\\windows\\status-win.ps1 to inspect daemon and loop status.",
+    "zh-CN": "运行 .\\scripts\\windows\\status-win.ps1 查看后台服务和循环状态。"
+  },
+  "auto-company.service is installed but was not running/loaded.": {
+    "en": "auto-company.service is installed but was not running/loaded.",
+    "zh-CN": "auto-company.service 已安装，但未运行或未加载。"
+  },
+  "WSL daemon stopped: auto-company.service": {
+    "en": "WSL daemon stopped: auto-company.service",
+    "zh-CN": "WSL 后台服务已停止：auto-company.service"
+  },
+  "auto-company.service is not installed. Falling back to foreground stop.": {
+    "en": "auto-company.service is not installed. Falling back to foreground stop.",
+    "zh-CN": "尚未安装 auto-company.service，将改为停止前台循环。"
+  },
+  "Awake guardian reported a non-zero exit while stopping.": {
+    "en": "Awake guardian reported a non-zero exit while stopping.",
+    "zh-CN": "停止防休眠守护时返回了非零退出码。"
+  },
+  "WSL anchor reported a non-zero exit while stopping.": {
+    "en": "WSL anchor reported a non-zero exit while stopping.",
+    "zh-CN": "停止 WSL 保活进程时返回了非零退出码。"
+  },
+  "schtasks.exe not found.": {
+    "en": "schtasks.exe not found.",
+    "zh-CN": "未找到 schtasks.exe。"
+  },
+  "scripts/windows/start-win.ps1 not found: {0}": {
+    "en": "scripts/windows/start-win.ps1 not found: {0}",
+    "zh-CN": "未找到 scripts/windows/start-win.ps1：{0}"
+  },
+  "Failed to create task due to permission error. Run PowerShell as Administrator and retry.": {
+    "en": "Failed to create task due to permission error. Run PowerShell as Administrator and retry.",
+    "zh-CN": "权限不足，无法创建任务。请以管理员身份运行 PowerShell 后重试。"
+  },
+  "Failed to create/update scheduled task: {0}": {
+    "en": "Failed to create/update scheduled task: {0}",
+    "zh-CN": "无法创建或更新计划任务：{0}"
+  },
+  "Autostart enabled: {0}": {
+    "en": "Autostart enabled: {0}",
+    "zh-CN": "已启用自动启动：{0}"
+  },
+  "Autostart task not found: {0}": {
+    "en": "Autostart task not found: {0}",
+    "zh-CN": "未找到自动启动任务：{0}"
+  },
+  "Failed to delete task due to permission error. Run PowerShell as Administrator and retry.": {
+    "en": "Failed to delete task due to permission error. Run PowerShell as Administrator and retry.",
+    "zh-CN": "权限不足，无法删除任务。请以管理员身份运行 PowerShell 后重试。"
+  },
+  "Failed to delete scheduled task: {0}": {
+    "en": "Failed to delete scheduled task: {0}",
+    "zh-CN": "无法删除计划任务：{0}"
+  },
+  "Autostart disabled: {0}": {
+    "en": "Autostart disabled: {0}",
+    "zh-CN": "已禁用自动启动：{0}"
+  },
+  "Tailing WSL logs via make monitor (daemon/foreground compatible)...": {
+    "en": "Tailing WSL logs via make monitor (daemon/foreground compatible)...",
+    "zh-CN": "正在通过 make monitor 跟踪 WSL 日志（支持后台服务和前台循环）..."
+  },
+  "Dashboard server script not found: {0}": {
+    "en": "Dashboard server script not found: {0}",
+    "zh-CN": "未找到仪表盘服务脚本：{0}"
+  },
+  "python not found in PATH.": {
+    "en": "python not found in PATH.",
+    "zh-CN": "PATH 中未找到 python。"
+  },
+  "Starting dashboard server: {0}": {
+    "en": "Starting dashboard server: {0}",
+    "zh-CN": "正在启动仪表盘服务：{0}"
+  },
+  "Press Ctrl+C in this window to stop.": {
+    "en": "Press Ctrl+C in this window to stop.",
+    "zh-CN": "在此窗口按 Ctrl+C 停止。"
+  },
+  "Awake guardian already running (PID {0}).": {
+    "en": "Awake guardian already running (PID {0}).",
+    "zh-CN": "防休眠守护已在运行（PID {0}）。"
+  },
+  "Awake guardian started (PID {0}).": {
+    "en": "Awake guardian started (PID {0}).",
+    "zh-CN": "防休眠守护已启动（PID {0}）。"
+  },
+  "Failed to start awake guardian.": {
+    "en": "Failed to start awake guardian.",
+    "zh-CN": "无法启动防休眠守护。"
+  },
+  "SetThreadExecutionState failed at startup.": {
+    "en": "SetThreadExecutionState failed at startup.",
+    "zh-CN": "启动时 SetThreadExecutionState 调用失败。"
+  },
+  "Awake guardian is not running.": {
+    "en": "Awake guardian is not running.",
+    "zh-CN": "防休眠守护未在运行。"
+  },
+  "Awake guardian stopped.": {
+    "en": "Awake guardian stopped.",
+    "zh-CN": "防休眠守护已停止。"
+  },
+  "WSL anchor started (PID {0}).": {
+    "en": "WSL anchor started (PID {0}).",
+    "zh-CN": "WSL 保活进程已启动（PID {0}）。"
+  },
+  "Failed to start WSL anchor.": {
+    "en": "Failed to start WSL anchor.",
+    "zh-CN": "无法启动 WSL 保活进程。"
+  },
+  "WSL anchor is not running.": {
+    "en": "WSL anchor is not running.",
+    "zh-CN": "WSL 保活进程未在运行。"
+  },
+  "WSL anchor stopped.": {
+    "en": "WSL anchor stopped.",
+    "zh-CN": "WSL 保活进程已停止。"
+  }
+}

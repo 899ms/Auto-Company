@@ -104,13 +104,15 @@ wait_for_contains() {
     done
 }
 
-mkdir -p "$FRAMEWORK/scripts/core" "$FRAMEWORK/memories" "$FRAMEWORK/logs"
+mkdir -p "$FRAMEWORK/scripts/core" "$FRAMEWORK/memories" "$FRAMEWORK/logs" "$FRAMEWORK/i18n"
 cp "$SOURCE_ROOT/scripts/core/auto-loop.sh" "$FRAMEWORK/scripts/core/"
 cp "$SOURCE_ROOT/scripts/core/rotate-logs.py" "$FRAMEWORK/scripts/core/"
 cp "$SOURCE_ROOT/scripts/core/consensus-guard.sh" "$FRAMEWORK/scripts/core/"
 cp "$SOURCE_ROOT/scripts/core/consensus-format.py" "$FRAMEWORK/scripts/core/"
 cp "$SOURCE_ROOT/scripts/core/project-context.py" "$FRAMEWORK/scripts/core/"
 cp "$SOURCE_ROOT/scripts/core/localization.py" "$FRAMEWORK/scripts/core/"
+cp "$SOURCE_ROOT/scripts/core/ui-messages.sh" "$FRAMEWORK/scripts/core/"
+cp "$SOURCE_ROOT/i18n/messages.json" "$FRAMEWORK/i18n/"
 cp "$SOURCE_ROOT/scripts/core/engine-adapters.sh" "$FRAMEWORK/scripts/core/"
 cp "$SOURCE_ROOT/scripts/core/engine-metadata.py" "$FRAMEWORK/scripts/core/"
 cp "$SOURCE_ROOT/scripts/core/openai-compatible-agent.py" "$FRAMEWORK/scripts/core/"

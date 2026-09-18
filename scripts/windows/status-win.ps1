@@ -3,11 +3,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "messages-win.ps1")
 $script:LastWslExitCode = 0
 
 function Assert-WslAvailable {
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-        throw "wsl.exe not found. Enable WSL first."
+        throw (Get-AutoCompanyMessage -Key 'wsl.exe not found. Enable WSL first.')
     }
 }
 
@@ -16,11 +17,11 @@ function Get-RepoPaths {
     $repoWinForWsl = $repoWin -replace "\\", "/"
     $repoWslRaw = & wsl.exe -d $Distro wslpath -a "$repoWinForWsl"
     if (-not $repoWslRaw) {
-        throw "Failed to convert repository path to WSL path."
+        throw (Get-AutoCompanyMessage -Key 'Failed to convert repository path to WSL path.')
     }
     $repoWsl = $repoWslRaw.Trim()
     if (-not $repoWsl) {
-        throw "Failed to convert repository path to WSL path."
+        throw (Get-AutoCompanyMessage -Key 'Failed to convert repository path to WSL path.')
     }
     return @{
         RepoWin = $repoWin
@@ -44,7 +45,7 @@ function Invoke-WslCommand {
         }
     }
     if (-not $IgnoreExitCode -and $code -ne 0) {
-        throw "WSL command failed ($code): $Command"
+        throw (Get-AutoCompanyMessage -Key 'WSL command failed ({0}): {1}' -Values @($code, $Command))
     }
 }
 

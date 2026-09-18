@@ -92,7 +92,7 @@ else
 	@bash ./scripts/wsl/dashboard-wsl.sh check
 	@printf 'PAUSE_REASON=manual\n' > .auto-loop-paused
 	@bash ./scripts/wsl/dashboard-wsl.sh stop
-	@echo "auto-company.service paused (stopped)."
+	@bash ./scripts/core/ui-messages.sh make.paused
 endif
 
 resume: ## Resume paused daemon
@@ -104,7 +104,7 @@ else
 	python3 ./scripts/core/usage.py resume
 	@rm -f .auto-loop-paused
 	@bash ./scripts/wsl/dashboard-wsl.sh start
-	@echo "auto-company.service resumed (started)."
+	@bash ./scripts/core/ui-messages.sh make.resumed
 endif
 
 # === Interactive ===
@@ -155,6 +155,6 @@ reset-consensus: ## Back up and reset business state; preserve human rules (CONF
 # === Help ===
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@bash ./scripts/core/ui-messages.sh help
 
 .DEFAULT_GOAL := help

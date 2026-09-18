@@ -21,9 +21,10 @@ class DaemonInstallerTests(unittest.TestCase):
         self.project = root / 'Repo & "trial" %data'
         for directory in ("scripts/core", "scripts/macos", "scripts/wsl"):
             (self.project / directory).mkdir(parents=True, exist_ok=True)
-        for filename in ("scripts/core/engine-adapters.sh", "scripts/core/process-supervisor.sh", "scripts/core/launchd-config.py",
+        for filename in ("scripts/core/engine-adapters.sh", "scripts/core/process-supervisor.sh", "scripts/core/launchd-config.py", "scripts/core/ui-messages.sh", "scripts/core/localization.py",
                          "scripts/macos/install-daemon.sh", "scripts/wsl/install-wsl-daemon.sh"):
             shutil.copy2(REPO / filename, self.project / filename)
+        shutil.copytree(REPO / "i18n", self.project / "i18n")
         self.home_dir = root / "home"
         self.home_dir.mkdir()
         self.bin_dir = root / "bin"
