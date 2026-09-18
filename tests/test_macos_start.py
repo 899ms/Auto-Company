@@ -52,7 +52,12 @@ case "$1" in
       [ ! -f "$LOADED" ] || printf '123 0 com.autocompany.loop\\n'
     elif [ "$2" = -x ]; then
       [ -f "$LOADED" ] || exit 113
-      cat "$LOADED"
+      # job_export() returns runtime metadata, not the original plist.
+      python3 -c 'import plistlib, sys
+config = plistlib.load(open(sys.argv[1], "rb"))
+exported = {key: config[key] for key in ("Label", "ProgramArguments", "Program") if key in config}
+exported.update(PID=123, LastExitStatus=0)
+sys.stdout.buffer.write(plistlib.dumps(exported))' "$LOADED"
     else
       [ -f "$LOADED" ] || exit 113
     fi ;;
@@ -143,7 +148,7 @@ esac''')
         (self.bin / "claude").unlink()
         self.assert_preserved(False)
 
-    def test_loaded_other_checkout_is_rejected(self):
+    def test_loaded_foreign_program_arguments_are_rejected(self):
         self.install_config(True, self.root / "other")
         foreign = self.loaded.read_bytes()
         original = self.install_config()

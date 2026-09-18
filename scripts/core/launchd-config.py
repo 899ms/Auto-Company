@@ -48,8 +48,11 @@ def validate(project: str, config: object, loaded: bool = False) -> None:
     root = Path(project).resolve()
     directory = config.get("WorkingDirectory")
     arguments = config.get("ProgramArguments")
-    if not isinstance(directory, str) or not Path(directory).is_absolute() or Path(directory).resolve() != root:
-        raise ValueError("LaunchAgent WorkingDirectory does not belong to this checkout")
+    # launchd job_export() omits WorkingDirectory. The installed plist must
+    # provide it; loaded-job metadata is identified by its exact command below.
+    if not loaded or "WorkingDirectory" in config:
+        if not isinstance(directory, str) or not Path(directory).is_absolute() or Path(directory).resolve() != root:
+            raise ValueError("LaunchAgent WorkingDirectory does not belong to this checkout")
     if (not isinstance(arguments, list) or len(arguments) != 3 or arguments[0] != "/bin/bash"
             or arguments[2] != "--daemon" or not isinstance(arguments[1], str)
             or not Path(arguments[1]).is_absolute()

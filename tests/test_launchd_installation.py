@@ -108,15 +108,25 @@ class LaunchdRuntimeTests(unittest.TestCase):
             self.assertEqual(config["EnvironmentVariables"][name], value)
         return pid
 
+    def loaded_pid(self):
+        result = self.control("list", "-x", self.label)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        pid = plistlib.loads(result.stdout.encode())["PID"]
+        self.assertIsInstance(pid, int)
+        self.assertGreater(pid, 0)
+        return pid
+
     def test_first_start_installs_and_runs_saved_environment(self):
         self.install()
 
     def test_loaded_start_preserves_configuration_and_process(self):
         before_pid = self.install()
+        self.assertEqual(self.loaded_pid(), before_pid)
         before = self.plist.read_bytes()
         self.start()
         self.assertEqual(self.plist.read_bytes(), before)
-        self.assertEqual(self.wait_probe(), before_pid)
+        # Read launchd's live PID, not the sentinel file left by the old process.
+        self.assertEqual(self.loaded_pid(), before_pid)
 
     def test_unloaded_start_reuses_configuration_with_empty_dashboard_environment(self):
         self.install()
