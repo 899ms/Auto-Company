@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f2f1e9">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="description" content="幕检 CueCheck：在本地检查、修正并导出 SRT 字幕，让交付前的最后一次复核更清楚。">
+  <title>幕检 CueCheck · 字幕交付检查台</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%23252922'/%3E%3Cpath d='M9 10H6v12h3m14-12h3v12h-3M11 14h10m-7 5h7' fill='none' stroke='%23d4f269' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">跳到字幕工作区</a>
+  <div class="app-shell">
+    <header class="masthead">
+      <a class="brand" href="./" aria-label="幕检 CueCheck 首页"><span class="brand-mark" aria-hidden="true"><i></i><i></i></span><span class="brand-name">幕检<span>CueCheck</span></span></a>
+      <div class="masthead-note">字幕交付检查台 <span class="divider">/</span> SRT WORKSPACE</div>
+      <div class="local-status"><span aria-hidden="true"></span>只在你的设备上</div>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div><div class="eyebrow"><span class="tiny-cross" aria-hidden="true">+</span> THE FINAL PASS</div><h1 id="page-title">出片之前，<em>再看一遍。</em></h1><p>把藏在时码和字句里的小问题，留在交付之前。</p></div>
+        <div class="workflow" aria-label="工作流程"><span><b>01</b> 导入字幕</span><i aria-hidden="true">→</i><span><b>02</b> 逐项复核</span><i aria-hidden="true">→</i><span><b>03</b> 安心交付</span></div>
+      </section>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden></div>
+      <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+      <section class="workbench" id="workspace" aria-label="字幕检查工作区">
+        <aside class="sidebar">
+          <section class="source-section" aria-labelledby="source-title">
+            <div class="section-heading"><h2 id="source-title">字幕源文件</h2><span class="section-number">01</span></div>
+            <label id="drop-zone" class="drop-zone" for="file-input">
+              <input id="file-input" type="file" accept=".srt" aria-label="导入 SRT 字幕文件">
+              <svg class="upload-icon" width="34" height="38" viewBox="0 0 34 38" fill="none" aria-hidden="true"><path d="M6 1h15l7 7v28H6V1Z" stroke="currentColor" stroke-width="1.5"/><path d="M21 1v8h7M12 20h10M12 25h7" stroke="currentColor" stroke-width="1.5"/><path d="m25 27 4-4 4 4M29 24v10" stroke="currentColor" stroke-width="1.5"/></svg>
+              <strong>拖入你的字幕</strong><span>或点击选择文件</span><small>.SRT · UTF-8 · 最大 2 MiB</small>
+            </label>
+            <div class="current-file"><span class="file-dot" aria-hidden="true"></span><div><strong id="file-name">尚未选择文件</strong><p id="file-meta">最多 5,000 条字幕，内容不上传</p></div></div>
+            <div class="sample-actions"><button id="load-example" type="button" class="button sample-button">试用问题样例 <span aria-hidden="true">↗</span></button><button id="load-clean" type="button" class="text-button">打开干净样例</button></div>
+          </section>
+
+          <section class="rules-section" aria-labelledby="rules-title">
+            <div class="section-heading"><h2 id="rules-title">复核规则</h2><span class="section-number">02</span></div>
+            <p class="section-description">按项目需要，调节提醒阈值。</p>
+            <form id="rules-form">
+              <div class="field-pair"><label for="min-duration">最短停留<span class="input-unit"><input id="min-duration" type="number" min="0.1" max="60" step="0.1" value="0.8" required><span>秒</span></span></label><label for="max-duration">最长停留<span class="input-unit"><input id="max-duration" type="number" min="0.1" max="60" step="0.1" value="7" required><span>秒</span></span></label></div>
+              <label class="rule-field" for="max-cps"><span>阅读速度上限</span><span class="input-unit"><input id="max-cps" type="number" min="1" max="100" step="1" value="12" required><span>字 / 秒</span></span></label>
+              <label class="rule-field" for="max-lines"><span>单条最多行数</span><span class="input-unit"><input id="max-lines" type="number" min="1" max="10" step="1" value="2" required><span>行</span></span></label>
+              <button id="apply-rules" class="button rules-button" type="submit">应用规则并重检 <span aria-hidden="true">↻</span></button>
+            </form>
+            <details class="rule-note"><summary>阈值与计数说明</summary><p>默认值是本工具的建议，并非平台交付标准。字符按 Unicode 码点计数，不计空白；标签按原文计入。阅读速度仅供复核参考。</p></details>
+          </section>
+          <div class="sidebar-footer"><span aria-hidden="true">◈</span> 文件留在本地，判断交给你。</div>
+        </aside>
+
+        <section class="review-panel" aria-labelledby="review-title">
+          <div class="review-heading"><div><span class="eyebrow">REVIEW BOARD</span><h2 id="review-title">字幕复核</h2></div><span class="live-label"><i aria-hidden="true"></i>逐项检查</span></div>
+          <div class="stats" aria-label="检查统计"><div><span>字幕总数</span><strong id="stat-cues">0</strong></div><div class="error-stat"><span>需要修正</span><strong id="stat-errors">0</strong></div><div class="warning-stat"><span>复核提示</span><strong id="stat-warnings">0</strong></div><div class="duration-stat"><span>结束时码</span><strong id="stat-duration">00:00:00</strong></div></div>
+          <div class="ruler" aria-hidden="true"><span>00:00</span><span>00:15</span><span>00:30</span><span>00:45</span><span>01:00</span></div>
+          <div class="list-toolbar"><div class="filters" role="group" aria-label="按检查结果筛选字幕"><button id="filter-all" type="button" aria-pressed="true">全部</button><button id="filter-issues" type="button" aria-pressed="false">有问题</button><button id="filter-errors" type="button" aria-pressed="false">错误</button><button id="filter-warnings" type="button" aria-pressed="false">提示</button></div><span class="list-kind">SRT / CUES</span></div>
+          <p id="list-caption" class="list-caption">导入字幕后，在这里逐项查看。</p>
+          <div id="cue-list" class="cue-list" aria-label="字幕条目"></div>
+          <div id="empty-state" class="empty-state">
+            <div class="empty-art" aria-hidden="true"><div class="ghost-time">00:00:01,000 <span>→</span> 00:00:04,200</div><div class="ghost-cue"><span>01</span><i></i><b>✓</b></div><div class="ghost-cue"><span>02</span><i></i><b>✓</b></div><div class="ghost-cue ghost-cue-last"><span>03</span><i></i><b>·</b></div><span class="playhead"></span></div>
+            <span class="eyebrow">READY WHEN YOU ARE</span><h3>每一句，都值得好好呈现。</h3><p>导入一份 SRT，检查时码、重叠和阅读速度。<br>也可以从左侧的问题样例开始。</p><div class="empty-legend"><span><i class="legend-error"></i>错误需要修正</span><span><i class="legend-warning"></i>提示由你判断</span></div>
+          </div>
+          <div class="review-footer"><span>不自动改动时码与正文</span><span class="mono">YOUR WORDS. YOUR CALL.</span></div>
+        </section>
+
+        <aside class="editor-panel" aria-labelledby="editor-title">
+          <section class="preview" aria-label="字幕文字预览"><div class="preview-topline"><span><i aria-hidden="true"></i>文字预览</span><span class="mono">SRT</span></div><div class="preview-safe-area" aria-hidden="true"></div><div class="preview-content"><span class="preview-placeholder" aria-hidden="true">[ &nbsp; ]</span><p id="preview-text">让每一句话，恰好出现。</p></div><div id="preview-time" class="preview-time">--:--:--,--- → --:--:--,---</div><div class="preview-bottomline" aria-hidden="true"><span>TEXT ONLY</span><span>无音视频</span></div></section>
+          <section class="editor-body"><div class="section-heading"><h2 id="editor-title">单条修订</h2><span class="section-number">03</span></div>
+            <div id="editor-empty" class="editor-empty"><span aria-hidden="true">↖</span><h3>选择一句，细看一下。</h3><p>从字幕列表选择一条，<br>查看问题并调整时码或正文。</p></div>
+            <form id="editor-form" hidden>
+              <div class="selected-heading"><strong id="selected-number">字幕 01</strong><span id="selected-source"></span></div>
+              <div class="time-fields"><label for="edit-start">开始时码<input id="edit-start" type="text" placeholder="00:00:00,000" spellcheck="false" autocomplete="off" required></label><label for="edit-end">结束时码<input id="edit-end" type="text" placeholder="00:00:00,000" spellcheck="false" autocomplete="off" required></label></div>
+              <label class="text-field" for="edit-text">字幕正文<textarea id="edit-text" rows="5" placeholder="输入这条字幕的正文" spellcheck="false"></textarea></label>
+              <p id="edit-metrics" class="edit-metrics"></p><ul id="selected-issues" class="selected-issues" aria-label="当前字幕的问题"></ul>
+              <p id="draft-status" class="draft-status" role="status" aria-live="polite">修改后，请应用并重新检查。</p>
+              <div class="edit-actions"><button id="apply-edit" type="submit" class="button primary-button">应用修改并重检</button><button id="discard-edit" type="button" class="button discard-button">放弃</button></div>
+            </form>
+          </section>
+          <section class="export-section" aria-labelledby="export-title"><div class="section-heading"><h2 id="export-title">准备交付</h2><span class="export-arrow" aria-hidden="true">↗</span></div><button id="download-srt" class="button export-button" type="button" disabled>下载修订后的 SRT <span aria-hidden="true">↓</span></button><button id="download-report" class="button report-button" type="button" disabled>下载检查报告 <span class="mono">JSON ↓</span></button><p id="export-hint">导入字幕并完成复核后，即可导出。</p><p class="export-note">SRT 按原顺序重新编号，保留正文与时码。</p></section>
+        </aside>
+      </section>
+      <footer class="page-footer"><p>仅检查本工具覆盖的问题；不检查翻译、音视频同步。刷新会清空未下载的修改。</p><span>CUECHECK <span aria-hidden="true">/</span> LOCAL EDITION</span></footer>
+    </main>
+  </div>
+</body>
+</html>

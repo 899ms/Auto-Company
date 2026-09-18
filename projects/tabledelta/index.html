@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f1e8">
+    <meta name="description" content="行间 TableDelta：在浏览器本地，以唯一编号核对两份 CSV 的每一处变化。">
+    <title>行间 TableDelta · 本地 CSV 核对</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="src/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">跳到核对工作区</a>
+    <div class="page-shell">
+      <header class="masthead">
+        <a class="brand" href="./" aria-label="行间 TableDelta 首页">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="brand-name">行间<span class="brand-latin">TABLEDELTA</span></span>
+        </a>
+        <span class="local-note"><span class="status-dot" aria-hidden="true"></span>本地处理 · 文件不上传</span>
+      </header>
+
+      <main>
+        <section class="intro" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">一张表的前后，清清楚楚。</p>
+            <h1 id="page-title">变化，<span>就在行间。</span></h1>
+          </div>
+          <div class="intro-aside">
+            <p>放入前后两份 CSV，选一列唯一编号。<br>新增、删除、修改与未变，一一核对。</p>
+            <button id="load-example" class="text-button" type="button">先用示例试一试 <span aria-hidden="true">↗</span></button>
+          </div>
+        </section>
+
+        <section id="workspace" class="workspace" aria-labelledby="input-heading">
+          <div class="section-heading">
+            <h2 id="input-heading"><span class="section-index">01</span>放入两个版本</h2>
+            <span class="section-aside">旧版在左，新版在右</span>
+          </div>
+          <div class="upload-grid">
+            <label class="upload-zone" id="before-zone" for="before-file">
+              <input id="before-file" class="visually-hidden" type="file" accept=".csv,text/csv" aria-label="选择旧版 CSV" aria-describedby="before-detail">
+              <span class="upload-top"><span class="version-label">旧版 <span>BEFORE</span></span><span class="file-symbol" aria-hidden="true">−</span></span>
+              <span id="before-name" class="upload-name">选择旧版 CSV</span>
+              <span id="before-detail" class="upload-detail">点击选择，或将文件拖到这里</span>
+              <span class="upload-bottom"><span id="before-status">等待文件</span><span class="upload-action">选择文件 <span aria-hidden="true">↗</span></span></span>
+            </label>
+            <label class="upload-zone" id="after-zone" for="after-file">
+              <input id="after-file" class="visually-hidden" type="file" accept=".csv,text/csv" aria-label="选择新版 CSV" aria-describedby="after-detail">
+              <span class="upload-top"><span class="version-label">新版 <span>AFTER</span></span><span class="file-symbol" aria-hidden="true">+</span></span>
+              <span id="after-name" class="upload-name">选择新版 CSV</span>
+              <span id="after-detail" class="upload-detail">点击选择，或将文件拖到这里</span>
+              <span class="upload-bottom"><span id="after-status">等待文件</span><span class="upload-action">选择文件 <span aria-hidden="true">↗</span></span></span>
+            </label>
+          </div>
+
+          <div class="key-row">
+            <div class="key-copy"><h3><span class="section-index">02</span>选择唯一键</h3><p>用同一列的值，找到前后对应的记录。</p></div>
+            <div class="key-control"><label class="visually-hidden" for="key-column">唯一键列</label><select id="key-column" disabled><option value="">请先放入两份 CSV</option></select><span id="key-hint">每条记录的键值须非空，且不能重复。</span></div>
+            <button id="compare" class="primary-button" type="button" disabled>开始核对 <span aria-hidden="true">→</span></button>
+          </div>
+          <div id="input-errors" class="error-panel" role="alert" hidden></div>
+          <p id="activity" class="activity visually-hidden" role="status" aria-live="polite"></p>
+          <details class="rules">
+            <summary>支持 UTF-8 CSV · 每份最多 2 MiB <span>查看文件规则</span></summary>
+            <div class="rules-content"><p>两份文件的列名和顺序须完全相同；每份最多 10,000 条数据记录、100 列、200,000 个数据单元格，以上限制同时适用。仅接受英文逗号分隔的 UTF-8 CSV。</p><p>按原始字符串精确比较：前导零、大小写、空格和字段内换行均参与比较；记录排列顺序不影响结果。文件留在浏览器内存中，刷新页面即清除，不修改源文件。</p></div>
+          </details>
+        </section>
+
+        <section id="results" class="results" aria-labelledby="result-heading">
+          <div class="section-heading result-heading-row">
+            <div><h2 id="result-heading" tabindex="-1"><span class="section-index">03</span>核对结果</h2><p id="result-description" class="result-description">变化有据，核对有序。</p></div>
+            <button id="download" class="secondary-button" type="button" disabled><span aria-hidden="true">↓</span> 下载完整 JSON</button>
+          </div>
+          <div id="empty-state" class="empty-state">
+            <div class="empty-graphic" aria-hidden="true"><span></span><span></span><span></span><span></span><i>↔</i></div>
+            <div><h3>准备好，再逐行看一遍。</h3><p id="empty-message">放入两个版本并选择唯一键，变化会在这里展开。</p></div>
+            <span class="empty-number" aria-hidden="true">—</span>
+          </div>
+          <div id="report" hidden>
+            <div class="stats" aria-label="各类记录数量">
+              <button class="stat stat-added" type="button" data-filter="added" aria-pressed="false"><span class="stat-label"><span aria-hidden="true">+</span> 新增</span><strong id="count-added">0</strong><span class="stat-description">新版独有的记录</span></button>
+              <button class="stat stat-deleted" type="button" data-filter="deleted" aria-pressed="false"><span class="stat-label"><span aria-hidden="true">−</span> 删除</span><strong id="count-deleted">0</strong><span class="stat-description">旧版独有的记录</span></button>
+              <button class="stat stat-modified" type="button" data-filter="modified" aria-pressed="false"><span class="stat-label"><span aria-hidden="true">↔</span> 修改</span><strong id="count-modified">0</strong><span class="stat-description">同一键值，字段有变</span></button>
+              <button class="stat stat-unchanged" type="button" data-filter="unchanged" aria-pressed="false"><span class="stat-label"><span aria-hidden="true">=</span> 未变</span><strong id="count-unchanged">0</strong><span class="stat-description">各字段完全一致</span></button>
+            </div>
+            <div class="report-toolbar"><label for="result-filter">查看 <select id="result-filter"><option value="all">全部记录</option><option value="added">新增记录</option><option value="deleted">删除记录</option><option value="modified">修改记录</option><option value="unchanged">未变记录</option></select></label><span id="visible-count" aria-live="polite"></span></div>
+            <div id="records" class="records"></div>
+            <div class="pagination"><p>每页 25 条 · 导出始终包含完整变化</p><div><button id="previous-page" class="page-button" type="button" aria-label="上一页">←</button><span id="page-label" aria-live="polite">第 1 / 1 页</span><button id="next-page" class="page-button" type="button" aria-label="下一页">→</button></div></div>
+          </div>
+        </section>
+      </main>
+
+      <footer><span class="footer-wordmark">行间 <span>TABLEDELTA</span></span><p>只对照，不改写。</p><span class="footer-note">UTF-8 CSV → JSON</span></footer>
+    </div>
+    <noscript><p class="noscript">行间需要开启 JavaScript 才能在浏览器本地解析和核对文件。</p></noscript>
+  </body>
+</html>

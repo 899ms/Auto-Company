@@ -1,0 +1,18 @@
+{
+  "name": "tabledelta",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "行间：在本地按唯一编号比较两份 CSV，保留变化原值。",
+  "scripts": {
+    "start": "python3 -m http.server 8765 --bind 127.0.0.1",
+    "test": "node --test tests/core.test.js",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

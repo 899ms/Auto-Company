@@ -1,8 +1,26 @@
-# Product Repository Boundary
+# Projects
+
+## Published examples
+
+| Project | Description | Run locally |
+|---|---|---|
+| [SnapOG](snapog/) | Existing Open Graph image prototype | See its project README |
+| [行间 / TableDelta](tabledelta/) | Compare two CSV files by a unique key and export changes as JSON | `cd projects/tabledelta && python3 -m http.server 8765 --bind 127.0.0.1` |
+| [幕检 / CueCheck](cuecheck/) | Review, edit, and export SRT subtitles locally | `cd projects/cuecheck && python3 -m http.server 8766 --bind 127.0.0.1` |
+
+TableDelta and CueCheck are explicitly published source snapshots of local MVPs.
+Each folder includes its own instructions, examples, and tests. Their original
+independent local repositories are preserved; nested Git metadata, runtime logs,
+browser caches, and private company planning documents are not included.
+These tracked examples are not selectable independent runtime repositories.
+
+## Product repository boundary
 
 Newly generated products live under this directory for local convenience, but
 every new product is its own Git repository. Product commits, remotes, and pushes
-do not belong to the Auto Company framework repository.
+do not belong to the Auto Company framework repository by default. The published
+examples above are explicit human-authorized exceptions; autonomous cycles must
+not add more tracked product source.
 
 Use the explicit lifecycle commands from the framework root:
 

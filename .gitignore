@@ -154,6 +154,10 @@ projects/*
 !projects/README.md
 !projects/registry.tsv
 
+# Explicitly published product examples; autonomous output stays ignored.
+!projects/tabledelta/
+!projects/cuecheck/
+
 # Local/private outputs (do not publish)
 AGENTS.md
 CHAT_LOGS.md
