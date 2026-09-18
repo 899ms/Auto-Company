@@ -16,7 +16,7 @@
 # Config (env vars):
 #   ENGINE=claude               # claude|codex|cursor|openai-compatible
 #   MODEL=...                   # Optional model override (empty = engine default)
-#   AUTO_COMPANY_LANGUAGE=zh-CN # zh-CN|en; otherwise read .auto-company.local
+#   AUTO_COMPANY_LANGUAGE=zh-CN # Initial fallback only; saved preference wins
 #   CLAUDE_BIN=...              # Optional Claude executable override
 #   CLAUDE_PERMISSION_MODE=bypassPermissions
 #                               # Claude permission mode (default: bypassPermissions)
@@ -596,13 +596,16 @@ while true; do
         ACTIVE_PROJECT="projects/${ACTIVE_PROJECT_PATH##*/}"
     fi
 
-    # Resolve language each cycle, preserving customized source instructions.
-    if ! PROMPT=$(python3 "$LOCALIZATION_TOOL" prompt --root "$PROJECT_DIR"); then
+    # Pin once for the whole product, including later iterations and restarts.
+    if ! python3 "$LOCALIZATION_TOOL" start --root "$PROJECT_DIR" >/dev/null ||
+       ! AUTO_COMPANY_LANGUAGE=$(python3 "$LOCALIZATION_TOOL" check --root "$PROJECT_DIR") ||
+       ! PROMPT=$(python3 "$LOCALIZATION_TOOL" prompt --root "$PROJECT_DIR"); then
         log_cycle "$next_cycle" "FAIL" "Invalid language configuration or prompt; engine invocation blocked"
         printf 'PAUSE_REASON=language_invalid\n' > "$PAUSE_FLAG"
         wait_while_paused
         continue
     fi
+    export AUTO_COMPANY_LANGUAGE
 
     loop_count=$next_cycle
     cycle_log="$LOG_DIR/cycle-$(printf '%04d' "$loop_count")-$(date '+%Y%m%d-%H%M%S')-${run_id}.log"

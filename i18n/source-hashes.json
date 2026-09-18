@@ -1,5 +1,5 @@
 {
-  "INDEX.md": "2cc1326b9d732c603eb13b656a5b44a7044b2345e1b19cb7778f82e81fd641a3",
+  "INDEX.md": "bb3baf532639b7f7de882fa78c2eae385964099bdcc286f4f7608ac46a7a9526",
   "PROMPT.md": "432e5c73674a2643ff739f47f3cb881cc95586744d2d1f46b9d9c7decdc4dc22",
   ".claude/agents/ceo-bezos.md": "04655828d6c110787651efc71d53ab2e6d04f26356b3c7de8f00c909aa645de2",
   ".claude/agents/cfo-campbell.md": "63186e51dad6191930907dd8f0847fa8d78080c43f3d9d1576629c30b5f01545",
@@ -15,11 +15,9 @@
   ".claude/agents/research-thompson.md": "f34818ac1c966bf9c96c5fece843343d39e35e828ac7064b0084bb2efbbc5b52",
   ".claude/agents/sales-ross.md": "1abba59b58e42bc2193de192e9a9ee1db3d381c4ed684ea2bc19c0753723ffd1",
   ".claude/agents/ui-duarte.md": "359692585ee6ad8afd4026aafe72b6554772015666845360ce97ed4988b1dfba",
-  ".claude/skills/github-explorer/SKILL.md": "2f46354fd99f092172413a38cf3628c0669864f42767f67c0df3c8de0c01958f",
-  ".claude/skills/team/SKILL.md": "5e896914e445d17043e3416ff111b891024d1caa5abb0f9c55d9b3c5c809979d",
-  "docs/windows-setup.md": "06cca0ef8850df4cbe29794557d3444b7588fdad084e38ab3b605bef1d14bdf6",
+  "docs/windows-setup.md": "4cb681f1e2f629b1343d33073f459199e18f4de324466a2144f7809465cb3335",
   "CLAUDE.md": "9973ac31f1d0eba8a68fbe705c86dfbfceda8820181f8a73d6d1236612537530",
   "ENGINE_ADAPTERS.md": "b81a46b9b41765b41c22958bf4d2b2bfa0a39b70649f2e9bb16d482b7aaf6040",
   "docs/usage-governance.md": "d10069939325b85e77f9f26baa05aa0033a706453e3a059996226d0968175b17",
-  "docs/troubleshooting.md": "cffc46ad8b5490a03e82656fa6fb0e8b8e3b5a6d291e1eb2d3405a307c3b47be"
+  "docs/troubleshooting.md": "e12a34fd14a4360e3bd3b8605e115a79b6d64cf58c314f0b6d31746d9ffc770f"
 }

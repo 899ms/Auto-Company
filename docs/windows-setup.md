@@ -120,15 +120,13 @@ wsl -d Ubuntu bash -lc 'codex --version; command -v codex'
 
 ### 运行与界面语言
 
-运行语言默认中文（`zh-CN`），可切换为英文（`en`）。先停止循环，再在仓库根目录保存设置：
+首次默认读取 Windows 显示语言，而不是 WSL 的区域设置。中文显示语言使用 `zh-CN`，其他语言使用 `en`。Dashboard 和运行过程使用同一设置，可随时在 Dashboard 保存偏好，或执行：
 
 ```powershell
-.\scripts\windows\stop-win.ps1
 python scripts/core/localization.py set --language en
-.\scripts\windows\start-win.ps1
 ```
 
-语言保存到 `.auto-company.local`，不改写根目录 `PROMPT.md`、自定义规则或历史记录。同名环境变量 `AUTO_COMPANY_LANGUAGE` 优先于此设置。如果之前用 `start-win.ps1 -Language en` 将语言写入 `.auto-loop.env`，该守护进程覆盖值仍然优先；切回中文时同步使用 `-Language zh-CN`，或人工移除该覆盖项后使用本地设置。Dashboard 的语言选择独立保存在浏览器中，不改变运行语言。完整说明见[语言设置](../i18n/README.md)。
+启动参数 `./scripts/windows/start-win.ps1 -Language en` 也保存同一个偏好。已有产品周期仍保持原语言，暂停、重启不会改变；新偏好从下一个产品周期生效。所有技能统一英文，面向用户的结果跟随产品语言。完整说明见[语言设置](../i18n/README.md)。
 
 ## 5. 可选：登录后自启
 

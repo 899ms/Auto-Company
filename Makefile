@@ -2,7 +2,7 @@
 
 UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
 ENGINE ?= claude
-LANGUAGE ?= zh-CN
+LANGUAGE ?=
 
 # === Quick Start ===
 
@@ -109,18 +109,15 @@ endif
 
 # === Interactive ===
 
-.PHONY: language
-language: ## Save runtime language (LANGUAGE=zh-CN|en); stop the loop first
+.PHONY: language next-product
+language: ## Save global language (LANGUAGE=zh-CN|en); active products keep their language
 	python3 ./scripts/core/localization.py set --language "$(LANGUAGE)"
 
+next-product: ## Start a new product language cycle after stopping (CONFIRM=NEXT)
+	python3 ./scripts/core/localization.py next-product --confirm "$(CONFIRM)"
+
 team: ## Start selected engine interactive session (ENGINE=claude|codex)
-	@engine="$$(printf '%s' "$(ENGINE)" | tr '[:upper:]' '[:lower:]')"; \
-	if [ "$$engine" != "claude" ] && [ "$$engine" != "codex" ]; then \
-		echo "Unsupported ENGINE='$(ENGINE)'. Use ENGINE=claude or ENGINE=codex."; \
-		exit 1; \
-	fi; \
-	context="$$(python3 ./scripts/core/localization.py context)" || exit $$?; \
-	cd "$(CURDIR)" && "$$engine" "$$context"
+	@python3 ./scripts/core/localization.py team --engine "$$(printf '%s' "$(ENGINE)" | tr '[:upper:]' '[:lower:]')"
 
 # === Product repositories ===
 

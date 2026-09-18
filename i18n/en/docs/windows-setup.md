@@ -1,6 +1,6 @@
 # Windows + WSL Setup Guide
 
-[English](windows-setup.md) | [中文](../../../docs/windows-setup.md) · [Documentation and language settings](../../README.md)
+[English](windows-setup.md) | [中文](../../../docs/windows-setup.md) · [Documentation and language settings](../README.md)
 
 Unless stated otherwise, run project commands from the repository root.
 
@@ -124,15 +124,13 @@ Script locations:
 
 ### Runtime and Interface Language
 
-The runtime defaults to Chinese (`zh-CN`) and also supports English (`en`). Stop the loop, then save the choice from the repository root:
+The initial default comes from the Windows display language, not the WSL locale. Chinese display languages select `zh-CN`; other languages select `en`. The Dashboard and runtime share one setting. Save your preference in the Dashboard at any time, or run:
 
 ```powershell
-.\scripts\windows\stop-win.ps1
 python scripts/core/localization.py set --language en
-.\scripts\windows\start-win.ps1
 ```
 
-The choice is saved in `.auto-company.local` without rewriting the root `PROMPT.md`, custom rules, or history. The `AUTO_COMPANY_LANGUAGE` environment variable takes precedence. If you previously used `start-win.ps1 -Language en` to save the language in `.auto-loop.env`, that daemon override still takes precedence. To switch back to Chinese, update it with `-Language zh-CN`, or manually remove the override to use the repository-local setting. The Dashboard remembers its own language choice in the browser and does not change the runtime language. See [language settings](../../README.md) for details.
+The startup parameter `./scripts/windows/start-win.ps1 -Language en` saves the same preference. An existing product cycle keeps its original language across pauses and restarts; a changed preference applies to the next product cycle. All skills are written in English, while their user-facing results follow the product language. See [language settings](../README.md).
 
 ## 5. Optional: Start at Logon
 

@@ -37,7 +37,7 @@
 - systemd 服务可通过 `.auto-loop.env` 或 `start-win.ps1 -Engine codex` 切换到 Codex；前台循环的引擎配置只读进程环境变量
 - Cursor 与 OpenAI-compatible 适配器需显式启用，配置与契约见 `ENGINE_ADAPTERS.md`
 - 不做自动引擎回退，所选引擎缺失时直接失败
-- 运行语言默认 `zh-CN`；停止循环后用 `make language LANGUAGE=en` 保存到 `.auto-company.local`，环境变量 `AUTO_COMPANY_LANGUAGE` 可覆盖。详见[语言设置](i18n/README.md)
+- 语言首次跟随电脑显示语言；在 Dashboard 或通过 `make language LANGUAGE=en` 保存统一偏好。产品周期内语言固定，中途修改在下个产品周期生效；已保存设置优先于旧环境值。详见[语言设置](i18n/README.md)
 
 停止链路：
 

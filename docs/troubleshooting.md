@@ -13,10 +13,10 @@
 | 停止 | 前台循环：`make stop`；后台服务：`make pause` | `./scripts/windows/stop-win.ps1` |
 | 查看状态 | `make status` | `./scripts/windows/status-win.ps1` |
 | 查看上一轮 | `make last` | `./scripts/windows/last-win.ps1` |
-| 保存英文语言 | 停止后：`make language LANGUAGE=en` | 停止后：`python scripts/core/localization.py set --language en` |
-| 保存中文语言 | 停止后：`make language LANGUAGE=zh-CN` | 停止后：`python scripts/core/localization.py set --language zh-CN` |
+| 保存英文语言 | `make language LANGUAGE=en` | `python scripts/core/localization.py set --language en` |
+| 保存中文语言 | `make language LANGUAGE=zh-CN` | `python scripts/core/localization.py set --language zh-CN` |
 
-修改语言前，前台循环用 `make stop` 停止，后台服务用 `make pause` 暂停，避免守护进程自动重启。语言变更在下次启动时生效；后台服务修改后使用 `make resume`。守护进程如果保存过 `AUTO_COMPANY_LANGUAGE` 覆盖值，也需要同步更新；Windows 可在下次启动使用 `-Language en` 或 `-Language zh-CN`。Dashboard 的界面语言单独设置。
+产品运行期间可以保存语言偏好，当前产品继续使用原语言，新偏好在下个产品周期生效。暂停或重启本身不会开始新产品。详见[语言说明](../i18n/README.md)。
 
 ## 安装与启动
 
@@ -31,11 +31,11 @@
 
 ## 语言没有按预期变化
 
-1. 确认改的是运行语言还是 Dashboard 界面语言，两者独立。
-2. 运行语言只接受 `zh-CN` 或 `en`。非法值会阻止启动模型，不会悄悄改用另一种语言。
-3. 进程环境变量优先于 `.auto-company.local`；服务安装时保存的覆盖值也可能继续生效，详见 [语言优先级](../i18n/README.md)。
-4. 若提示先停止循环，前台用 `make stop`，后台用 `make pause`，再保存设置并重新启动/恢复；交互式 `make team` 会话也需要重新打开。
-5. 自己修改过的提示词或技能会继续使用原文，明确的人工语言要求优先。命令、协议字段、历史和原始错误不翻译属于预期行为。
+1. 在 Dashboard 查看“当前周期语言”和“下个周期语言”；两者不同时，新偏好已保存，正在等待下个产品周期。
+2. 暂停、重启以及同一产品的下一轮 AI 执行，都不会切换当前产品语言。
+3. 只有明确开始下个产品周期才会采用新偏好，详见[周期切换](../i18n/README.md)。
+4. 语言只接受 `zh-CN` 或 `en`。已保存的偏好优先于旧服务环境；没有偏好时才使用兼容环境值或系统显示语言。
+5. 技能源文件统一英文，命令、协议字段、历史和原始错误保持原样；已有产品和自定义文档不会被自动重写。
 
 ## 预算暂停与人工恢复
 

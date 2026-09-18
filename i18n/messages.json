@@ -1,15 +1,15 @@
 {
   "language.saved": {
-    "en": "Saved AUTO_COMPANY_LANGUAGE={0}. Applies on next start; an environment override takes precedence.",
-    "zh-CN": "已保存 AUTO_COMPANY_LANGUAGE={0}，下次启动生效；环境变量优先于本地配置。"
+    "en": "Saved language preference: {0}. An existing product keeps its language; this choice applies to the next product cycle.",
+    "zh-CN": "已保存语言偏好：{0}。当前产品继续使用原语言，新偏好从下一个产品周期生效。"
   },
   "language.invalid": {
     "en": "Check AUTO_COMPANY_LANGUAGE and .auto-company.local: use zh-CN or en, with plain KEY=value lines and no duplicate language entry. No cycle was started by this check.",
     "zh-CN": "请检查 AUTO_COMPANY_LANGUAGE 和 .auto-company.local：语言仅支持 zh-CN 或 en，配置使用 KEY=value，语言项不可重复。本次检查未启动任何循环。"
   },
   "language.running": {
-    "en": "Stop the loop before changing language: use make stop for a foreground loop, or make pause for a background service to prevent automatic restarts. Then run make language LANGUAGE=en or LANGUAGE=zh-CN.",
-    "zh-CN": "请先用 make stop 停止前台循环，或用 make pause 暂停后台服务以防自动重启，再运行 make language LANGUAGE=zh-CN 或 LANGUAGE=en 切换语言。"
+    "en": "Before starting the next product, stop the foreground loop with make stop or pause the background service with make pause. Recover any interrupted iteration first. Saving the next language preference does not require stopping.",
+    "zh-CN": "开始下个产品前，请用 make stop 停止前台循环，或用 make pause 暂停后台服务；若上一轮中断，请先恢复。仅保存下个周期的语言偏好无需停止。"
   },
   "python.required": {
     "en": "Install Python 3 and ensure python3 is on PATH before retrying.",
@@ -304,8 +304,12 @@
     "zh-CN": "恢复已暂停的后台服务"
   },
   "help.language": {
-    "en": "Save runtime language (LANGUAGE=zh-CN|en); stop the loop first",
-    "zh-CN": "保存运行语言（LANGUAGE=zh-CN|en）；请先停止循环"
+    "en": "Save language preference (LANGUAGE=zh-CN|en); current product keeps its language",
+    "zh-CN": "保存语言偏好（LANGUAGE=zh-CN|en）；当前产品语言保持不变"
+  },
+  "help.next-product": {
+    "en": "Begin the next product language cycle after stopping (CONFIRM=NEXT)",
+    "zh-CN": "停止后开始下个产品语言周期（CONFIRM=NEXT）"
   },
   "help.team": {
     "en": "Start selected engine interactive session (ENGINE=claude|codex)",

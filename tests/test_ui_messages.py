@@ -36,11 +36,12 @@ class OperatorMessageTests(unittest.TestCase):
     def test_language_selection_and_invalid_config_diagnostic_fallback(self):
         local = self.root / ".auto-company.local"
         with mock.patch.dict(os.environ, self.env, clear=True):
-            self.assertIn("当前没有", LOCALIZATION.message(self.root, "budget.not_paused"))
+            with mock.patch.object(LOCALIZATION, "system_language", return_value="zh-CN"):
+                self.assertIn("当前没有", LOCALIZATION.message(self.root, "budget.not_paused"))
             local.write_text("AUTO_COMPANY_LANGUAGE=en\n", encoding="utf-8")
             self.assertEqual(LOCALIZATION.message(self.root, "budget.not_paused"), "Budget pause was not active.")
             with mock.patch.dict(os.environ, AUTO_COMPANY_LANGUAGE="zh-CN"):
-                self.assertIn("当前没有", LOCALIZATION.message(self.root, "budget.not_paused"))
+                self.assertEqual(LOCALIZATION.message(self.root, "budget.not_paused"), "Budget pause was not active.")
             with mock.patch.dict(os.environ, AUTO_COMPANY_LANGUAGE="invalid"):
                 self.assertEqual(LOCALIZATION.diagnostic_language(self.root), "en")
             local.write_text("$(touch sentinel)\n", encoding="utf-8")
@@ -77,9 +78,9 @@ class OperatorMessageTests(unittest.TestCase):
                 (self.root / "i18n/messages.json").write_text(invalid, encoding="utf-8")
                 self.assertEqual(LOCALIZATION.message(self.root, "test", value), f"[test] {value}")
 
-    def test_set_success_invalid_and_running_messages_both_languages(self):
-        for language, saved, running in (("zh-CN", "已保存", "请先用 make stop"),
-                                         ("en", "Saved", "Stop the loop before")):
+    def test_set_success_invalid_and_next_product_running_messages_both_languages(self):
+        for language, saved, running in (("zh-CN", "已保存", "请用 make stop"),
+                                         ("en", "Saved", "stop the foreground loop with make stop")):
             with self.subTest(language=language):
                 result = self.run_language("set", "--language", language, AUTO_COMPANY_LANGUAGE=language)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -90,7 +91,7 @@ class OperatorMessageTests(unittest.TestCase):
                 pid = self.root / ".auto-loop.pid"
                 pid.write_text("1234", encoding="utf-8")
                 before = (self.root / ".auto-company.local").read_bytes()
-                result = self.run_language("set", "--language", language, AUTO_COMPANY_LANGUAGE=language)
+                result = self.run_language("next-product", "--confirm", "NEXT", AUTO_COMPANY_LANGUAGE=language)
                 self.assertEqual(result.returncode, 78)
                 self.assertIn(running, result.stderr)
                 self.assertIn("make pause", result.stderr)
@@ -113,8 +114,8 @@ class OperatorMessageTests(unittest.TestCase):
                    'source "$1/scripts/core/ui-messages.sh"; PROJECT_DIR="$1"; '
                    'ui_message loop.stopping; ui_message language.saved en',
                    "message-test", str(ROOT)]
-        for language, saved in (("en", "Saved AUTO_COMPANY_LANGUAGE=en"),
-                                ("zh-CN", "已保存 AUTO_COMPANY_LANGUAGE=en")):
+        for language, saved in (("en", "Saved language preference: en"),
+                                ("zh-CN", "已保存语言偏好：en")):
             result = subprocess.run(command, env=dict(self.env, AUTO_COMPANY_LANGUAGE=language),
                                     capture_output=True, text=True, encoding="utf-8", timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -166,6 +167,12 @@ class ShellOperatorMessageTests(unittest.TestCase):
                                 text=True, encoding="utf-8", timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Start the auto-loop", result.stdout)
+        result = subprocess.run(["make", "help"], cwd=self.root,
+                                env=dict(self.env, AUTO_COMPANY_LANGUAGE="zh-CN"),
+                                capture_output=True, text=True, encoding="utf-8", timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Start the auto-loop", result.stdout)
+        (self.root / ".auto-company.local").unlink()
         result = subprocess.run(["make", "help"], cwd=self.root,
                                 env=dict(self.env, AUTO_COMPANY_LANGUAGE="zh-CN"),
                                 capture_output=True, text=True, encoding="utf-8", timeout=10)

@@ -2,193 +2,194 @@
 name: github-explorer
 description: >
   Deep-dive analysis of GitHub projects. Use when the user mentions a GitHub repo/project name
-  and wants to understand it — triggered by phrases like "帮我看看这个项目", "了解一下 XXX",
-  "这个项目怎么样", "分析一下 repo", or any request to explore/evaluate a GitHub project.
+  and wants to understand it — triggered by phrases like "help me look at this project", "learn about XXX",
+  "what is this project like", "analyze this repo", or any request to explore/evaluate a GitHub project.
   Covers architecture, community health, competitive landscape, and cross-platform knowledge sources.
 ---
 
-# GitHub Explorer — 项目深度分析
+# GitHub Explorer — In-Depth Project Analysis
 
-> **Philosophy**: README 只是门面，真正的价值藏在 Issues、Commits 和社区讨论里。
+> **Philosophy**: The README is only the storefront; the real value lies in Issues, Commits, and community discussions.
 
 ## Workflow
 
 ```
-[项目名] → [1. 定位 Repo] → [2. 多源采集] → [3. 分析研判] → [4. 结构化输出]
+[Project name] → [1. Locate Repo] → [2. Gather Multiple Sources] → [3. Analyze and Assess] → [4. Structured Output]
 ```
 
-### Phase 1: 定位 Repo
+### Phase 1: Locate Repo
 
-- 用 `web_search` 搜索 `site:github.com <project_name>` 确认完整 org/repo
-- 用当前环境可用的搜索工具补充社区链接和非 GitHub 资源，查询 `<project_name> review`、`<project_name> 评测 使用体验`。
-- 用 `web_fetch` 抓取 repo 主页获取基础信息（README、Stars、Forks、License、最近更新）
+- Use `web_search` to search `site:github.com <project_name>` and confirm the full org/repo
+- Use an available search tool to find additional community links and non-GitHub resources with queries such as `<project_name> review` and `<project_name> 评测 使用体验`.
+- Use `web_fetch` to fetch the repo homepage for basic information (README, Stars, Forks, License, last update)
 
-### Phase 2: 多源采集（并行）
+### Phase 2: Gather Multiple Sources (In Parallel)
 
-以下来源**按需检查**，有则采集，无则跳过：
+Check the following sources **as needed**; collect what exists and skip what does not:
 
-| 来源 | URL 模式 | 采集内容 | 建议工具 |
+| Source | URL pattern | What to collect | Suggested tool |
 |---|---|---|---|
-| GitHub Repo | `github.com/{org}/{repo}` | README、About、Contributors | `web_fetch` |
-| GitHub Issues | `github.com/{org}/{repo}/issues?q=sort:comments` | Top 3-5 高质量 Issue | `browser` |
-| 中文社区 | 微信/知乎/小红书 | 深度评测、使用经验 | 可用的平台工具或 `browser` |
-| 技术博客 | Medium/Dev.to | 技术架构分析 | `web_fetch` / `browser` |
-| 讨论区 | V2EX/Reddit | 用户反馈、槽点 | 可用的搜索或平台工具 |
+| GitHub Repo | `github.com/{org}/{repo}` | README, About, Contributors | `web_fetch` |
+| GitHub Issues | `github.com/{org}/{repo}/issues?q=sort:comments` | Top 3-5 high-quality Issues | `browser` |
+| Chinese-language communities | WeChat / Zhihu / Xiaohongshu | In-depth reviews, usage experiences | Available platform tool or `browser` |
+| Technical blogs | Medium / Dev.to | Technical architecture analyses | `web_fetch` / `browser` |
+| Discussion forums | V2EX / Reddit | User feedback, complaints | Available search or platform tool |
 
-#### 搜索工具与查询
+#### Search Tools and Queries
 
-本仓库不包含 `search-layer` 或 `content-extract` 技能及其脚本。`web_search`、`web_fetch` 和 `browser` 表示当前环境的对应能力；使用实际可用的工具名称。若另外安装了这些增强技能，先读取其自身说明并确认依赖和调用路径；未安装时直接执行以下搜索，不依赖这些脚本。
+This repository does not include the `search-layer` or `content-extract` skills or their scripts. `web_search`, `web_fetch`, and `browser` mean the corresponding capabilities in the current environment; use the tool names actually available. If enhancement skills are separately installed, read their own instructions and confirm dependencies and invocation paths first. Otherwise, run the following searches directly without those scripts.
 
-| 场景 | 查询示例 | 说明 |
+| Scenario | Example queries | Notes |
 |------|------|------|
-| **项目调研（默认）** | `<project> review`、`<project> 评测` | 交叉检查独立来源 |
-| **最新动态** | `<project> latest release` | 核对官方发布页和日期 |
-| **竞品对比** | `<project> vs <competitor>`、`<project> alternatives` | 查证差异与适用条件 |
-| **快速查链接** | `<project> official docs` | 确认官方域名 |
-| **社区讨论** | `<project> discussion experience`，限定社区域名 | 区分用户体验与已验证事实 |
+| **Project research (default)** | `<project> review`, `<project> 评测` | Cross-check independent sources |
+| **Latest developments** | `<project> latest release` | Check the official release page and dates |
+| **Competitor comparison** | `<project> vs <competitor>`, `<project> alternatives` | Verify differences and applicable conditions |
+| **Quick link lookup** | `<project> official docs` | Confirm the official domain |
+| **Community discussion** | `<project> discussion experience`, restricted to community domains | Distinguish user experiences from verified facts |
 
-某个来源或增强工具失败时，继续使用可用来源，并在报告中说明覆盖限制。没有搜索能力时，只分析已能读取的仓库和用户提供资料，不声称完成了社区调研。
+If a source or enhancement tool fails, continue with available sources and state the coverage limitations in the report. Without search capability, analyze only the readable repository and user-provided material; do not claim that community research was completed.
 
 ---
 
-### 抓取降级与增强协议 (Extraction Upgrade)
+### Extraction Fallback and Upgrade Protocol (Extraction Upgrade)
 
-以下情况需要换用可用的浏览器或平台读取工具，或者使用已安装的内容提取技能：
-1. **域名限制**: `mp.weixin.qq.com`, `zhihu.com`, `xiaohongshu.com`。
-2. **结构复杂**: 页面包含大量公式 (LaTeX)、复杂表格、或 `web_fetch` 返回的 Markdown 极其凌乱。
-3. **内容缺失**: `web_fetch` 因反爬返回空内容或 Challenge 页面。
+In these situations, switch to an available browser or platform reader, or use an installed content-extraction skill:
+1. **Restricted domains**: `mp.weixin.qq.com`, `zhihu.com`, `xiaohongshu.com`.
+2. **Complex structure**: The page contains many formulas (LaTeX), complex tables, or extremely messy Markdown returned by `web_fetch`.
+3. **Missing content**: Anti-scraping defenses cause `web_fetch` to return empty content or a challenge page.
 
-若仍无法读取，保留 URL 并标注“未能读取”，改查独立来源。不得把搜索摘要当作已读全文，也不得把不可访问的讨论计入已核实证据。
+If reading still fails, retain the URL, mark it as "Could not read," and seek independent sources. Do not treat search snippets as full text that was read, or count inaccessible discussions as verified evidence.
 
-### Phase 3: 分析研判
+### Phase 3: Analyze and Assess
 
-基于采集数据进行判断：
+Make judgments based on the collected data:
 
-- **项目阶段**: 早期实验 / 快速成长 / 成熟稳定 / 维护模式 / 停滞（基于 commit 频率和内容）
-- **精选 Issue 标准**: 评论数多、maintainer 参与、暴露架构问题、或包含有价值的技术讨论
-- **竞品识别**: 从 README 的 "Comparison"/"Alternatives" 章节、Issues 讨论、以及 web 搜索中提取
+- **Project stage**: Early experiment / rapid growth / mature and stable / maintenance mode / stalled, based on commit frequency and content
+- **Featured Issue criteria**: Many comments, maintainer participation, exposure of architectural problems, or valuable technical discussion
+- **Competitor identification**: Extract from README "Comparison"/"Alternatives" sections, Issues discussions, and web searches
 
-### Phase 4: 结构化输出
+### Phase 4: Structured Output
 
-严格按以下模板输出，**每个模块都必须有实质内容或明确标注"未找到"**。
+Follow the template below strictly, translating its headings, labels, and status messages into the selected output language. **Every section must contain substantive content or explicitly say "Not found" in that language.**
 
-#### 排版规则（强制）
+#### Formatting Rules (Mandatory)
 
-1. **标题必须链接到 GitHub 仓库**（格式：`# [Project Name](https://github.com/org/repo)`，确保可点击跳转）
-2. **标题前后都统一空行**（上一板块结尾 → 空行 → 标题 → 空行 → 内容，确保视觉分隔清晰）
-3. **Telegram 空行修复（强制）**：Telegram 会吞掉列表项（`-` 开头）后面的空行。解决方案：在列表末尾与下一个标题之间，插入一行盲文空格 `⠀`（U+2800），格式如下：
+1. **The title must link to the GitHub repository** (format: `# [Project Name](https://github.com/org/repo)`, ensuring it is clickable)
+2. **Put a blank line both before and after every heading** (end of previous section → blank line → heading → blank line → content, for clear visual separation)
+3. **Telegram blank-line fix (mandatory)**: Telegram swallows blank lines after list items (lines starting with `-`). To fix this, insert a line containing a braille blank `⠀` (U+2800) between the end of the list and the next heading, as follows:
    ```
-   - 列表最后一项
+   - Last list item
 
    ⠀
-   **下一个标题**
+   **Next heading**
    ```
-   这确保在 Telegram 渲染时标题前的空行不被吞掉。
-2. **所有标题加粗**（emoji + 粗体文字）
-3. **竞品对比必须附链接**（GitHub / 官网 / 文档，至少一个）
-4. **社区声量必须具体**：引用具体的帖子/推文/讨论内容摘要，附原始链接。不要写"评价很高"、"热度很高"这种概括性描述，要写"某某说了什么"或"某帖讨论了什么具体问题"
-5. **信息溯源原则**：所有引用的外部信息都应附上原始链接，让读者能追溯到源头
+   This ensures Telegram preserves the blank line before the heading when rendering.
+2. **Make all headings bold** (emoji + bold text)
+3. **Competitor comparisons must include links** (at least one of GitHub / official website / documentation)
+4. **Community discussion must be specific**: Summarize concrete posts, tweets, or discussions and link to the originals. Do not write generalities such as "highly rated" or "very popular"; state who said what or which specific problem a post discussed
+5. **Source traceability**: All external information cited should include the original link so readers can trace it to the source
 
 ```markdown
 # [{Project Name}]({GitHub Repo URL})
 
-**🎯 一句话定位**
+**🎯 One-Sentence Positioning**
 
-{是什么、解决什么问题}
+{What it is and what problem it solves}
 
-**⚙️ 核心机制**
+**⚙️ Core Mechanism**
 
-{技术原理/架构，用人话讲清楚，不是复制 README。包含关键技术栈。}
+{Explain the technical principles / architecture in plain language, without copying the README. Include the key technology stack.}
 
-**📊 项目健康度**
+**📊 Project Health**
 
-- **Stars**: {数量}  |  **Forks**: {数量}  |  **License**: {类型}
-- **团队/作者**: {背景}
-- **Commit 趋势**: {最近活跃度 + 项目阶段判断}
-- **最近动态**: {最近几条重要 commit 概述}
+- **Stars**: {Count}  |  **Forks**: {Count}  |  **License**: {Type}
+- **Team / Author**: {Background}
+- **Commit trend**: {Recent activity + assessment of project stage}
+- **Latest developments**: {Summary of the latest important commits}
 
-**🔥 精选 Issue**
+**🔥 Featured Issues**
 
-{Top 3-5 高质量 Issue，每条包含标题、链接、核心讨论点。如无高质量 Issue 则注明。}
+{Top 3-5 high-quality Issues, each with a title, link, and key discussion points. State explicitly if there are no high-quality Issues.}
 
-**✅ 适用场景**
+**✅ Suitable Use Cases**
 
-{什么时候该用，解决什么具体问题}
+{When to use it and which specific problems it solves}
 
-**⚠️ 局限**
+**⚠️ Limitations**
 
-{什么时候别碰，已知问题}
+{When to avoid it; known problems}
 
-**🆚 竞品对比**
+**🆚 Competitor Comparison**
 
-{同赛道项目对比，差异点。每个竞品必须附 GitHub 或官网链接，格式示例：}
-- **vs [GraphRAG](https://github.com/microsoft/graphrag)** — 差异描述
-- **vs [RAGFlow](https://github.com/infiniflow/ragflow)** — 差异描述
+{Compare projects in the same space and their differences. Every competitor must have a GitHub or official website link. Example format:}
+- **vs [GraphRAG](https://github.com/microsoft/graphrag)** — Description of differences
+- **vs [RAGFlow](https://github.com/infiniflow/ragflow)** — Description of differences
 
-**🌐 知识图谱**
+**🌐 Knowledge Graph**
 
-- **DeepWiki**: {链接或"未收录"}
-- **Zread.ai**: {链接或"未收录"}
+- **DeepWiki**: {Link or "Not indexed"}
+- **Zread.ai**: {Link or "Not indexed"}
 
 **🎬 Demo**
 
-{在线体验链接，或"无"}
+{Live demo link or "None"}
 
-**📄 关联论文**
+**📄 Related Papers**
 
-{arXiv 链接，或"无"}
+{arXiv link or "None"}
 
-**📰 社区声量**
+**📰 Community Discussion**
 
 **X/Twitter**
 
-{具体引用推文内容摘要 + 链接，格式示例：}
-- [@某用户](链接): "具体说了什么..."
-- [某讨论串](链接): 讨论了什么具体问题...
-{如未找到则注明"未找到相关讨论"}
+{Summaries of specific tweets + links. Example format:}
+- [@user](link): "What they specifically said..."
+- [Discussion thread](link): The specific problem discussed...
+{If nothing is found, state "No relevant discussion found"}
 
-**中文社区**
+**Chinese-Language Communities**
 
-{具体引用帖子标题/内容摘要 + 链接，格式示例：}
-- [知乎: 帖子标题](链接) — 讨论了什么
-- [V2EX: 帖子标题](链接) — 讨论了什么
-{如未找到则注明"未找到相关讨论"}
+{Specific post titles / content summaries + links. Example format:}
+- [Zhihu: Post title](link) — What was discussed
+- [V2EX: Post title](link) — What was discussed
+{If nothing is found, state "No relevant discussion found"}
 
-**💬 我的判断**
+**💬 My Assessment**
 
-{主观评价：值不值得投入时间，适合什么水平的人，建议怎么用}
+{Subjective evaluation: whether it is worth the time, what experience level it suits, and how to use it}
 ```
 
 ## Execution Notes
 
-- 优先使用 `web_search` + `web_fetch`，browser 作为备选
-- **搜索增强**：使用当前可用的搜索来源；仅在已安装并检查说明后使用额外技能。单源失败不阻塞主流程，覆盖不足须明确说明
-- **抓取降级**：当 `web_fetch` 失败或正文不完整时，换用可用的浏览器、平台读取工具或已安装的提取技能；仍不可读则标注并改查其他来源
-- 并行采集不同来源以提高效率
-- 所有链接必须真实可访问，不要编造 URL
-- 中文输出，技术术语保留英文
+- Prefer `web_search` + `web_fetch`, with browser as a fallback
+- **Search enhancement**: Use available search sources; use extra skills only after confirming their installation and reading their instructions. One source failing must not block the main workflow; disclose insufficient coverage
+- **Extraction fallback**: If `web_fetch` fails or returns incomplete content, switch to an available browser, platform reader, or installed extraction skill. If the content remains unreadable, mark it and seek other sources
+- Collect different sources in parallel for efficiency
+- All links must be real and accessible; do not invent URLs
+- Follow the runtime product `Language` instruction for the report throughout the current product, including pauses and restarts. A requested language change applies to the next product. If no product language is assigned, follow explicit human language instructions or the user's language. Keep technical terms in English. The English skill source and template do not set the output language
+- Leave language preference changes to the human-operated settings interface; do not edit saved language configuration or the current product's language state
 
-## ⚠️ 输出自检清单（强制，每次输出前逐条核对）
+## ⚠️ Output Self-Check (Mandatory Before Every Response)
 
-输出报告前，**必须逐条检查以下项目**，全部通过才可发送：
+Before sending a report, you **must check every item below**, and send it only when all pass:
 
-- [ ] **标题链接**：`# [Project Name](GitHub URL)` 格式，可点击跳转
-- [ ] **标题空行**：每个粗体标题（`**🎯 ...**`）前后各有一个空行
-- [ ] **Telegram 空行**：每个列表块末尾与下一个标题之间有盲文空格 `⠀` 行（防止 Telegram 吞空行）
-- [ ] **Issue 链接**：精选 Issue 每条都有完整 `[#号 标题](完整URL)` 格式
-- [ ] **竞品链接**：每个竞品都附 `[名称](GitHub/官网链接)`
-- [ ] **社区声量链接**：每条引用都有 `[来源: 标题](URL)` 格式
-- [ ] **无空泛描述**：社区声量部分没有"评价很高"、"热度很高"等概括性描述
-- [ ] **信息溯源**：所有外部引用都附原始链接
+- [ ] **Title link**: Uses `# [Project Name](GitHub URL)` and is clickable
+- [ ] **Heading spacing**: A blank line before and after every bold heading (`**🎯 ...**`)
+- [ ] **Telegram blank lines**: A braille blank `⠀` line between the end of each list block and the next heading, preventing Telegram from swallowing blank lines
+- [ ] **Issue links**: Every featured Issue uses the full `[#number Title](full URL)` format
+- [ ] **Competitor links**: Every competitor has `[Name](GitHub / official website URL)`
+- [ ] **Community discussion links**: Every citation uses `[Source: Title](URL)`
+- [ ] **No vague descriptions**: The community section contains no generalities such as "highly rated" or "very popular"
+- [ ] **Source traceability**: All external citations include original links
 
 ## Dependencies
 
-以下名称表示所需能力和可选增强，不表示 Auto-Company 已安装或配置这些工具：
+These names describe required capabilities and optional enhancements; they do not mean Auto-Company has installed or configured these tools:
 
-| 依赖 | 类型 | 用途 |
+| Dependency | Type | Purpose |
 |------|------|------|
-| `web_search` | 环境提供的工具 | 搜索检索 |
-| `web_fetch` | 环境提供的工具 | 网页内容抓取 |
-| `browser` | 环境提供的工具 | 动态页面渲染（备选） |
-| `search-layer` | 可选技能，未随包提供 | 仅在另行安装并核实自身说明后用于搜索增强；否则使用可用搜索工具 |
-| `content-extract` | 可选技能，未随包提供 | 仅在另行安装并核实自身说明后用于内容提取；否则使用浏览器或平台工具 |
+| `web_search` | Environment-provided tool | Search queries |
+| `web_fetch` | Environment-provided tool | Web content retrieval |
+| `browser` | Environment-provided tool | Dynamic page rendering (fallback) |
+| `search-layer` | Optional skill, not bundled | Use for search enhancement only after separate installation and checking its instructions; otherwise use available search tools |
+| `content-extract` | Optional skill, not bundled | Use for extraction only after separate installation and checking its instructions; otherwise use a browser or platform tool |

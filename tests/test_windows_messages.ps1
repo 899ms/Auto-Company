@@ -14,6 +14,8 @@ $brokenCatalogPath = Join-Path $testRoot 'broken-catalog.json'
 $script:checks = 0
 $script:failures = @()
 $missingWsl = 'wsl.exe not found. Enable WSL first.'
+$script:fixtureSystemLanguage = 'zh-CN'
+function Get-AutoCompanySystemLanguage { return $script:fixtureSystemLanguage }
 
 function Assert-Equal {
     param($Actual, $Expected)
@@ -26,6 +28,7 @@ function Invoke-MessageCheck {
     try {
         Remove-Item Env:AUTO_COMPANY_LANGUAGE -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $localPath -ErrorAction SilentlyContinue
+        $script:fixtureSystemLanguage = 'zh-CN'
         & $Body
         Write-Host "PASS: $Name"
     } catch {
@@ -34,22 +37,49 @@ function Invoke-MessageCheck {
 }
 
 try {
-    Invoke-MessageCheck 'default Chinese is decoded as UTF-8 in both PowerShell editions' {
+    Invoke-MessageCheck 'Chinese system UI defaults are decoded as UTF-8 in both PowerShell editions' {
         Initialize-AutoCompanyMessages -RepoRoot $testRoot -CatalogPath $catalogPath
         $actual = Get-AutoCompanyMessage -Key $missingWsl
         Assert-Equal $actual $catalog.PSObject.Properties[$missingWsl].Value.'zh-CN'
         Assert-Equal ([int]$actual[0]) 0x672A
     }
 
-    Invoke-MessageCheck 'repository language and environment precedence' {
+    Invoke-MessageCheck 'English system UI default is used without saved or legacy language' {
+        $script:fixtureSystemLanguage = 'en'
+        Initialize-AutoCompanyMessages -RepoRoot $testRoot -CatalogPath $catalogPath
+        Assert-Equal (Get-AutoCompanyMessage -Key $missingWsl) $missingWsl
+    }
+
+    Invoke-MessageCheck 'saved global preference takes precedence over legacy environment' {
         [System.IO.File]::WriteAllText($localPath, "# operator setting`nAUTO_COMPANY_LANGUAGE=en`nACTIVE_PROJECT=projects/example`n", $utf8)
         Initialize-AutoCompanyMessages -RepoRoot $testRoot -CatalogPath $catalogPath
         Assert-Equal (Get-AutoCompanyMessage -Key $missingWsl) $missingWsl
         $before = [System.IO.File]::ReadAllText($localPath)
         $env:AUTO_COMPANY_LANGUAGE = 'zh-CN'
         Initialize-AutoCompanyMessages -RepoRoot $testRoot -CatalogPath $catalogPath
-        Assert-Equal (Get-AutoCompanyMessage -Key $missingWsl) $catalog.PSObject.Properties[$missingWsl].Value.'zh-CN'
+        Assert-Equal (Get-AutoCompanyMessage -Key $missingWsl) $missingWsl
+        Initialize-AutoCompanyMessages -RepoRoot $testRoot -CatalogPath $catalogPath -Language zh-CN
+        Assert-Equal (Get-AutoCompanyMessage -Key $missingWsl) $missingWsl
         Assert-Equal ([System.IO.File]::ReadAllText($localPath)) $before
+    }
+
+    Invoke-MessageCheck 'current product language survives preference edits and display overrides' {
+        $contents = "AUTO_COMPANY_LANGUAGE=en`nAUTO_COMPANY_PRODUCT_ID=0123456789abcdef0123456789abcdef`nAUTO_COMPANY_PRODUCT_LANGUAGE=zh-CN`nAUTO_COMPANY_PRODUCT_STATUS=active`n"
+        [System.IO.File]::WriteAllText($localPath, $contents, $utf8)
+        $env:AUTO_COMPANY_LANGUAGE = 'en'
+        Initialize-AutoCompanyMessages -RepoRoot $testRoot -CatalogPath $catalogPath -Language EN
+        Assert-Equal (Get-AutoCompanyMessage -Key $missingWsl) $catalog.PSObject.Properties[$missingWsl].Value.'zh-CN'
+        Assert-Equal ([System.IO.File]::ReadAllText($localPath)) $contents
+    }
+
+    Invoke-MessageCheck 'legacy environment applies only without a saved preference or product' {
+        $env:AUTO_COMPANY_LANGUAGE = 'en'
+        Initialize-AutoCompanyMessages -RepoRoot $testRoot -CatalogPath $catalogPath
+        Assert-Equal (Get-AutoCompanyMessage -Key $missingWsl) $missingWsl
+        $script:fixtureSystemLanguage = 'en'
+        $env:AUTO_COMPANY_LANGUAGE = 'zh-CN'
+        Initialize-AutoCompanyMessages -RepoRoot $testRoot -CatalogPath $catalogPath
+        Assert-Equal (Get-AutoCompanyMessage -Key $missingWsl) $catalog.PSObject.Properties[$missingWsl].Value.'zh-CN'
     }
 
     Invoke-MessageCheck 'explicit language aliases override display without changing environment' {
@@ -80,7 +110,12 @@ try {
         foreach ($contents in @('AUTO_COMPANY_LANGUAGE=invalid',
             "AUTO_COMPANY_LANGUAGE=zh-CN`nAUTO_COMPANY_LANGUAGE=en`n",
             'AUTO_COMPANY_LANGUAGE="en"', '$(throw ''must not execute'')',
-            'export AUTO_COMPANY_LANGUAGE=en', "AUTO_COMPANY_LANGUAGE=zh-CN`nnot a setting")) {
+            'export AUTO_COMPANY_LANGUAGE=en', "AUTO_COMPANY_LANGUAGE=zh-CN`nnot a setting",
+            'AUTO_COMPANY_PRODUCT_LANGUAGE=zh-CN',
+            "ACTIVE_PROJECT=a`nACTIVE_PROJECT=b",
+            "AUTO_COMPANY_PRODUCT_ID=0123456789abcdef0123456789abcdef`nAUTO_COMPANY_PRODUCT_LANGUAGE=zh-CN`nAUTO_COMPANY_PRODUCT_STATUS=active",
+            "AUTO_COMPANY_LANGUAGE=zh-CN`nAUTO_COMPANY_PRODUCT_ID=0123456789abcdef0123456789abcdef`nAUTO_COMPANY_PRODUCT_LANGUAGE=zh-CN`nAUTO_COMPANY_PRODUCT_STATUS=active`nAUTO_COMPANY_PRODUCT_EXTRA=yes",
+            "AUTO_COMPANY_PRODUCT_ID=not-an-id`nAUTO_COMPANY_PRODUCT_LANGUAGE=zh-CN`nAUTO_COMPANY_PRODUCT_STATUS=active")) {
             [System.IO.File]::WriteAllText($localPath, $contents, $utf8)
             Initialize-AutoCompanyMessages -RepoRoot $testRoot -CatalogPath $catalogPath
             Assert-Equal (Get-AutoCompanyMessage -Key $missingWsl) $missingWsl
@@ -181,7 +216,7 @@ try {
     foreach ($name in @('awake-guardian-win.ps1', 'wsl-anchor-win.ps1')) {
         [System.IO.File]::WriteAllText((Join-Path $fixtureWindows $name), $guardian, $utf8)
     }
-    $global:autoCompanyMessageWslFixture = @{ FailWsl = $false }
+    $global:autoCompanyMessageWslFixture = @{ FailWsl = $false; LocalPath = $localPath }
     function wsl.exe {
         $callArgs = @($args)
         if ($callArgs[0] -cne '-d' -or $callArgs[1] -cne 'Fixture') { throw 'Unexpected distro.' }
@@ -192,6 +227,15 @@ try {
             $global:LASTEXITCODE = 17
             return 'NATIVE ERROR {0} $HOME /raw path'
         }
+        if ($callArgs[6] -cmatch '^python3 scripts/core/localization.py set --language (en|zh-CN)$') {
+            $selectedLanguage = $Matches[1]
+            $path = $global:autoCompanyMessageWslFixture.LocalPath
+            $contents = if (Test-Path -LiteralPath $path) { [System.IO.File]::ReadAllText($path) } else { '' }
+            $contents = [regex]::Replace($contents, '(?m)^AUTO_COMPANY_LANGUAGE=[^\r\n]*(?:\r?\n|$)', '')
+            [System.IO.File]::WriteAllText($path, "AUTO_COMPANY_LANGUAGE=$selectedLanguage`n" + $contents, (New-Object System.Text.UTF8Encoding($false)))
+            $global:LASTEXITCODE = 0
+            return
+        }
         if ($callArgs[6] -notin @(
             'command -v systemctl >/dev/null 2>&1 && systemctl --user --version >/dev/null 2>&1',
             'systemctl --user cat auto-company.service >/dev/null 2>&1',
@@ -200,18 +244,32 @@ try {
         $global:LASTEXITCODE = 0
     }
 
-    Invoke-MessageCheck 'real start displays explicit English and preserves saved budget/config' {
+    Invoke-MessageCheck 'real start saves explicit preference centrally and preserves service config byte for byte' {
         $env:AUTO_COMPANY_LANGUAGE = 'zh-CN'
+        $before = [System.IO.File]::ReadAllText((Join-Path $testRoot '.auto-loop.env'))
         $output = @(& (Join-Path $fixtureWindows 'start-win.ps1') -Distro Fixture -Language EN 6>&1) | Out-String
         if (-not $output.Contains('WSL daemon started: auto-company.service') -or
             ($output.Split(@('GUARDIAN_LANGUAGE=en ACTION=start'), [StringSplitOptions]::None).Count - 1) -ne 2) {
             throw "Explicit start language did not reach success/guardians: $output"
         }
         $saved = [System.IO.File]::ReadAllText((Join-Path $testRoot '.auto-loop.env'))
-        if (-not $saved.Contains('AUTO_COMPANY_LANGUAGE="en"') -or -not $saved.Contains('USAGE_HARD_LIMIT_USD=12')) {
-            throw 'Language update lost existing service configuration.'
-        }
+        Assert-Equal $saved $before
+        Assert-Equal ([System.IO.File]::ReadAllText($localPath)) "AUTO_COMPANY_LANGUAGE=en`n"
         Assert-Equal $env:AUTO_COMPANY_LANGUAGE 'zh-CN'
+    }
+
+    Invoke-MessageCheck 'real start queues preference for next product and retains pinned current language' {
+        $contents = "AUTO_COMPANY_LANGUAGE=zh-CN`nAUTO_COMPANY_PRODUCT_ID=0123456789abcdef0123456789abcdef`nAUTO_COMPANY_PRODUCT_LANGUAGE=zh-CN`nAUTO_COMPANY_PRODUCT_STATUS=active`n"
+        [System.IO.File]::WriteAllText($localPath, $contents, $utf8)
+        $savedPath = Join-Path $testRoot '.auto-loop.env'
+        $before = [System.IO.File]::ReadAllText($savedPath)
+        $output = @(& (Join-Path $fixtureWindows 'start-win.ps1') -Distro Fixture -Language en 6>&1) | Out-String
+        if (-not $output.Contains($catalog.PSObject.Properties['WSL daemon started: auto-company.service'].Value.'zh-CN') -or
+            ($output.Split(@('GUARDIAN_LANGUAGE=zh-CN ACTION=start'), [StringSplitOptions]::None).Count - 1) -ne 2) {
+            throw "Current product language changed: $output"
+        }
+        Assert-Equal ([System.IO.File]::ReadAllText($localPath)) ($contents.Replace('AUTO_COMPANY_LANGUAGE=zh-CN', 'AUTO_COMPANY_LANGUAGE=en'))
+        Assert-Equal ([System.IO.File]::ReadAllText($savedPath)) $before
     }
 
     Invoke-MessageCheck 'real start with no override reuses saved service environment unchanged' {

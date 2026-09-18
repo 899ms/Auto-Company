@@ -117,6 +117,23 @@ h1 {
   font-size: 0.85rem;
 }
 
+[hidden] {
+  display: none !important;
+}
+
+.documentation-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.documentation-links a {
+  color: var(--muted);
+}
+
 html:lang(zh) body,
 html:lang(zh) h1,
 html:lang(zh) h2,

@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 
+from localization import configuration_lock, recover_language_update
+
 
 def project_name(value):
     value = value.removeprefix("projects/")
@@ -19,6 +21,12 @@ def project_name(value):
 
 
 def read_config(root):
+    with configuration_lock(root):
+        recover_language_update(root)
+        return _read_config(root)
+
+
+def _read_config(root):
     config = root / ".auto-company.local"
     if config.is_symlink():
         raise ValueError("local project configuration must not be a symlink")
@@ -82,7 +90,13 @@ def validate_project(root, name):
 def select_project(root, name):
     name = project_name(name)
     validate_project(root, name)
-    data, _ = read_config(root)
+    with configuration_lock(root):
+        recover_language_update(root)
+        _select_project(root, name)
+
+
+def _select_project(root, name):
+    data, _ = _read_config(root)
     replacement = f"ACTIVE_PROJECT=projects/{name}".encode()
     lines = data.splitlines(keepends=True)
     for index, line in enumerate(lines):
@@ -109,12 +123,20 @@ def atomic_write(path, data):
 
 
 def capture_selection(root):
-    data, _ = read_config(root)
-    baseline = {"present": (root / ".auto-company.local").exists(), "data": data.hex()}
-    atomic_write(root / ".auto-company.local.cycle-backup", json.dumps(baseline).encode())
+    with configuration_lock(root):
+        recover_language_update(root)
+        data, _ = _read_config(root)
+        baseline = {"present": (root / ".auto-company.local").exists(), "data": data.hex()}
+        atomic_write(root / ".auto-company.local.cycle-backup", json.dumps(baseline).encode())
 
 
 def verify_selection(root):
+    with configuration_lock(root):
+        recover_language_update(root)
+        return _verify_selection(root)
+
+
+def _verify_selection(root):
     baseline = json.loads((root / ".auto-company.local.cycle-backup").read_text())
     config = root / ".auto-company.local"
     original = bytes.fromhex(baseline["data"])

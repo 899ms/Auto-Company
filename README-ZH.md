@@ -64,11 +64,11 @@ daemon (launchd / systemd --user, 崩溃自重启)
 
 ## 语言与文档
 
-运行输出支持 `zh-CN`（默认）与 `en`。先停止循环，再在仓库根目录运行 `make language LANGUAGE=en`，将 `AUTO_COMPANY_LANGUAGE=en` 保存到 `.auto-company.local`；切回中文用 `LANGUAGE=zh-CN`。Windows 等价命令为 `python scripts/core/localization.py set --language en`。重新启动循环后生效。
+一个语言设置统一控制 Dashboard、文档入口和新产品工作。首次使用跟随电脑的显示语言：中文系统使用 `zh-CN`，其他语言使用 `en`；WSL 会优先读取 Windows 的显示语言。
 
-同名环境变量 `AUTO_COMPANY_LANGUAGE` 优先于本地设置。Windows 的 `start-win.ps1 -Language en` 会将守护进程覆盖值保存到 `.auto-loop.env`；macOS 在安装 launchd 时保存环境变量覆盖值。具体配置和优先级见[语言说明](i18n/README.md)。
+在 Dashboard 中选择语言，或执行 `make language LANGUAGE=en`（中文为 `LANGUAGE=zh-CN`）；Windows 可执行 `python scripts/core/localization.py set --language en`。这些入口更新同一个偏好。产品周期开始后，语言在多轮 AI 执行、暂停和重启之间保持固定。运行中也能修改偏好，但从下一个产品周期才生效；Dashboard 会显示当前与下个周期的语言。产品周期的切换方式和 Windows 启动参数见[语言说明](i18n/README.md)。
 
-切换语言会保留根目录 `PROMPT.md`、自定义规则和 Human Overrides。用户已修改的源文件优先于附带译文，缺少译文时回退到原文；既有日志和共识历史保持原样。Dashboard 界面有独立语言选择器，会在浏览器中记住偏好。
+所有附带技能统一使用英文编写，面向用户的工作结果仍跟随产品语言。命令、标识符、协议标题和底层工具原始错误保留原样。自定义源文件、已有产品、日志与共识历史会保留，切换语言不会追溯翻译这些内容。
 
 | 文档 | 中文 | English |
 |---|---|---|

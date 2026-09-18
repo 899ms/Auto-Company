@@ -1,6 +1,30 @@
 # Keep this script ASCII so Windows PowerShell 5.1 reads it without a BOM.
 # User-visible text lives in the UTF-8 catalog; native tool output is untouched.
 
+function Get-AutoCompanySystemLanguage {
+    try {
+        # CurrentUICulture can inherit a hosting shell's language instead of the
+        # Windows user's display language. Query the same OS API as the runtime.
+        if (-not ('AutoCompany.Localization.NativeMethods' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+namespace AutoCompany.Localization {
+    public static class NativeMethods {
+        [DllImport("kernel32.dll")]
+        public static extern ushort GetUserDefaultUILanguage();
+    }
+}
+'@
+        }
+        $languageId = [AutoCompany.Localization.NativeMethods]::GetUserDefaultUILanguage()
+        $cultureName = [System.Globalization.CultureInfo]::GetCultureInfo([int]$languageId).Name
+        if ($cultureName -imatch '^zh(?:-|$)') { return 'zh-CN' }
+    } catch {
+        # Use a readable fallback if the Windows UI language is unavailable.
+    }
+    return 'en'
+}
+
 function Initialize-AutoCompanyMessages {
     param(
         [string]$RepoRoot = (Join-Path $PSScriptRoot '../..'),
@@ -11,39 +35,56 @@ function Initialize-AutoCompanyMessages {
     $script:AutoCompanyMessageLanguage = 'en'
     $script:AutoCompanyMessageCatalog = $null
     try {
-        # Only explicit -Language accepts PowerShell's case-insensitive aliases.
-        # This display-only reader must not change or mask runtime validation.
+        # Read the same shared state as the runtime. Legacy guardian arguments
+        # are display fallbacks only; they cannot override a product or setting.
+        $fallbackLanguage = $null
         if ($PSBoundParameters.ContainsKey('Language')) {
-            if ($Language -ieq 'en') { $selected = 'en' }
-            elseif ($Language -ieq 'zh-CN') { $selected = 'zh-CN' }
+            if ($Language -ieq 'en') { $fallbackLanguage = 'en' }
+            elseif ($Language -ieq 'zh-CN') { $fallbackLanguage = 'zh-CN' }
             else { throw 'Invalid language.' }
-        } else {
-            $selected = 'zh-CN'
-            $localPath = Join-Path $RepoRoot '.auto-company.local'
-            if (Test-Path -LiteralPath $localPath) {
-                $item = Get-Item -LiteralPath $localPath -Force -ErrorAction Stop
-                if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
-                    throw 'Local configuration must not be a symlink.'
-                }
-                $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
-                $localText = $utf8.GetString([System.IO.File]::ReadAllBytes($localPath))
-                $foundLanguage = $false
-                foreach ($line in ($localText -split '\r\n|\n|\r')) {
-                    if (-not $line.Trim() -or $line.TrimStart().StartsWith('#')) { continue }
-                    if ($line -cnotmatch '^([A-Z][A-Z0-9_]*)=(.*)$') {
-                        throw 'Invalid local configuration.'
-                    }
-                    if ($Matches[1] -ceq 'AUTO_COMPANY_LANGUAGE') {
-                        if ($foundLanguage) { throw 'Duplicate language setting.' }
-                        $selected = $Matches[2]
-                        $foundLanguage = $true
-                    }
-                }
-            }
-            $environmentLanguage = [Environment]::GetEnvironmentVariable('AUTO_COMPANY_LANGUAGE')
-            if ($null -ne $environmentLanguage) { $selected = $environmentLanguage }
-            if ($selected -cnotin @('zh-CN', 'en')) { throw 'Invalid language.' }
         }
+        $settings = @{}
+        $localPath = Join-Path $RepoRoot '.auto-company.local'
+        if (Test-Path -LiteralPath $localPath) {
+            $item = Get-Item -LiteralPath $localPath -Force -ErrorAction Stop
+            if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                throw 'Local configuration must not be a symlink.'
+            }
+            $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+            $localText = $utf8.GetString([System.IO.File]::ReadAllBytes($localPath))
+            foreach ($line in ($localText -split '\r\n|\n|\r')) {
+                if (-not $line.Trim() -or $line.TrimStart().StartsWith('#')) { continue }
+                if ($line -cnotmatch '^([A-Z][A-Z0-9_]*)=(.*)$') {
+                    throw 'Invalid local configuration.'
+                }
+                if ($settings.ContainsKey($Matches[1])) { throw 'Duplicate local setting.' }
+                $settings[$Matches[1]] = $Matches[2]
+            }
+        }
+        if ($settings.ContainsKey('AUTO_COMPANY_LANGUAGE') -and
+            $settings['AUTO_COMPANY_LANGUAGE'] -cnotin @('zh-CN', 'en')) {
+            throw 'Invalid language.'
+        }
+        $productKeys = @($settings.Keys | Where-Object { $_.StartsWith('AUTO_COMPANY_PRODUCT_') })
+        if ($productKeys.Count -gt 0) {
+            if ($productKeys.Count -ne 3 -or -not $settings.ContainsKey('AUTO_COMPANY_LANGUAGE') -or
+                $settings['AUTO_COMPANY_PRODUCT_ID'] -cnotmatch '^[0-9a-f]{32}$' -or
+                $settings['AUTO_COMPANY_PRODUCT_STATUS'] -cne 'active' -or
+                $settings['AUTO_COMPANY_PRODUCT_LANGUAGE'] -cnotin @('zh-CN', 'en')) {
+                throw 'Invalid product language state.'
+            }
+            $selected = $settings['AUTO_COMPANY_PRODUCT_LANGUAGE']
+        } elseif ($settings.ContainsKey('AUTO_COMPANY_LANGUAGE')) {
+            $selected = $settings['AUTO_COMPANY_LANGUAGE']
+        } elseif ($null -ne $fallbackLanguage) {
+            $selected = $fallbackLanguage
+        } else {
+            $selected = [Environment]::GetEnvironmentVariable('AUTO_COMPANY_LANGUAGE')
+            if ($null -eq $selected) {
+                $selected = Get-AutoCompanySystemLanguage
+            }
+        }
+        if ($selected -cnotin @('zh-CN', 'en')) { throw 'Invalid language.' }
         $script:AutoCompanyMessageLanguage = $selected
     } catch {
         # English is the original diagnostic text. Let the runtime report its

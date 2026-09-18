@@ -28,7 +28,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "messages-win.ps1")
-if ($PSBoundParameters.ContainsKey("Language")) { Initialize-AutoCompanyMessages -Language $Language }
 
 function ConvertTo-RuntimeLanguage {
     param([ValidateSet("zh-CN", "en")][string]$Value)
@@ -126,7 +125,8 @@ function Start-AutoCompanyService {
     param(
         [Parameter(Mandatory = $true)][string]$RepoWin,
         [Parameter(Mandatory = $true)][string]$RepoWsl,
-        [string[]]$EnvLines = @()
+        [string[]]$EnvLines = @(),
+        [ValidateSet("zh-CN", "en")][string]$Language
     )
 
     $null = Invoke-WslCommand -RepoWsl $RepoWsl -Command "command -v systemctl >/dev/null 2>&1 && systemctl --user --version >/dev/null 2>&1"
@@ -135,6 +135,13 @@ function Start-AutoCompanyService {
         # Existing services must belong here before changing any local config.
         $null = Invoke-WslCommand -RepoWsl $RepoWsl -Command "bash scripts/wsl/dashboard-wsl.sh check"
     }
+    if ($PSBoundParameters.ContainsKey('Language')) {
+        $canonicalLanguage = ConvertTo-RuntimeLanguage $Language
+        $null = Invoke-WslCommand -RepoWsl $RepoWsl -Command "python3 scripts/core/localization.py set --language $canonicalLanguage"
+    }
+    # A product pin can keep the current language while the saved preference
+    # changes for the next product. Reload the shared setting after persistence.
+    Initialize-AutoCompanyMessages -RepoRoot $RepoWin
     # An installer may enable/start immediately, so persist chosen settings first.
     Write-AutoLoopEnv -RepoWin $RepoWin -EnvLines $EnvLines
     if ($installedCode -ne 0) {
@@ -183,7 +190,6 @@ if ($PSBoundParameters.ContainsKey("CycleTimeoutSeconds") -and $CycleTimeoutSeco
 $envLines = @()
 if ($PSBoundParameters.ContainsKey("Engine")) { $envLines += "ENGINE=$Engine" }
 if ($PSBoundParameters.ContainsKey("Model")) { $envLines += "MODEL=$Model" }
-if ($PSBoundParameters.ContainsKey("Language")) { $envLines += "AUTO_COMPANY_LANGUAGE=$(ConvertTo-RuntimeLanguage $Language)" }
 if ($PSBoundParameters.ContainsKey("ClaudePermissionMode")) { $envLines += "CLAUDE_PERMISSION_MODE=$ClaudePermissionMode" }
 if ($PSBoundParameters.ContainsKey("ClaudeBin")) { $envLines += "CLAUDE_BIN=$ClaudeBin" }
 if ($PSBoundParameters.ContainsKey("CodexBin")) { $envLines += "CODEX_BIN=$CodexBin" }
@@ -209,7 +215,9 @@ if ($PSBoundParameters.ContainsKey("SandboxMode")) {
     $envLines += "CODEX_SANDBOX_MODE=$CodexSandboxMode"
 }
 
-Start-AutoCompanyService -RepoWin $repoWin -RepoWsl $repoWsl -EnvLines $envLines
+$startParameters = @{ RepoWin = $repoWin; RepoWsl = $repoWsl; EnvLines = $envLines }
+if ($PSBoundParameters.ContainsKey('Language')) { $startParameters.Language = $Language }
+Start-AutoCompanyService @startParameters
 Write-Host (Get-AutoCompanyMessage -Key 'WSL daemon started: auto-company.service')
 
 $awakeScript = Join-Path $repoWin "scripts\\windows\\awake-guardian-win.ps1"

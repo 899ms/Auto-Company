@@ -1,6 +1,6 @@
 # Common operations and troubleshooting
 
-[English](troubleshooting.md) · [中文](../../../docs/troubleshooting.md) · [Language settings](../../README.md)
+[English](troubleshooting.md) · [中文](../../../docs/troubleshooting.md) · [Language settings](../README.md)
 
 Run these commands from the Auto-Company repository root. `make` commands apply to Linux/WSL and macOS; Windows has PowerShell entrypoints. Keep the original error when troubleshooting: translated guidance explains the next step without replacing the underlying evidence.
 
@@ -13,10 +13,10 @@ Run these commands from the Auto-Company repository root. `make` commands apply 
 | Stop | Foreground loop: `make stop`; background service: `make pause` | `./scripts/windows/stop-win.ps1` |
 | Check status | `make status` | `./scripts/windows/status-win.ps1` |
 | Read the last cycle | `make last` | `./scripts/windows/last-win.ps1` |
-| Save English | After stopping: `make language LANGUAGE=en` | After stopping: `python scripts/core/localization.py set --language en` |
-| Save Chinese | After stopping: `make language LANGUAGE=zh-CN` | After stopping: `python scripts/core/localization.py set --language zh-CN` |
+| Save English | `make language LANGUAGE=en` | `python scripts/core/localization.py set --language en` |
+| Save Chinese | `make language LANGUAGE=zh-CN` | `python scripts/core/localization.py set --language zh-CN` |
 
-Before changing language, stop a foreground loop with `make stop`, or pause a background service with `make pause` to prevent automatic restarts. Changes apply at the next start; use `make resume` for a paused service. If the daemon has a saved `AUTO_COMPANY_LANGUAGE` override, update that too; Windows can use `-Language en` or `-Language zh-CN` on the next start. Dashboard interface language is separate.
+Language preferences can be saved while a product is running. Its current language stays fixed; the preference applies to the next product cycle. Pausing or restarting alone does not begin a new product. See the [language guide](../README.md).
 
 ## Installation and startup
 
@@ -31,11 +31,11 @@ Before changing language, stop a foreground loop with `make stop`, or pause a ba
 
 ## Language did not change as expected
 
-1. Check whether you changed the runtime language or the independent Dashboard preference.
-2. Runtime language accepts only `zh-CN` or `en`. Invalid values block model startup instead of silently selecting another language.
-3. The process environment takes precedence over `.auto-company.local`; an override captured during service installation may still apply. See [language precedence](../../README.md).
-4. If asked to stop the loop, use `make stop` for foreground operation or `make pause` for a background service, then save and restart/resume. Reopen interactive `make team` sessions too.
-5. Customized prompts or skills retain their source text, and explicit human language instructions take precedence. Commands, protocol fields, history and original errors intentionally remain unchanged.
+1. Check the Dashboard's current and next product language. A difference means the preference was saved and is waiting for the next product cycle.
+2. Pausing, restarting or beginning another AI iteration of the same product does not change its language.
+3. Explicitly start the next product cycle to apply the preference; see [cycle transitions](../README.md).
+4. Only `zh-CN` and `en` are accepted. A saved preference takes precedence over an old service environment. Without one, a compatible environment value or system display language supplies the initial choice.
+5. Skill sources are English. Commands, protocol fields, history and original errors remain unchanged. Existing products and customized documents are not rewritten automatically.
 
 ## Budget pauses and manual recovery
 

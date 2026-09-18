@@ -4,8 +4,18 @@ const DashboardI18n = (() => {
       "page.title": "Auto Company Control Deck",
       "page.heading": "Control Deck",
       "page.subtitle": "Runtime telemetry with action controls.",
-      "language.label": "Interface language",
-      "language.hint": "Changes the interface only; engine output keeps its own language.",
+      "language.label": "Company language",
+      "language.hint": "Shared by the dashboard, runtime, documentation and new products. Skills stay in English.",
+      "language.locked": "This product uses {current}. The next product will use {next}.",
+      "language.pending": "Saved. The change takes effect when a new product cycle begins.",
+      "language.saving": "Saving language…",
+      "language.unavailable": "Language settings are unavailable. Keeping the last confirmed language, or English on first load.",
+      "language.saveFailed": "Could not confirm the saved language. Refresh to check the current setting.",
+      "language.invalid": "The language configuration is invalid. Check the local language setting.",
+      "docs.readme": "Guide",
+      "docs.troubleshooting": "Troubleshooting",
+      "docs.setup": "Windows setup",
+      "docs.language": "Language settings",
       "button.refresh": "Refresh",
       "button.start": "Start",
       "button.stop": "Stop",
@@ -141,8 +151,18 @@ const DashboardI18n = (() => {
       "page.title": "Auto Company 控制台",
       "page.heading": "控制台",
       "page.subtitle": "查看运行状态，管理自动运行。",
-      "language.label": "界面语言",
-      "language.hint": "仅切换界面语言；引擎输出语言独立设置。",
+      "language.label": "公司语言",
+      "language.hint": "控制台、运行输出、文档和新产品统一使用此语言；技能保留英文。",
+      "language.locked": "当前产品使用{current}；下一个产品将使用{next}。",
+      "language.pending": "已保存，将在新的产品周期开始时生效。",
+      "language.saving": "正在保存语言…",
+      "language.unavailable": "暂时无法读取语言设置，保留上次确认的语言；首次加载失败时使用英文。",
+      "language.saveFailed": "暂时无法确认语言是否已保存，请刷新查看当前设置。",
+      "language.invalid": "语言配置无效，请检查本地语言设置。",
+      "docs.readme": "使用指南",
+      "docs.troubleshooting": "故障排查",
+      "docs.setup": "Windows 安装",
+      "docs.language": "语言设置",
       "button.refresh": "刷新",
       "button.start": "启动",
       "button.stop": "停止",
@@ -275,14 +295,13 @@ const DashboardI18n = (() => {
       "error.action": "{action}失败",
     },
   };
-  const storageKey = "auto-company.dashboard.language";
   const normalize = (value) => {
     const language = String(value || "").toLowerCase().split(/[-_]/)[0];
     return Object.hasOwn(messages, language) ? language : null;
   };
-  let saved;
-  try { saved = normalize(localStorage.getItem(storageKey)); } catch { /* Storage may be disabled. */ }
-  let language = saved || (navigator.languages || [navigator.language]).map(normalize).find(Boolean) || "en";
+  // Only the backend selects the company language; browsers never keep an
+  // independent preference. English is a readable connection-error fallback.
+  let language = "en";
 
   function t(key, values = {}, fallback = key) {
     const template = Object.hasOwn(messages[language], key) ? messages[language][key]
@@ -292,7 +311,6 @@ const DashboardI18n = (() => {
 
   function setLanguage(value) {
     language = normalize(value) || "en";
-    try { localStorage.setItem(storageKey, language); } catch { /* Switching still works without storage. */ }
   }
 
   function apply() {
