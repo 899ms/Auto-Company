@@ -22,7 +22,7 @@ from product_media import (MediaError, VIEWPORTS, atomic_json, capture_lock, cap
                            content_version, digest, load_profile, media_folder, media_projection,
                            now, read_resource, validate_icon)
 from runtime_artifacts import finalize
-from product_media_process import ProcessScope
+from product_media_process import ProcessScope, proc_identity
 from product_icon_html import inspect_reference
 
 HEAD_REVIEW_CASES = {
@@ -637,21 +637,75 @@ class BrowserMediaTests(MediaFixture):
 
     @unittest.skipIf(os.name == "nt", "POSIX SIGTERM cleanup is verified on Linux")
     def test_interrupted_capture_reaps_preview_without_waiting_for_watchdog(self):
+        self.assert_interrupted_capture_reaps_scope()
+
+    @unittest.skipUnless(Path("/proc").is_dir(), "Deterministic process-scan interruption requires Linux procfs")
+    def test_sigterm_during_process_scan_is_not_swallowed(self):
+        self.assert_interrupted_capture_reaps_scope(interrupt_scan=True)
+
+    def assert_interrupted_capture_reaps_scope(self, interrupt_scan=False):
         self.node_server(spawn_descendant=True)
         profile = load_profile(self.project)
         profile.update(readySelector="#never-present", timeoutSeconds=15)
         self.write_profile(profile)
         command = [sys.executable, str(ROOT / "scripts/core/runtime_artifacts.py"), "--root", str(self.root), "--project", self.name, "media"]
-        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if interrupt_scan:
+            # Deliver a real SIGTERM inside proc_identity's guarded stat read.
+            # A ValueError raised by the handler used to disappear there.
+            launcher = self.root / "interrupt-scan.py"
+            launcher.write_text("""import os, runpy, signal, sys, time
+from pathlib import Path
+original = Path.read_text
+root = Path(sys.argv[1])
+injected = False
+def read_stat(path, *args, **kwargs):
+    global injected
+    if not injected and path.name == 'stat' and path.parent.parent == Path('/proc') and (root / 'projects/example/.preview-port').exists():
+        injected = True
+        (root / 'scan-ready').touch()
+        deadline = time.monotonic() + 10
+        while not (root / 'interrupt-now').exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        os.kill(os.getpid(), signal.SIGTERM)
+    return original(path, *args, **kwargs)
+Path.read_text = read_stat
+sys.argv = sys.argv[2:]
+sys.path.insert(0, str(Path(sys.argv[0]).parent))
+from product_media_process import ProcessScope
+close_scope = ProcessScope.close
+def interrupt_cleanup(scope):
+    os.kill(os.getpid(), signal.SIGTERM)
+    (root / 'cleanup-interrupted').touch()
+    return close_scope(scope)
+ProcessScope.close = interrupt_cleanup
+runpy.run_path(sys.argv[0], run_name='__main__')
+""", encoding="utf-8")
+            command = [sys.executable, str(launcher), str(self.root), *command[1:]]
+        sentinel = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        scope = ProcessScope(command)
+        process = scope.process
         try:
             deadline = time.monotonic() + 10
-            while not (self.project / ".preview-port").exists() and time.monotonic() < deadline and process.poll() is None:
+            ready = self.root / "scan-ready" if interrupt_scan else self.project / ".preview-port"
+            while not ready.exists() and time.monotonic() < deadline and process.poll() is None:
+                scope.observe()
                 time.sleep(0.05)
-            self.assertTrue((self.project / ".preview-port").exists())
+            self.assertTrue(ready.exists())
+            scope.observe()
+            owned = dict(scope.members)
+            browser_pids = [pid for pid in owned if (path := Path(f"/proc/{pid}/cmdline")).exists()
+                            and any(name in path.read_bytes() for name in (b"chromium", b"chrome"))]
+            if Path("/proc").is_dir():
+                self.assertTrue(browser_pids, "The owned scope must include the real Chromium processes")
             started = time.monotonic()
-            process.terminate()
+            if interrupt_scan:
+                (self.root / "interrupt-now").touch()
+            else:
+                process.terminate()
             process.wait(timeout=8)
             self.assertLess(time.monotonic() - started, 8)
+            if interrupt_scan:
+                self.assertTrue((self.root / "cleanup-interrupted").exists(), "Repeated SIGTERM must not abort cleanup")
             self.assertEqual(media_projection(self.root, self.name)["screenshot"]["state"], "interrupted")
             port = int((self.project / ".preview-port").read_text())
             with socket.socket() as client:
@@ -660,10 +714,16 @@ class BrowserMediaTests(MediaFixture):
             pid = int((self.project / ".child-pid").read_text())
             proc = Path(f"/proc/{pid}/stat")
             self.assertTrue(not proc.exists() or proc.read_text().split()[2] == "Z")
+            for pid, (birth, _) in owned.items():
+                current = proc_identity(pid)
+                self.assertTrue(not current or current["start"] != birth or current["state"] == "Z", f"Owned process {pid} survived capture interruption")
+            self.assertIsNone(sentinel.poll(), "Unrelated process was stopped")
         finally:
-            if process.poll() is None:
-                process.terminate()
-                process.wait(timeout=8)
+            try:
+                scope.close()
+            finally:
+                sentinel.terminate()
+                sentinel.wait(timeout=3)
 
 
 if __name__ == "__main__":

@@ -347,21 +347,28 @@ def run_worker(project, profile, version, staging):
     atomic_json(staging / "request.json", request)
     command = [node, str(Path(__file__).with_name("product_media_worker.cjs")), str(staging / "request.json")]
     from product_media_process import ProcessScope
-    scope = ProcessScope(command)
-    process = scope.process
+    scope = None
     previous_signal = None
+    interrupted = False
     if threading.current_thread() is threading.main_thread():
         previous_signal = signal.getsignal(signal.SIGTERM)
 
         def interrupt_capture(_signal, _frame):
-            raise MediaError("capture_interrupted")
+            # Do not raise asynchronously: process-stat parsing catches
+            # ValueError, and a repeated signal must not interrupt teardown.
+            nonlocal interrupted
+            interrupted = True
 
         signal.signal(signal.SIGTERM, interrupt_capture)
     try:
+        scope = ProcessScope(command)
+        process = scope.process
         deadline = time.monotonic() + 45
         result_path = staging / "result.json"
         while not result_path.exists():
             scope.observe()
+            if interrupted:
+                raise MediaError("capture_interrupted")
             if process.poll() is not None:
                 raise MediaError("worker_terminated")
             if time.monotonic() >= deadline:
@@ -374,10 +381,13 @@ def run_worker(project, profile, version, staging):
         return result
     finally:
         try:
-            stop_worker(scope)
+            if scope is not None:
+                stop_worker(scope)
         finally:
             if previous_signal is not None:
                 signal.signal(signal.SIGTERM, previous_signal)
+        if interrupted:
+            raise MediaError("capture_interrupted")
 
 
 def load_record(folder):
