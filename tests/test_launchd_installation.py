@@ -43,7 +43,7 @@ class LaunchdRuntimeTests(unittest.TestCase):
         self.plist.parent.mkdir(parents=True)
         shutil.copytree(REPO / "scripts", self.project / "scripts")
         (self.project / "dashboard").mkdir()
-        for name in ("server.py", "journal_data.py"):
+        for name in ("server.py", "journal_data.py", "observability_data.py"):
             shutil.copy2(REPO / "dashboard" / name, self.project / "dashboard" / name)
         for relative in ("scripts/core/launchd-config.py", "scripts/core/stop-loop.sh",
                          "scripts/macos/install-daemon.sh", "scripts/macos/start-daemon.sh",

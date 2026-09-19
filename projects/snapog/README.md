@@ -1,13 +1,14 @@
 # SnapOG
 
-Generate stunning Open Graph images via API — hosted on Cloudflare Workers, cached globally on R2, sub-100ms on cache hit.
+An Open Graph image API prototype built for Cloudflare Workers, with D1 usage records and R2 image caching. This example is intended for local evaluation and deployment to your own account. Hosted-service availability and cache-hit latency have not been verified for this source snapshot.
 
 ## Quick Start
 
+Follow [Local Development](#local-development) to start your own instance, then open its `/register` page to create a test API key. The examples below use a local server. References to `snapog.dev` in the prototype's branding are not a verified hosted-service entrypoint.
+
 ```bash
-# Get a free API key at https://snapog.dev/register, then:
-curl "https://snapog.dev/og?title=My+Blog+Post&domain=myblog.com&key=sk_YOUR_KEY" \
-  --output og.png && open og.png
+curl "http://127.0.0.1:8787/og?title=My+Blog+Post&domain=myblog.com&key=sk_YOUR_KEY" \
+  --output og.png
 ```
 
 ## API
@@ -32,24 +33,28 @@ Headers:
 
 ## HTML Integration
 
+After deploying your own instance, replace `YOUR_DEPLOYMENT_HOST` and `YOUR_KEY` below. A local address is not reachable by social preview crawlers.
+
 ```html
 <meta property="og:image"
-      content="https://snapog.dev/og?title=YOUR_TITLE&key=YOUR_KEY" />
+      content="https://YOUR_DEPLOYMENT_HOST/og?title=YOUR_TITLE&key=YOUR_KEY" />
 <meta property="og:image:width"  content="1200" />
 <meta property="og:image:height" content="630" />
 <meta name="twitter:card"   content="summary_large_image" />
-<meta name="twitter:image"  content="https://snapog.dev/og?title=YOUR_TITLE&key=YOUR_KEY" />
+<meta name="twitter:image"  content="https://YOUR_DEPLOYMENT_HOST/og?title=YOUR_TITLE&key=YOUR_KEY" />
 ```
 
-## Pricing
+## Demo Tiers
 
-| Tier | Price | Images/month |
+The prototype displays the following proposed prices and implements per-key monthly request limits. Registration accepts a tier selection without payment verification; there is no implemented subscription checkout. These are demo settings, not purchasable plans.
+
+| Tier | Proposed price (demo only) | Requests/key/month |
 |------|-------|-------------|
 | Free | $0 | 100 |
 | Pro | $19/mo | 10,000 |
 | Business | $49/mo | 100,000 |
 
-Free tier images include "snapog.dev" watermark.
+Cache hits also count toward these limits. Free tier images include a "snapog.dev" watermark as prototype branding.
 
 ## Local Development
 
@@ -98,6 +103,8 @@ npm run typecheck
 ```
 
 ## Deployment
+
+Deploy to resources you control after reviewing the prototype's authentication and tier handling. The checked-in D1 database ID is a placeholder; replace it with your own. Deploying this code does not add payment verification or turn the demo prices into subscriptions.
 
 ```bash
 # 1. Create remote D1 database

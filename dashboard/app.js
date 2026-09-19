@@ -22,11 +22,11 @@
     return text.length > length ? `${text.slice(0, length).trim()}…` : text;
   }
   function statusLabel(status) {
-    return ['completed', 'completed_with_timeout', 'failed', 'interrupted', 'stopped_status', 'running', 'idle', 'paused', 'waiting_limit', 'circuit_break', 'stopped', 'active', 'inactive', 'configured', 'not_configured', 'not_installed', 'mismatched', 'activating', 'deactivating', 'reloading', 'unsupported'].includes(status) ? message(status) : status === 'unavailable' ? message('statusUnavailable') : message('unknown');
+    return ['stopping', 'stop_failed', 'completed', 'completed_with_timeout', 'failed', 'interrupted', 'stopped_status', 'running', 'idle', 'paused', 'waiting_limit', 'circuit_break', 'stopped', 'active', 'inactive', 'configured', 'not_configured', 'not_installed', 'mismatched', 'activating', 'deactivating', 'reloading', 'unsupported'].includes(status) ? message(status) : status === 'unavailable' ? message('statusUnavailable') : message('unknown');
   }
   function readOnly() { return state.data?.readOnly !== false; }
   function liveProcess() { return !readOnly() && !state.statusFailed && state.data?.runtime?.processState === 'running'; }
-  function runtimeLabel() { return statusLabel(state.statusFailed ? 'unavailable' : state.data?.runtime?.state); }
+  function runtimeLabel() { return statusLabel(state.action === 'stop' ? 'stopping' : state.data?.control?.stopUnconfirmed ? (state.data?.control?.action === 'stop' ? 'stopping' : 'stop_failed') : state.statusFailed ? 'unavailable' : state.data?.runtime?.state); }
   function pauseLabel(value) { return message(`pause_${value}`) === `pause_${value}` ? String(value || '') : message(`pause_${value}`); }
   async function fetchJSON(url, options = {}, timeout = 100000) {
     const controller = new AbortController();
@@ -58,6 +58,8 @@
     return seconds < 60 ? message('seconds', { seconds }) : message('minutes', { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
   }
   function cycleTitle(cycle) {
+    if (cycle.workReport) return cycle.workReport.title;
+    if (cycle.status === 'interrupted' && cycle.events?.length) return message('interruptedSummary');
     if (cycle.synthetic && cycle.status !== 'running') return statusLabel(cycle.status);
     let title = clean(cycle.summary || cycle.report || '').split('\n').find((line) => line.trim()) || '';
     if (/^[\[{]/.test(title)) title = '';
@@ -144,6 +146,42 @@
     details.append(summary, body);
     return details;
   }
+  function eventList(cycle) {
+    const events = (cycle.events || []).filter((event) => event.kind !== 'report');
+    if (!events.length) return null;
+    const section = bindDisclosure(element('details', 'observed-events report-disclosure'), `events:${cycle.id}`);
+    section.append(element('summary', '', message('observedEvents')));
+    section.append(element('p', 'sidebar-note', message('eventTimeNote')));
+    const list = element('ol', 'event-list');
+    for (const event of events.slice(-12)) {
+      const row = element('li');
+      let label = message(`event_${event.kind}`);
+      if (event.kind === 'command') {
+        const ended = event.phase === 'completed';
+        label = `${message(ended ? 'commandEnded' : 'commandStarted')} ${event.command || ''}`;
+        if (ended) label += ` · ${message('exitCode')}: ${Number.isInteger(event.exitCode) ? event.exitCode : message('unknown')}`;
+      } else if (event.kind === 'files') label = `${message('fileChanges')}: ${(event.paths || []).join(', ')}`;
+      row.append(element('time', '', formatTime(event.observedAt)), element('span', '', label));
+      list.append(row);
+    }
+    section.append(list);
+    if (cycle.eventStatus === 'partial') section.append(element('p', 'sidebar-note', message('partialEvents')));
+    return section;
+  }
+  function workReportDetails(cycle) {
+    const work = cycle.workReport;
+    if (!work && !['invalid', 'missing'].includes(cycle.workReportStatus)) return null;
+    const section = element('div', 'work-report-details');
+    if (!work) {
+      section.append(element('p', 'sidebar-note', message(cycle.workReportStatus === 'invalid' ? 'invalidWorkReport' : 'missingWorkReport')));
+      return section;
+    }
+    section.append(element('p', 'report-source', `${message('reportedPhase')} · ${message(`workPhase_${work.phase}`)}`));
+    if (work.blocker) section.append(element('p', 'work-blocker', `${message('workBlocker')}：${work.blocker}`));
+    section.append(element('p', 'report-source', message('structuredReportSource')));
+    if (!cycle.active && !work.final) section.append(element('p', 'sidebar-note', message('unfinishedWorkReport')));
+    return section;
+  }
   function renderCurrent(cycle) {
     const container = clear($('currentCycle'));
     if (!cycle) {
@@ -165,18 +203,23 @@
     const report = element('section', 'report-section');
     const heading = element('div', 'section-heading-row');
     heading.append(element('h3', '', message('latestReport')));
-    const timestamp = cycle.durationReliable !== false && cycle.endedAtKind !== 'recovered' && cycle.status !== 'interrupted' ? cycle.endedAt : null;
+    const timestamp = cycle.workReport?.recorded_at || cycle.reportObservedAt || (cycle.durationReliable !== false && cycle.endedAtKind !== 'recovered' && cycle.status !== 'interrupted' ? cycle.endedAt : null);
     if (timestamp) {
       const time = element('time', '', message('recordedAt', { time: formatTime(timestamp) }));
       time.dateTime = timestamp;
       heading.append(time);
     }
-    let intro = clean(cycle.summary || '');
+    const liveReport = cycle.active ? [...(cycle.events || [])].reverse().find((event) => event.kind === 'report') : null;
+    let intro = cycle.workReport?.summary || clean(cycle.summary || liveReport?.text || '');
     if (/^[\[{]/.test(intro)) intro = cycleTitle(cycle);
     if (!intro) intro = message(cycle.active ? 'runningNoReport' : 'noReport');
     report.append(heading, element('p', 'report-intro', intro));
+    const workDetails = workReportDetails(cycle);
+    if (workDetails) report.append(workDetails);
     body.append(report);
-    const rows = reportRows(cycle);
+    const observed = eventList(cycle);
+    if (observed) body.append(observed);
+    const rows = cycle.workReport ? [] : reportRows(cycle);
     if (rows.length) {
       const results = element('section', 'results-section');
       const resultHeading = element('div', 'section-heading-row');
@@ -184,7 +227,7 @@
       results.append(resultHeading, resultList(rows));
       body.append(results);
     }
-    if (cycle.report) body.append(element('p', 'report-source', message('reportSource')));
+    if (cycle.report && !cycle.workReport) body.append(element('p', 'report-source', message('reportSource')));
     const disclosure = fullReport(cycle);
     if (disclosure) body.append(disclosure);
     body.append(logButton(cycle));
@@ -206,10 +249,14 @@
       summary.append(arrow);
       const content = element('div', 'history-content');
       content.append(metadata(cycle));
-      let report = clean(cycle.summary || '');
+      const observed = eventList(cycle);
+      if (observed) content.append(observed);
+      let report = cycle.workReport?.summary || clean(cycle.summary || '');
       if (/^[\[{]/.test(report)) report = cycleTitle(cycle);
       content.append(element('p', '', report || message('noSummary')));
-      const results = reportRows(cycle);
+      const workDetails = workReportDetails(cycle);
+      if (workDetails) content.append(workDetails);
+      const results = cycle.workReport ? [] : reportRows(cycle);
       if (results.length) content.append(resultList(results));
       const disclosure = fullReport(cycle);
       if (disclosure) content.append(disclosure);
@@ -261,13 +308,15 @@
     const runtime = data?.runtime || {};
     const unavailable = state.statusFailed || runtime.available === false;
     const process = runtime.processState || runtime.state;
-    const locked = !data || readOnly() || unavailable || Boolean(state.action);
+    const action = state.action || data?.control?.action;
+    const retryStop = data?.control?.stopUnconfirmed === true;
+    const locked = !data || readOnly() || (unavailable && !retryStop) || Boolean(action);
     $('runtimeState').textContent = runtimeLabel();
     $('runtimeState').dataset.state = unavailable ? 'unavailable' : runtime.state || 'unknown';
-    $('startButton').disabled = locked || !['stopped', 'inactive'].includes(process);
-    $('stopButton').disabled = locked || process !== 'running';
-    $('startButton').textContent = message(state.action === 'start' ? 'starting' : 'start');
-    $('stopButton').textContent = message(state.action === 'stop' ? 'stopping' : 'stop');
+    $('startButton').disabled = locked || retryStop || !['stopped', 'inactive'].includes(process);
+    $('stopButton').disabled = locked || (!retryStop && process !== 'running');
+    $('startButton').textContent = message(action === 'start' ? 'starting' : 'start');
+    $('stopButton').textContent = message(action === 'stop' ? 'stopping' : 'stop');
     $('startButton').title = $('stopButton').title = readOnly() ? message('readOnly') : unavailable ? message('statusUnavailable') : '';
     $('refreshButton').disabled = Boolean(state.refreshPending || state.action);
     $('modeNote').textContent = data ? message(readOnly() ? 'preview' : 'live') : '';
@@ -356,25 +405,39 @@
     const heading = element('div', 'section-heading-row');
     heading.append(element('h2', '', message('nextAction')));
     next.append(heading);
-    if (data.consensus?.updatedAt) heading.append(element('span', 'sidebar-update', message('updated', { time: formatTime(data.consensus.updatedAt) })));
-    next.append(element('p', 'next-action', clean(data.consensus?.nextAction) || message('noNextAction')));
-    next.append(element('p', 'sidebar-note', message(readOnly() || (!state.statusFailed && data.runtime?.processState === 'stopped') ? 'stoppedNotice' : 'planNotice')));
+    const work = state.currentCycle?.workReport;
+    const nextTime = work?.recorded_at || data.consensus?.updatedAt;
+    if (nextTime) heading.append(element('span', 'sidebar-update', message('updated', { time: formatTime(nextTime) })));
+    next.append(element('p', 'next-action', work ? (work.next_action || message('noPlannedAction')) : clean(data.consensus?.nextAction) || message('noNextAction')));
+    if (work?.next_action_kind === 'human_input') next.append(element('p', 'sidebar-note', message('humanInput')));
+    next.append(element('p', 'sidebar-note', message(readOnly() || (!state.statusFailed && data.runtime?.processState === 'stopped') ? 'stoppedNotice' : work ? 'workPlanNotice' : 'planNotice')));
     const artifacts = element('section', 'sidebar-block');
     artifacts.append(element('h2', '', message('artifacts')));
     if (data.artifacts?.length) {
       const list = element('ul', 'artifact-list');
       for (const artifact of data.artifacts) {
         const item = element('li');
-        const link = element('a', 'artifact-link');
-        link.href = `/api/journal/document?path=${encodeURIComponent(artifact.path)}`;
-        link.target = '_blank';
-        link.rel = 'noopener';
-        link.title = artifact.path;
-        link.append(fileIcon(), element('span', '', artifact.label || artifact.path));
-        const arrow = element('span', 'artifact-arrow', '↗');
-        arrow.setAttribute('aria-hidden', 'true');
-        link.append(arrow);
-        item.append(link);
+        const label = artifact.kind === 'preview' ? message('productPreview') : artifact.label || artifact.path;
+        if (artifact.available === false || (!artifact.path && !artifact.url)) {
+          item.append(element('span', '', `${label} · ${message('artifactUnavailable')}`));
+        } else {
+          const link = element('a', 'artifact-link');
+          link.href = artifact.url || `/api/journal/document?path=${encodeURIComponent(artifact.path)}`;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          link.title = artifact.path || artifact.url;
+          link.append(fileIcon(), element('span', '', label));
+          const arrow = element('span', 'artifact-arrow', '↗');
+          arrow.setAttribute('aria-hidden', 'true');
+          link.append(arrow);
+          item.append(link);
+        }
+        if (artifact.kind === 'check') {
+          const tests = artifact.tests;
+          const result = `${message('exitCode')}: ${Number.isInteger(artifact.exitCode) ? artifact.exitCode : message('unknown')}`;
+          item.append(element('p', 'sidebar-note', tests ? `${result} · ${message('testCounts', { tests: tests.tests, failures: tests.failures + tests.errors, skipped: tests.skipped })}` : result));
+        }
+        if (artifact.recordedAt) item.append(element('p', 'sidebar-note', message('recordedAt', { time: formatTime(artifact.recordedAt) })));
         list.append(item);
       }
       artifacts.append(list);
@@ -385,6 +448,7 @@
     const usage = `${compactNumber(sum.totalTokens)}${knownNumber(sum.totalTokens) ? ' tokens' : ''}${sum.partial && sum.known ? message('usagePartialShort') : ''}`;
     const config = data.runtime || {};
     runtime.append(runtimeRows([[message('engine'), config.engine], [message('model'), config.model], [message('reasoning'), config.reasoning === 'unknown' ? message('unknown') : config.reasoning], [message('language'), languageLabel(config.language || data.language)], [message('recordedUsage'), usage]]));
+    runtime.append(element('p', 'sidebar-note', message(config.configSource === 'session_context' ? 'observedSession' : 'unconfirmedSession')));
     const details = bindDisclosure(element('details', 'runtime-disclosure'), 'runtime');
     details.append(element('summary', '', message('moreRuntime')), runtimeRows([[message('state'), runtimeLabel()], [message('phase'), clean(data.consensus?.phase) || message('phaseUnknown')], [message('source'), data.sourceName]]));
     runtime.append(details);
@@ -633,17 +697,19 @@
     clearTimeout(state.timer);
     renderRuntime();
     actionMessage('actionPending', { action: message(action) });
-    if (state.refreshPending) await state.refreshPending;
+    if (action === 'start' && state.refreshPending) await state.refreshPending;
     try {
       // Recheck after any in-flight status read before mutating the runtime.
       const process = state.data?.runtime?.processState || state.data?.runtime?.state;
-      if (readOnly() || state.statusFailed || (action === 'start' ? !['stopped', 'inactive'].includes(process) : process !== 'running')) throw new Error(message('stateChanged'));
+      const retryStop = action === 'stop' && state.data?.control?.stopUnconfirmed === true;
+      if (readOnly() || (!retryStop && (state.statusFailed || (action === 'start' ? !['stopped', 'inactive'].includes(process) : process !== 'running')))) throw new Error(message('stateChanged'));
       const result = await fetchJSON(`/api/action/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 120000);
       if (result.ok !== true) throw new Error('Action not confirmed');
       actionMessage('actionComplete', { action: message(action) });
     } catch (error) {
       actionMessage('actionFailed', { action: message(action), detail: error.name === 'AbortError' ? message('actionUnconfirmed') : error.message || message('actionUnconfirmed') }, true);
     } finally {
+      if (state.refreshPending) await state.refreshPending;
       await refresh();
       state.action = '';
       renderRuntime();

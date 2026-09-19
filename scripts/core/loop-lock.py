@@ -8,9 +8,10 @@ import shlex
 import signal
 import subprocess
 import sys
+import time
 
 
-def stop(pid_file: str, script: str) -> int:
+def stop(pid_file: str, script: str, wait_seconds: str = "0") -> int:
     descriptor = os.open(pid_file, os.O_RDWR | os.O_CREAT, 0o600)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -43,6 +44,18 @@ def stop(pid_file: str, script: str) -> int:
         else:
             os.kill(pid, signal.SIGTERM)
         print(f"Sent SIGTERM to the owned loop (PID {pid}).")
+        # Dashboard service stop waits for the existing owner to seal records
+        # before systemd sends its broader control-group termination signal.
+        deadline = time.monotonic() + float(wait_seconds)
+        while float(wait_seconds) > 0:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    print("Loop cleanup did not finish before the stop deadline.", file=sys.stderr)
+                    return 1
+                time.sleep(0.05)
     except (ProcessLookupError, FileNotFoundError):
         print("Loop owner has already exited.")
     finally:

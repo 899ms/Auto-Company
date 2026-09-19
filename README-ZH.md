@@ -9,6 +9,8 @@
 
 默认使用 Claude Code，并支持 [Codex CLI](https://www.npmjs.com/package/@openai/codex)（macOS 原生 + Windows/WSL），两端都可启动本地 Dashboard。
 
+另有需要显式配置的 Cursor 与 OpenAI-compatible 可选适配器，能力与限制见[引擎适配说明](i18n/zh-CN/ENGINE_ADAPTERS.md)。
+
 [![macOS](https://img.shields.io/badge/平台-macOS-blue?logo=apple&logoColor=white)](#依赖)
 [![Windows WSL](https://img.shields.io/badge/平台-Windows%20WSL-blue?logo=windows&logoColor=white)](#windows-wsl-快速开始)
 [![Codex CLI](https://img.shields.io/badge/驱动-Codex%20CLI-orange?logo=data:image/svg%2Bxml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0yMi4yODE5IDkuODIxMWE1Ljk4NDcgNS45ODQ3IDAgMCAwLS41MTU3LTQuOTEwOCA2LjA0NjIgNi4wNDYyIDAgMCAwLTYuNTA5OC0yLjlBNi4wNjUxIDYuMDY1MSAwIDAgMCA0Ljk4MDcgNC4xODE4YTUuOTg0NyA1Ljk4NDcgMCAwIDAtMy45OTc3IDIuOSA2LjA0NjIgNi4wNDYyIDAgMCAwIC43NDI3IDcuMDk2NiA1Ljk4IDUuOTggMCAwIDAgLjUxMSA0LjkxMDcgNi4wNTEgNi4wNTEgMCAwIDAgNi41MTQ2IDIuOTAwMUE2LjA2NTEgNi4wNjUxIDAgMCAwIDE5LjAyIDE5LjgxODJhNS45ODQ3IDUuOTg0NyAwIDAgMCAzLjk5NzctMi45MDAxIDYuMDQ2MiA2LjA0NjIgMCAwIDAtLjczNTgtNy4wOTdaTTguNzQ5IDYuNzU3OGE0LjQxMTggNC40MTE4IDAgMCAxIDcuMzY3MyAxLjE0NDQgNC4zOTg2IDQuMzk4NiAwIDAgMS0uMjkyOCA0LjIyODVsLTQuNzA3LTIuNzIxNHYtMi42NTE1Wk02LjUzMzIgMTQuNjU0YTQuNDExOCA0LjQxMTggMCAwIDEtMS4xMjkzLTcuMzcgNC4zOTg2IDQuMzk4NiAwIDAgMSA0LjEzNTItMS4zOWwyLjM2MTUgNC4wOTN2NS4zMDJMNi41MzMyIDE0LjY1NFptLTEuODQ4LTEuNTcyYTQuNDExOCA0LjQxMTggMCAwIDEgNi4yMzgtNi4yMjYgNC4zOTg2IDQuMzk4NiAwIDAgMSAzLjg0MzMgMi44MzhsLTQuNzA3IDIuNzIxdjUuMzAxNUw0LjY4NTIgMTMuMDgyWm0xMC41NjU4IDQuMTZhNC40MTE4IDQuNDExOCAwIDAgMS03LjM2NzMtMS4xNDQzIDQuMzk4NiA0LjM5ODYgMCAwIDEgLjI5MjgtNC4yMjg1bDQuNzA3IDIuNzIxNHYyLjY1MTRabTIuMjE1OC03Ljg5NmE0LjQxMTggNC40MTE4IDAgMCAxIDEuMTI5MyA3LjM3IDQuMzk4NiA0LjM5ODYgMCAwIDEtNC4xMzUyIDEuMzlsLTIuMzYxNS00LjA5M1Y5LjE4Nmw1LjM2NzQgMi4xODZabTEuODQ4IDEuNTcyYTQuNDExOCA0LjQxMTggMCAwIDEtNi4yMzggNi4yMjYgNC4zOTg2IDQuMzk4NiAwIDAgMS0zLjg0MzMtMi44MzhsNC43MDctMi43MjFWOS4xODZsNS4zNzQgMy4wOTZaTTEyIDE2LjUxNmE0LjQxMTggNC40MTE4IDAgMCAxLTQuNDExOC00LjQxMThjMC0yLjQzNDggMS45NzctNC40MTE4IDQuNDExOC00LjQxMThzNC40MTE4IDEuOTc3IDQuNDExOCA0LjQxMTgtMS45NzcgNC40MTE4LTQuNDExOCA0LjQxMThaIi8+PC9zdmc+&logoColor=white)](https://www.npmjs.com/package/@openai/codex)
@@ -22,6 +24,8 @@
 ## 看板预览
 
 ![Auto Company 看板](presentation/dashboard-showcase.png)
+
+新版看板按轮次展示工作汇报、成果、下一步和历史记录，并提供独立的用量与日志视图。截图使用已完成的 TableDelta 真实运行记录，以只读归档模式展示，不代表各 Agent 的实时活动。用量仅覆盖已记录的数据，缺失值保持未知，不等于完整账单。
 
 ## 这是什么？
 
@@ -49,13 +53,26 @@ daemon (launchd / systemd --user, 崩溃自重启)
 
 人类仅下达启动指令和交付范围；从产品立项、方案讨论、设计开发到测试交付，均由 Agent 团队自主讨论、决策并执行，过程中无需人工介入。
 
-![行间 / TableDelta：CSV 差异核对结果](projects/tabledelta/docs/images/desktop-result.png)
-
-**行间 / TableDelta**：对比两份 CSV，查看新增、删除和修改，并导出变化报告。[查看源码](projects/tabledelta/)
-
-![幕检 / CueCheck：字幕检查与编辑工作台](projects/cuecheck/docs/images/desktop-result.png)
-
-**幕检 / CueCheck**：检查 SRT 字幕的时码、重叠与阅读速度，支持逐条编辑、重检和导出。[查看源码](projects/cuecheck/)
+<table>
+  <tr>
+    <th width="50%">行间 / TableDelta</th>
+    <th width="50%">幕检 / CueCheck</th>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><a href="projects/tabledelta/docs/images/desktop-result.png"><img src="projects/tabledelta/docs/images/desktop-result.png" alt="行间 / TableDelta：CSV 差异核对结果" width="100%" /></a></td>
+    <td width="50%" valign="top"><a href="projects/cuecheck/docs/images/desktop-result.png"><img src="projects/cuecheck/docs/images/desktop-result.png" alt="幕检 / CueCheck：字幕检查与编辑工作台" width="100%" /></a></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <p>对比两份 CSV，查看新增、删除和修改，并导出变化报告。</p>
+      <p><a href="projects/tabledelta/">查看源码 →</a></p>
+    </td>
+    <td width="50%" valign="top">
+      <p>检查 SRT 字幕的时码、重叠与阅读速度，支持逐条编辑、重检和导出。</p>
+      <p><a href="projects/cuecheck/">查看源码 →</a></p>
+    </td>
+  </tr>
+</table>
 
 ## 你该看哪一节（按平台）
 
@@ -108,26 +125,33 @@ daemon (launchd / systemd --user, 崩溃自重启)
 # 前提:
 # - macOS
 # - 已安装并登录 Codex CLI 或 Claude Code
+# - 已可用 Python 3.10+（python3）、Git 和 make
 # - 可用模型配额
 
 # 克隆
 git clone https://github.com/MaxMiksa/Auto-Company.git
 cd Auto-Company
 
-# 前台运行（直接看输出）
+# 使用 Claude Code 前台运行（默认引擎，直接看输出）
 make start
 
-# 或安装为守护进程（开机自启 + 崩溃自重启）
+# 或使用 Codex CLI 前台运行
+ENGINE=codex make start
+
+# 也可为所选引擎安装并启动守护进程
 make install
+# 使用 Codex 而非默认的 Claude：
+ENGINE=codex make install
 ```
 
 ## Windows (WSL) 快速开始
 
 ```powershell
 # 前提:
-# - Windows 10/11 + WSL2 (Ubuntu)
+# - Windows 10/11 + WSL2 (Ubuntu)，systemd --user 可用
 # - 已在 WSL 内安装并登录 Codex CLI 或 Claude Code
-# - WSL 内已可用 jq 和 make
+# - WSL 内已可用 Python 3.10+（python3）、Git 和 make
+# - Windows 端已安装 Python 3.10+（python），供 PowerShell 看板入口使用
 # - 可用模型配额
 
 # 克隆
@@ -159,12 +183,14 @@ cd Auto-Company
 | 实时日志 | `make monitor` | `.\scripts\windows\monitor-win.ps1` |
 | 最近一轮输出 | `make last` | `.\scripts\windows\last-win.ps1` |
 | 周期摘要 | `make cycles` | `.\scripts\windows\cycles-win.ps1` |
-| 停止 | `make stop` | `.\scripts\windows\stop-win.ps1` |
+| 停止 | 前台：`make stop`；后台守护：`make pause` | `.\scripts\windows\stop-win.ps1` |
 | 可视化看板 | `make dashboard` | `.\scripts\windows\dashboard-win.ps1` |
 | 安装守护 | `make install` | 由 `start-win.ps1` 自动安装/启动 WSL daemon |
 | 卸载守护 | `make uninstall` | `wsl -d Ubuntu --cd <repo_wsl_path> bash -lc 'make uninstall'` |
 | 暂停守护 | `make pause` | `wsl -d Ubuntu --cd <repo_wsl_path> bash -lc 'make pause'` |
 | 恢复守护 | `make resume` | `wsl -d Ubuntu --cd <repo_wsl_path> bash -lc 'make resume'` |
+
+守护模式下，仅执行 `make stop` 可能触发自动重启。应使用 `make pause` 保持停止，之后用 `make resume` 恢复。
 
 ### macOS 防睡眠（仅 macOS）
 
@@ -200,13 +226,13 @@ Auto-Company 并非简单调用 LLM API，而是一个高度解耦的 **多智�
 │    [ 永续主循环 ]  [ 状态机 (Consensus) ]  [ 容错与熔断 ]  │
 ├────────────────────────────────────────────────────────────┤
 │ 1. 基础设施与执行引擎层 (Execution Engine & Infrastructure)│
-│    [ 双核驱动器 (Claude/Codex) ]  [ 跨平台守护进程 (Daemon)]│
+│    [ 引擎适配器 (Adapters) ]  [ 跨平台守护进程 (Daemon) ] │
 └────────────────────────────────────────────────────────────┘
 ```
 
 ### 第 5 层：监控与人机交互层 (Observability & HITL)
 *   **基于文件的操纵杆 (File-based Steering)**：人类只需编辑 `memories/consensus.md`，修改 `Next Action`，下一个周期醒来的 AI 团队就会立刻“转舵”，实现极简的宏观控制。
-*   **日志与看板 (Dashboard)**：`logs/` 保存引擎实际输出（对已知凭据进行脱敏），以及每轮结果和可用的用量记录。输出详细程度取决于引擎，不保证包含完整思考链。`dashboard/` 展示主循环与守护进程状态、用量与预算、共识摘要和最近日志，不跟踪各个 Agent 的活跃度。
+*   **日志与看板 (Dashboard)**：`logs/` 保存引擎实际输出（对已知凭据进行脱敏），以及每轮结果和可用的用量记录。输出详细程度取决于引擎，不保证包含完整思考链。`dashboard/` 按当前与历史轮次组织工作汇报、成果和下一步，并提供运行控制、状态、用量、预算与日志，不跟踪各个 Agent 的活跃度。
 
 ### 第 4 层：工作流路由层 (Workflow Routing & Teaming)
 *   **动态组队路由 (Dynamic Squad Formation)**：系统利用 Agent Teams 功能，根据当前 `consensus.md` 中的 "Next Action"，从 14 人池子中动态挑选 2-5 名最适合的专家，并在当前循环中将它们“实例化”为子代理。
@@ -223,7 +249,7 @@ Auto-Company 并非简单调用 LLM API，而是一个高度解耦的 **多智�
 *   **容错与恢复机制 (Resilience & Recovery)**：内置熔断器（连续错误触发冷却）、限流退避（429 报错自动休眠），并在周期失败后恢复共识。Human Overrides、`.auto-company.local` 和框架根目录的 `.gitignore` 有定向保护。产品代码修改和外部副作用不会自动回滚。
 
 ### 第 1 层：基础设施与执行引擎层 (Execution Engine & Infrastructure)
-*   **双核驱动器 (Dual-Engine Executor)**：通过调用成熟的 AI 命令行工具 **Claude Code** 或 **Codex CLI** 作为底层执行器，天然继承其文件读写、Bash 执行、Git 操作等能力。
+*   **引擎适配器 (Engine Adapters)**：主要入口使用 **Claude Code**（默认）或 **Codex CLI**。另有需显式启用和配置的 **Cursor** 与 **OpenAI-compatible** 适配器，各引擎的工具与组队能力有所不同，详见[引擎适配说明](i18n/zh-CN/ENGINE_ADAPTERS.md)。
 *   **跨平台守护进程 (Cross-Platform Daemon)**：macOS 基于 `launchd` 实现开机自启和崩溃重启；Windows/WSL 基于 `systemd --user` 在 WSL 容器内运行，外部通过 PowerShell 进行控制和保活。
 *   **沙盒边界 (Sandbox Boundary)**：目前依赖底层 CLI 的配置（如 Codex 的 `danger-full-access` 或 Claude 的 `bypassPermissions`），系统级操作均在宿主机环境（或 WSL 容器）中直接发生。
 
@@ -276,7 +302,7 @@ AI 团队全自主运行，但你可以随时介入：
 环境变量覆盖：
 
 ```bash
-ENGINE=claude make start                   # 默认引擎（claude|codex）
+ENGINE=claude make start                   # 默认引擎；可选适配器见引擎适配说明
 ENGINE=codex make start                    # 切换到 codex
 MODEL=sonnet make start                    # 可选：临时覆盖模型
 CLAUDE_PERMISSION_MODE=bypassPermissions make start  # Claude 权限模式
@@ -329,7 +355,10 @@ auto-company/
 | 依赖 | 说明 |
 |------|------|
 | **Claude Code / Codex CLI** | 支持的 CLI 引擎（默认 Claude） |
+| 可选引擎适配器 | Cursor 与 OpenAI-compatible，需显式启用，见[引擎适配说明](i18n/zh-CN/ENGINE_ADAPTERS.md) |
 | **macOS 或 Windows + WSL2 (Ubuntu)** | macOS 支持 launchd；Windows 走 WSL 执行内核 |
+| **Python 3.10+** | 必需：macOS/WSL 使用 `python3`；Windows 的 PowerShell 看板和本地语言命令还需 `python` |
+| `git` | 克隆仓库与管理产品仓库 |
 | `node` | npm 安装 CLI 的运行时 |
 | `make` | 启停与监控命令入口（WSL/macOS） |
 | `jq` | 推荐，辅助处理日志 |
@@ -409,4 +438,3 @@ auto-company/
 
 Zheyuan (Max) Kong: kongzheyuan@outlook.com | zheyuank@tepper.cmu.edu
 本项目 GitHub 链接：https://github.com/MaxMiksa/Auto-Company
-

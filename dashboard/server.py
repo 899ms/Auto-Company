@@ -14,6 +14,7 @@ import socket
 import subprocess
 import sys
 import time
+import threading
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -49,6 +50,9 @@ USAGE_FILE = REPO_ROOT / "logs" / "usage.jsonl"
 STATE_FILE = REPO_ROOT / ".auto-loop-state"
 CONSENSUS_FILE = REPO_ROOT / "memories" / "consensus.md"
 BUDGET_PAUSE_FILE = REPO_ROOT / ".auto-loop-budget-paused"
+
+CONTROL_LOCK = threading.Lock()
+CONTROL_ACTION = ""
 
 WINDOWS_HOST = "windows"
 MACOS_HOST = "macos"
@@ -614,6 +618,12 @@ def gather_journal_payload() -> dict[str, Any]:
     except (OSError, ValueError):
         payload["budgetPause"] = None
         payload["warnings"].append("budget_pause_unavailable")
+    # Keep cleanup failures visible after reload, even if the model already exited.
+    control = {"action": CONTROL_ACTION,
+               "stopUnconfirmed": (REPO_ROOT / ".auto-loop-stop-pending").exists()}
+    payload["control"] = control
+    if control["action"] == "stop" or control["stopUnconfirmed"]:
+        payload["runtime"]["state"] = "stopping" if control["action"] == "stop" else "stop_failed"
     return payload
 
 
@@ -752,6 +762,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._text("Not found", code=404)
 
     def do_POST(self) -> None:  # noqa: N802
+        global CONTROL_ACTION
         if not self._request_allowed():
             return
         if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
@@ -781,12 +792,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         action = path.rsplit("/", 1)[-1]
+        mutating = action in {"start", "stop"}
+        if mutating and not CONTROL_LOCK.acquire(blocking=False):
+            self._json({"ok": False, "error": "A runtime action is already in progress."},
+                       code=HTTPStatus.CONFLICT)
+            return
+        pending = REPO_ROOT / ".auto-loop-stop-pending"
         try:
+            if action == "start" and pending.exists():
+                self._json({"ok": False, "error": "Stop cleanup is unconfirmed. Retry Stop first."},
+                           code=HTTPStatus.CONFLICT)
+                return
+            if mutating:
+                CONTROL_ACTION = action
+            if action == "stop":
+                pending.write_text("stopping\n", encoding="utf-8")
+                (REPO_ROOT / ".auto-loop-stop").touch()
             result = run_dashboard_action(action)
+            if action == "stop" and result["ok"]:
+                pending.unlink(missing_ok=True)
         except (subprocess.TimeoutExpired, OSError) as exc:
             self._json({"ok": False, "output": f"Dashboard action failed: {exc}"},
                        code=HTTPStatus.GATEWAY_TIMEOUT)
             return
+        finally:
+            if mutating:
+                CONTROL_ACTION = ""
+                CONTROL_LOCK.release()
         payload = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "action": action,

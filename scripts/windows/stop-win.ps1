@@ -53,34 +53,41 @@ $paths = Get-RepoPaths
 $repoWin = $paths.RepoWin
 $repoWsl = $paths.RepoWsl
 
-$installedCode = Invoke-WslCommand -RepoWsl $repoWsl -Command "systemctl --user cat auto-company.service >/dev/null 2>&1" -IgnoreExitCode
-if ($installedCode -eq 0) {
-    $null = Invoke-WslCommand -RepoWsl $repoWsl -Command "bash scripts/wsl/dashboard-wsl.sh check"
-    $stopCode = Invoke-WslCommand -RepoWsl $repoWsl -Command "bash scripts/wsl/dashboard-wsl.sh stop" -IgnoreExitCode
-    if ($stopCode -ne 0) {
-        Write-Warning (Get-AutoCompanyMessage -Key 'auto-company.service is installed but was not running/loaded.')
-    } else {
+$pendingFile = Join-Path $repoWin ".auto-loop-stop-pending"
+[System.IO.File]::WriteAllText($pendingFile, "stopping`n")
+$stopFailed = $false
+try {
+    $installedCode = Invoke-WslCommand -RepoWsl $repoWsl -Command "systemctl --user cat auto-company.service >/dev/null 2>&1" -IgnoreExitCode
+    if ($installedCode -eq 0) {
+        $null = Invoke-WslCommand -RepoWsl $repoWsl -Command "bash scripts/wsl/dashboard-wsl.sh stop"
         Write-Host (Get-AutoCompanyMessage -Key 'WSL daemon stopped: auto-company.service')
+    } else {
+        $null = Invoke-WslCommand -RepoWsl $repoWsl -Command "bash scripts/core/stop-loop.sh --wait"
     }
-} else {
-    Write-Warning (Get-AutoCompanyMessage -Key 'auto-company.service is not installed. Falling back to foreground stop.')
-    $null = Invoke-WslCommand -RepoWsl $repoWsl -Command "make stop" -IgnoreExitCode
+} catch {
+    $stopFailed = $true
+    Write-Warning $_
 }
 
-$awakeScript = Join-Path $repoWin "scripts\\windows\\awake-guardian-win.ps1"
-if (Test-Path $awakeScript) {
-    & $awakeScript -Action stop -Language $script:AutoCompanyMessageLanguage
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning (Get-AutoCompanyMessage -Key 'Awake guardian reported a non-zero exit while stopping.')
+# Attempt both owned helpers even when the daemon stop failed.
+foreach ($helper in @('awake-guardian-win.ps1', 'wsl-anchor-win.ps1')) {
+    try {
+        $helperPath = Join-Path $PSScriptRoot $helper
+        $helperArgs = @{ Action = 'stop'; Language = $script:AutoCompanyMessageLanguage }
+        if ($helper -eq 'wsl-anchor-win.ps1') {
+            $helperArgs.Distro = $Distro
+            $helperArgs.RepoWsl = $repoWsl
+        }
+        & $helperPath @helperArgs
+        if ($LASTEXITCODE -ne 0) { throw "$helper cleanup returned $LASTEXITCODE." }
+    } catch {
+        $stopFailed = $true
+        Write-Warning $_
     }
 }
-
-$anchorScript = Join-Path $repoWin "scripts\\windows\\wsl-anchor-win.ps1"
-if (Test-Path $anchorScript) {
-    & $anchorScript -Action stop -Distro $Distro -RepoWsl $repoWsl -Language $script:AutoCompanyMessageLanguage
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning (Get-AutoCompanyMessage -Key 'WSL anchor reported a non-zero exit while stopping.')
-    }
+if ($stopFailed) {
+    Write-Warning "Stop cleanup is incomplete. Review the errors and retry Stop."
+    exit 1
 }
-
+Remove-Item -LiteralPath $pendingFile -ErrorAction Stop
 exit 0

@@ -14,7 +14,13 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import sys
 from typing import Any
+
+from observability_data import cycle_events, registered_artifacts
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "core"))
+from cycle_reports import read_report  # noqa: E402
 
 
 MAX_LEDGER_BYTES = 4 * 1024 * 1024
@@ -192,8 +198,9 @@ class JournalSource:
 
     def documents(self) -> list[dict[str, str]]:
         delivery = self.optional("DELIVERY.md")
+        registered = registered_artifacts(self)
         if not delivery:
-            return []
+            return registered
         result = [{"label": "DELIVERY.md", "path": "DELIVERY.md", "kind": "document"}]
         # A single explicit relative README link identifies the delivered project.
         paths = set(re.findall(r"\]\((projects/[A-Za-z0-9_-]+/README\.md)\)", delivery))
@@ -201,10 +208,10 @@ class JournalSource:
             path = paths.pop()
             if self.optional(path):
                 result.append({"label": path.split("/")[1] + " / README", "path": path, "kind": "document"})
-        return result
+        return result + registered
 
     def document(self, relative: str) -> tuple[str, bool]:
-        allowed = {"memories/consensus.md", *(item["path"] for item in self.documents())}
+        allowed = {"memories/consensus.md", *(item["path"] for item in self.documents() if item.get("path") and item.get("available", True))}
         if relative not in allowed:
             raise ValueError("Document is not an advertised artifact")
         return self.read(relative)
@@ -343,6 +350,9 @@ class JournalSource:
         description = re.search(r"^\s*[-*]?\s*(?:Product|产品)\s*[:：]\s*(.+)$", company, re.M | re.I)
         if not heading and not description:
             name = "Auto Company"
+        selected_project = self.pairs(".auto-company.local").get("ACTIVE_PROJECT", "")
+        if re.fullmatch(r"projects/[a-z0-9][a-z0-9-]*", selected_project):
+            name = selected_project.split("/")[1]
         latest = cycles[0] if cycles else {}
         runtime = {"state": "stopped", "processState": "stopped", "pid": None,
                    "available": True, "error": None, "pauseReason": "",
@@ -370,6 +380,24 @@ class JournalSource:
                     warnings.append("active_cycle_unavailable")
             if not available:
                 warnings.append("runtime_unavailable")
+        for cycle in cycles[:30]:
+            cycle.update(read_report(self, cycle))
+            cycle.update(cycle_events(self, cycle))
+            if cycle.get("active") or cycle["status"] == "interrupted":
+                # Interrupted adapter sidecars can contain mixed raw JSONL.
+                # Use only an explicit agent-message event as a work report.
+                observed_report = next((event for event in reversed(cycle["events"])
+                                        if event.get("kind") == "report" and isinstance(event.get("text"), str)), None)
+                if observed_report:
+                    cycle["report"] = observed_report["text"]
+                    cycle["summary"] = plain_text(observed_report["text"].split("\n\n", 1)[0])[:500]
+                    cycle["reportObservedAt"] = timestamp(observed_report.get("observedAt"))
+                elif cycle["events"]:
+                    cycle["report"] = cycle["summary"] = ""
+        if cycles:
+            observed = cycles[0].get("observedConfig")
+            if observed:
+                runtime.update(model=observed["model"], reasoning=observed["reasoning"], configSource="session_context")
         recorded_budget = next((record["budget"] for record in records if isinstance(record.get("budget"), dict)), None)
         return {"ok": True, "readOnly": status is None, "sourceName": self.root.name,
                 "legacyAvailable": False, "languageState": selected_language,

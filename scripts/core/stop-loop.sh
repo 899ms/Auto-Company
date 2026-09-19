@@ -31,7 +31,7 @@ stop_loop_process() {
     fi
 
     # Validate the held lock and exact script identity before signalling a PID.
-    python3 "$SCRIPT_DIR/loop-lock.py" --stop "$PID_FILE" "$SCRIPT_DIR/auto-loop.sh"
+    python3 "$SCRIPT_DIR/loop-lock.py" --stop "$PID_FILE" "$SCRIPT_DIR/auto-loop.sh" "${1:-0}"
 }
 
 pause_daemon() {
@@ -79,6 +79,9 @@ resume_daemon() {
 }
 
 case "${1:-}" in
+    --wait)
+        stop_loop_process 20
+        ;;
     --pause-daemon)
         pause_daemon
         ;;

@@ -36,7 +36,8 @@ function Get-RunningGuardianProcess {
         return $null
     }
 
-    $pidText = (Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+    $pidText = [string](Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+    $pidText = $pidText.Trim()
     if (-not $pidText) {
         return $null
     }
@@ -52,7 +53,7 @@ function Get-RunningGuardianProcess {
     }
 
     $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction SilentlyContinue).CommandLine
-    if ($cmd -and $cmd -match "awake-guardian-win\.ps1" -and $cmd -match "-Action\s+run") {
+    if ($cmd -and $cmd -match ('(?:^|\s)-File\s+"?' + [regex]::Escape($PSCommandPath) + '"?(?=\s|$)') -and $cmd -match "-Action\s+run") {
         return $proc
     }
     return $null
@@ -76,7 +77,7 @@ switch ($Action) {
         $proc = Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -PassThru -ArgumentList @(
             "-NoProfile",
             "-ExecutionPolicy", "Bypass",
-            "-File", $selfPath,
+            "-File", ('"' + $selfPath + '"'),
             "-Action", "run",
             "-HeartbeatSeconds", "$HeartbeatSeconds"
         )
@@ -130,8 +131,13 @@ switch ($Action) {
         [System.IO.File]::WriteAllText($stopFile, "1`n", $utf8NoBom)
         Start-Sleep -Milliseconds 500
         if (-not $existing.HasExited) {
-            Stop-Process -Id $existing.Id -Force -ErrorAction SilentlyContinue
+            $owned = Get-RunningGuardianProcess
+            if ($owned -and $owned.StartTime -eq $existing.StartTime) {
+                Stop-Process -InputObject $owned -Force
+                if (-not $owned.WaitForExit(3000)) { throw "Awake guardian cleanup is incomplete." }
+            }
         }
+        if (Get-RunningGuardianProcess) { throw "Awake guardian is still running." }
         Clear-StateFiles
         Write-Output (Get-AutoCompanyMessage -Key 'Awake guardian stopped.')
         exit 0

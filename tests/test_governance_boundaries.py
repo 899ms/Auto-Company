@@ -413,8 +413,17 @@ class GovernanceLoopTest(GovernanceFixture):
         self.assertEqual(calls[0]["project"], str(product))
         self.assertEqual(calls[0]["active"], "projects/selected")
         self.assertIn(f"Selected product repository: `{product}`", calls[0]["argv"][2])
+        self.assertIn("Dashboard work report (version 1", calls[0]["argv"][2])
         self.assertEqual(self.git("log", "-1", "--format=%s", cwd=product).strip(), "Fake product milestone")
         self.assertEqual(self.git("ls-files", "--", "projects/selected"), "")
+        self.assertEqual(len(list((self.root / "memories/snapshots").glob("*.md"))), 1)
+
+    def test_missing_report_helper_does_not_fail_the_cycle(self):
+        (self.root / "scripts/core/cycle_reports.py").unlink()
+        process = self.start_loop()
+        self.assertEqual(process.wait(timeout=15), 0)
+        records = [json.loads(line) for line in (self.root / "logs/usage.jsonl").read_text().splitlines()]
+        self.assertEqual(records[-1]["status"], "completed")
         self.assertEqual(len(list((self.root / "memories/snapshots").glob("*.md"))), 1)
 
     def test_invalid_active_project_prevents_engine_call(self):

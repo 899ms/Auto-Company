@@ -261,6 +261,25 @@ cleanup() {
         final_state="process_cleanup_failed"
         log "Process-tree cleanup could not be confirmed for cycle PGID ${CYCLE_SUPERVISOR_LAST_PGID}"
     else
+        # A signal interrupts adapter_execute before it can publish its output.
+        # Preserve already emitted evidence after the owned process tree exits.
+        if [ -n "${ADAPTER_OUTPUT_FILE:-}" ] && [ -f "$ADAPTER_OUTPUT_FILE" ] &&
+           [ -f "${USAGE_FILE}.pending" ]; then
+            ADAPTER_OUTPUT=$(adapter_redact < "$ADAPTER_OUTPUT_FILE")
+            printf '%s\n' "$ADAPTER_OUTPUT" > "$cycle_log"
+            ADAPTER_RESULT_SOURCE="$ADAPTER_OUTPUT"
+            ADAPTER_EXIT_CODE=130
+            ADAPTER_TIMED_OUT=0
+            engine_adapter_extract_metadata
+            cycle_record="${cycle_log%.log}.json"
+            engine_adapter_write_record "$cycle_record" interrupted "Stopped by operator"
+            cycle_ended_at=$(date '+%Y-%m-%dT%H:%M:%S%z')
+            CYCLE_LEDGER_STATUS=interrupted
+            EXIT_CODE=130
+            record_cycle_usage >/dev/null
+            rm -f "$ADAPTER_OUTPUT_FILE"
+            ADAPTER_OUTPUT_FILE=""
+        fi
         # The engine must be stopped before restoring its interrupted governance baseline.
         "$CONSENSUS_GUARD" recover || true
     fi
@@ -440,9 +459,11 @@ run_engine_cycle() {
     # This is workflow context, not an OS sandbox or an authentication boundary.
     export AUTO_COMPANY_ROOT="$PROJECT_DIR"
     export AUTO_COMPANY_CYCLE=1
+    export AUTO_COMPANY_CYCLE_ID="$(basename "$cycle_log" .log)"
     export ACTIVE_PROJECT ACTIVE_PROJECT_PATH
     engine_adapter_run "$prompt"
     unset AUTO_COMPANY_CYCLE
+    unset AUTO_COMPANY_CYCLE_ID
     OUTPUT="$ADAPTER_OUTPUT"
     EXIT_CODE="$ADAPTER_EXIT_CODE"
     CYCLE_TIMED_OUT="$ADAPTER_TIMED_OUT"
@@ -623,6 +644,8 @@ while true; do
 
     # Build prompt with consensus pre-injected
     CONSENSUS=$(cat "$CONSENSUS_FILE" 2>/dev/null || echo "No consensus file found. This is the very first cycle.")
+    # Optional observation instructions must never block the existing cycle.
+    REPORT_INSTRUCTIONS=$(python3 "$SCRIPT_DIR/cycle_reports.py" prompt 2>/dev/null) || REPORT_INSTRUCTIONS=""
     FULL_PROMPT="$PROMPT
 
 ---
@@ -646,6 +669,8 @@ while true; do
 - Selected product repository: \`${ACTIVE_PROJECT_PATH:-none}\`
 - If a project is selected, perform all product source work there and use \`git -C \"$ACTIVE_PROJECT_PATH\"\` for product Git operations. Keep product commits and remotes out of the framework repository.
 - Framework cwd remains available for company coordination and consensus. Project selection is workflow routing, not an OS filesystem or network sandbox.
+
+$REPORT_INSTRUCTIONS
 
 ---
 

@@ -9,6 +9,8 @@ They ideate products, make decisions, write code, deploy, and market - without h
 
 Powered by Claude Code (default) and [Codex CLI](https://www.npmjs.com/package/@openai/codex) on macOS + Windows/WSL, with a local dashboard on both hosts.
 
+Optional Cursor and OpenAI-compatible adapters require explicit configuration. See the [adapter guide](ENGINE_ADAPTERS.md) for their capabilities and limits.
+
 [![macOS](https://img.shields.io/badge/Platform-macOS-blue?logo=apple&logoColor=white)](#dependencies)
 [![Windows WSL](https://img.shields.io/badge/Platform-Windows%20WSL-blue?logo=windows&logoColor=white)](#windows-wsl-quick-start)
 [![Codex CLI](https://img.shields.io/badge/Engine-Codex%20CLI-orange?logo=data:image/svg%2Bxml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0yMi4yODE5IDkuODIxMWE1Ljk4NDcgNS45ODQ3IDAgMCAwLS41MTU3LTQuOTEwOCA2LjA0NjIgNi4wNDYyIDAgMCAwLTYuNTA5OC0yLjlBNi4wNjUxIDYuMDY1MSAwIDAgMCA0Ljk4MDcgNC4xODE4YTUuOTg0NyA1Ljk4NDcgMCAwIDAtMy45OTc3IDIuOSA2LjA0NjIgNi4wNDYyIDAgMCAwIC43NDI3IDcuMDk2NiA1Ljk4IDUuOTggMCAwIDAgLjUxMSA0LjkxMDcgNi4wNTEgNi4wNTEgMCAwIDAgNi41MTQ2IDIuOTAwMUE2LjA2NTEgNi4wNjUxIDAgMCAwIDE5LjAyIDE5LjgxODJhNS45ODQ3IDUuOTg0NyAwIDAgMCAzLjk5NzctMi45MDAxIDYuMDQ2MiA2LjA0NjIgMCAwIDAtLjczNTgtNy4wOTdaTTguNzQ5IDYuNzU3OGE0LjQxMTggNC40MTE4IDAgMCAxIDcuMzY3MyAxLjE0NDQgNC4zOTg2IDQuMzk4NiAwIDAgMS0uMjkyOCA0LjIyODVsLTQuNzA3LTIuNzIxNHYtMi42NTE1Wk02LjUzMzIgMTQuNjU0YTQuNDExOCA0LjQxMTggMCAwIDEtMS4xMjkzLTcuMzcgNC4zOTg2IDQuMzk4NiAwIDAgMSA0LjEzNTItMS4zOWwyLjM2MTUgNC4wOTN2NS4zMDJMNi41MzMyIDE0LjY1NFptLTEuODQ4LTEuNTcyYTQuNDExOCA0LjQxMTggMCAwIDEgNi4yMzgtNi4yMjYgNC4zOTg2IDQuMzk4NiAwIDAgMSAzLjg0MzMgMi44MzhsLTQuNzA3IDIuNzIxdjUuMzAxNUw0LjY4NTIgMTMuMDgyWm0xMC41NjU4IDQuMTZhNC40MTE4IDQuNDExOCAwIDAgMS03LjM2NzMtMS4xNDQzIDQuMzk4NiA0LjM5ODYgMCAwIDEgLjI5MjgtNC4yMjg1bDQuNzA3IDIuNzIxNHYyLjY1MTRabTIuMjE1OC03Ljg5NmE0LjQxMTggNC40MTE4IDAgMCAxIDEuMTI5MyA3LjM3IDQuMzk4NiA0LjM5ODYgMCAwIDEtNC4xMzUyIDEuMzlsLTIuMzYxNS00LjA5M1Y5LjE4Nmw1LjM2NzQgMi4xODZabTEuODQ4IDEuNTcyYTQuNDExOCA0LjQxMTggMCAwIDEtNi4yMzggNi4yMjYgNC4zOTg2IDQuMzk4NiAwIDAgMS0zLjg0MzMtMi44MzhsNC43MDctMi43MjFWOS4xODZsNS4zNzQgMy4wOTZaTTEyIDE2LjUxNmE0LjQxMTggNC40MTE4IDAgMCAxLTQuNDExOC00LjQxMThjMC0yLjQzNDggMS45NzctNC40MTE4IDQuNDExOC00LjQxMThzNC40MTE4IDEuOTc3IDQuNDExOCA0LjQxMTgtMS45NzcgNC40MTE4LTQuNDExOCA0LjQxMThaIi8+PC9zdmc+&logoColor=white)](https://www.npmjs.com/package/@openai/codex)
@@ -22,6 +24,8 @@ Powered by Claude Code (default) and [Codex CLI](https://www.npmjs.com/package/@
 ## Dashboard Preview
 
 ![Auto Company Dashboard](presentation/dashboard-showcase.png)
+
+The current dashboard shows per-cycle work reports, results, next steps, and history, with separate usage and log views. This screenshot uses real records from a completed TableDelta run in read-only archive mode; it does not show live agent activity. Usage covers recorded data only; missing values remain unknown and do not represent a complete bill.
 
 ## What Is This?
 
@@ -49,13 +53,26 @@ These independent applications were created through autonomous Auto-Company runs
 
 Humans supplied only the instruction to start and the delivery scope. From product selection and planning through design, development, testing, and delivery, the Agent team discussed, decided, and executed autonomously, with no human intervention in that process.
 
-![TableDelta: CSV comparison results](projects/tabledelta/docs/images/desktop-result.png)
-
-**行间 / TableDelta**: Compare two CSV files, inspect added, removed, and changed records, and export a change report. [View source](projects/tabledelta/)
-
-![CueCheck: subtitle checking and editing workspace](projects/cuecheck/docs/images/desktop-result.png)
-
-**幕检 / CueCheck**: Check SRT subtitle timing, overlaps, and reading speed; edit individual subtitles, recheck, and export. [View source](projects/cuecheck/)
+<table>
+  <tr>
+    <th width="50%">行间 / TableDelta</th>
+    <th width="50%">幕检 / CueCheck</th>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><a href="projects/tabledelta/docs/images/desktop-result.png"><img src="projects/tabledelta/docs/images/desktop-result.png" alt="TableDelta: CSV comparison results" width="100%" /></a></td>
+    <td width="50%" valign="top"><a href="projects/cuecheck/docs/images/desktop-result.png"><img src="projects/cuecheck/docs/images/desktop-result.png" alt="CueCheck: subtitle checking and editing workspace" width="100%" /></a></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <p>Compare two CSV files, inspect added, removed, and changed records, and export a change report.</p>
+      <p><a href="projects/tabledelta/">View source →</a></p>
+    </td>
+    <td width="50%" valign="top">
+      <p>Check SRT subtitle timing, overlaps, and reading speed; edit individual subtitles, recheck, and export.</p>
+      <p><a href="projects/cuecheck/">View source →</a></p>
+    </td>
+  </tr>
+</table>
 
 ## Where To Start (By Platform)
 
@@ -108,26 +125,33 @@ Plus 30+ reusable skills (deep research, scraping, financial modeling, SEO, secu
 # Prerequisites:
 # - macOS
 # - Codex CLI or Claude Code installed and authenticated
+# - Python 3.10+ (python3), Git, and make available
 # - Available model quota
 
 # Clone
 git clone https://github.com/MaxMiksa/Auto-Company.git
 cd Auto-Company
 
-# Foreground run (live output)
+# Foreground run with Claude Code (default, live output)
 make start
 
-# Or install daemon (auto-start + auto-restart)
+# Or foreground run with Codex CLI
+ENGINE=codex make start
+
+# Alternatively, install and start the daemon for your chosen engine
 make install
+# Codex instead of the default Claude:
+ENGINE=codex make install
 ```
 
 ## Windows (WSL) Quick Start
 
 ```powershell
 # Prerequisites:
-# - Windows 10/11 + WSL2 (Ubuntu)
+# - Windows 10/11 + WSL2 (Ubuntu), with systemd --user available
 # - Codex CLI or Claude Code installed and authenticated inside WSL
-# - jq and make available inside WSL
+# - Python 3.10+ (python3), Git, and make available inside WSL
+# - Python 3.10+ (python) on Windows for the PowerShell dashboard entry
 # - Available model quota
 
 # Clone
@@ -158,12 +182,14 @@ For monitoring, dashboard, and autostart commands, see the [Windows + WSL Setup 
 | Live logs | `make monitor` | `.\scripts\windows\monitor-win.ps1` |
 | Last cycle output | `make last` | `.\scripts\windows\last-win.ps1` |
 | Cycle summary | `make cycles` | `.\scripts\windows\cycles-win.ps1` |
-| Stop | `make stop` | `.\scripts\windows\stop-win.ps1` |
+| Stop | Foreground: `make stop`; daemon: `make pause` | `.\scripts\windows\stop-win.ps1` |
 | Web dashboard | `make dashboard` | `.\scripts\windows\dashboard-win.ps1` |
 | Install daemon | `make install` | Auto-installed/started by `start-win.ps1` |
 | Uninstall daemon | `make uninstall` | `wsl -d Ubuntu --cd <repo_wsl_path> bash -lc 'make uninstall'` |
 | Pause daemon | `make pause` | `wsl -d Ubuntu --cd <repo_wsl_path> bash -lc 'make pause'` |
 | Resume daemon | `make resume` | `wsl -d Ubuntu --cd <repo_wsl_path> bash -lc 'make resume'` |
+
+In daemon mode, `make stop` alone can trigger an automatic restart. Use `make pause` to keep the daemon stopped, then `make resume` to continue.
 
 ### macOS Sleep Prevention (macOS Only)
 
@@ -199,13 +225,13 @@ Auto-Company is not a simple LLM API wrapper, but a highly decoupled **Multi-Age
 │    [ 24/7 Auto-Loop ]  [ State Machine ]  [ Resilience ]   │
 ├────────────────────────────────────────────────────────────┤
 │ 1. Execution Engine & Infrastructure Layer                 │
-│    [ Dual-Engine (Claude/Codex) ]  [ Cross-Platform Daemon]│
+│    [ Engine Adapters ]  [ Cross-Platform Daemon ]        │
 └────────────────────────────────────────────────────────────┘
 ```
 
 ### Layer 5: Observability & HITL (Human-In-The-Loop)
 *   **File-based Steering**: Humans only need to edit `memories/consensus.md` and modify the `Next Action`. The AI team waking up in the next cycle will immediately pivot, enabling minimalist macro-control.
-*   **Logs & Dashboard**: `logs/` saves engine-emitted output after known credential redaction, together with per-cycle results and available usage records. Output detail depends on the engine; complete reasoning traces are not guaranteed. `dashboard/` displays main-loop and daemon status, usage and budgets, a consensus summary, and recent logs. It does not track individual agents' activity.
+*   **Logs & Dashboard**: `logs/` saves engine-emitted output after known credential redaction, together with per-cycle results and available usage records. Output detail depends on the engine; complete reasoning traces are not guaranteed. `dashboard/` organizes current and historical cycle reports, results, and next steps, alongside runtime controls, status, usage, budgets, and logs. It does not track individual agents' activity.
 
 ### Layer 4: Workflow Routing & Teaming
 *   **Dynamic Squad Formation**: Powered by Agent Teams, the system dynamically selects 2-5 of the most suitable experts from the 14-person pool based on the "Next Action" in `consensus.md`, instantiating them as sub-agents for the current loop.
@@ -222,7 +248,7 @@ Auto-Company is not a simple LLM API wrapper, but a highly decoupled **Multi-Age
 *   **Resilience & Recovery**: Built-in circuit breakers (cooldown triggered by consecutive errors), rate-limit backoff (auto-sleep on 429 errors), and consensus recovery after failed cycles. Human Overrides, `.auto-company.local`, and the framework's root `.gitignore` have targeted protection. Product code changes and external side effects are not automatically rolled back.
 
 ### Layer 1: Execution Engine & Infrastructure
-*   **Dual-Engine Executor**: Acts as the underlying executor by calling mature AI CLIs (**Claude Code** or **Codex CLI**), naturally inheriting their file I/O, Bash execution, and Git operation capabilities.
+*   **Engine Adapters**: The main entrypoints use **Claude Code** (default) or **Codex CLI**. Optional **Cursor** and **OpenAI-compatible** adapters require explicit opt-in and configuration; their tools and team capabilities differ. See the [adapter guide](ENGINE_ADAPTERS.md).
 *   **Cross-Platform Daemon**: macOS uses `launchd` for auto-start and crash recovery; Windows/WSL runs via `systemd --user` inside a WSL container, controlled and kept alive externally via PowerShell.
 *   **Sandbox Boundary**: Currently relies on underlying CLI configurations (like Codex's `danger-full-access` or Claude's `bypassPermissions`). System-level operations occur directly in the host environment (or WSL container).
 
@@ -275,7 +301,7 @@ Hard constraints in `CLAUDE.md`, enforced for all agents:
 Environment variable overrides:
 
 ```bash
-ENGINE=claude make start                   # Default engine (claude|codex)
+ENGINE=claude make start                   # Default engine; optional adapters: see adapter guide
 ENGINE=codex make start                    # Switch to codex
 MODEL=sonnet make start                    # Optional model override
 CLAUDE_PERMISSION_MODE=bypassPermissions make start  # Claude permission mode
@@ -328,7 +354,10 @@ auto-company/
 | Dependency | Notes |
 |------|------|
 | **Claude Code / Codex CLI** | Supported CLI engines (default: Claude) |
+| Optional engine adapters | Cursor and OpenAI-compatible; explicit opt-in required, see [adapter guide](ENGINE_ADAPTERS.md) |
 | **macOS or Windows + WSL2 (Ubuntu)** | macOS uses launchd; Windows uses WSL execution core |
+| **Python 3.10+** | Required: `python3` on macOS/WSL; also `python` on Windows for the PowerShell dashboard and local language commands |
+| `git` | Repository checkout and product repository management |
 | `node` | Runtime for npm-installed CLI tools |
 | `make` | Start/stop/monitor command entry (WSL/macOS) |
 | `jq` | Recommended for log processing |
@@ -408,4 +437,3 @@ Any questions or suggestions? Please contact Zheyuan (Max) Kong (Carnegie Mellon
 
 Zheyuan (Max) Kong: kongzheyuan@outlook.com | zheyuank@tepper.cmu.edu
 GitHub: https://github.com/MaxMiksa/Auto-Company
-
