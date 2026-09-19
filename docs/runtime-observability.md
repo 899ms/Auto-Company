@@ -67,7 +67,7 @@ These are bounded local verification settings, not new production defaults or a
 long-term reliability guarantee. `CODEX_REASONING_EFFORT` is optional and does
 not substitute for observed configuration in the dashboard.
 
-## Cycle work report v1
+## Cycle work report v2
 
 The existing `/api/journal` response adds `cycles[].workReport` and
 `workReportStatus` (`valid`, `missing`, `invalid`) for the most recent 30 cycles.
@@ -88,8 +88,7 @@ From the framework directory, inside a cycle:
 python3 scripts/core/cycle_reports.py write \
   --title 'Check duplicate CSV keys' \
   --summary 'Added duplicate-key handling and ran the registered checks.' \
-  --phase review --next-kind human_input \
-  --next-action 'Review the example comparison and exported report.' --final
+  --phase review --final
 ```
 
 | CLI field | Contract |
@@ -98,16 +97,14 @@ python3 scripts/core/cycle_reports.py write \
 | `--summary` | 1–500 characters; latest factual work description |
 | `--phase` | `planning`, `implementing`, `validating`, `blocked`, `review` |
 | `--blocker` | Required only when blocked, 1–300 characters; otherwise empty |
-| `--next-kind` | `planned`, `human_input`, `none` |
-| `--next-action` | 1–300 characters, or empty exactly when kind is `none` |
 | `--final` | This is the cycle's final report, not product acceptance |
 
 All text is trimmed, single-line plain text, in the current product language.
 `implementing` describes carrying out the task, including analysis; it does not
 independently assert that product code has changed.
-The helper supplies `version: 1`, `cycle_id`, `project`, UTC `recorded_at` and
+The helper supplies `version: 2`, `cycle_id`, `project`, UTC `recorded_at` and
 `source: model_report` from the current runtime context. JSON uses `title`,
-`summary`, `phase`, `blocker`, `next_action`, `next_action_kind` and boolean `final`
+`summary`, `phase`, `blocker` and boolean `final`
 for the user fields. Unknown/missing keys, unsupported versions and wrong cycle
 identities are rejected; report input is bounded to 16 KiB. The helper replaces
 `logs/<cycle-id>.work.json` atomically; failed validation or replacement preserves
@@ -117,7 +114,10 @@ No report value is allowed to classify a cycle as successful, unblock governance
 change language/selection, stop execution, or mark tests passed. A blocked work
 report can coexist with a normally completed model call; an interrupted cycle
 can have a final or partial report. The dashboard keeps these facts separate.
-Next action remains a recorded intention, never an inferred execution state.
+The Dashboard no longer requests, extracts or displays next actions. Existing v1
+files are read without modification and projected into v2, discarding their two
+retired fields. New writes accept only v2 fields. The consensus used internally
+by the autonomous loop and original diagnostic documents remain unchanged.
 
 On a missing/invalid report the page explicitly falls back to the existing
 report. If no final update arrives, it shows the last valid update as unfinished.

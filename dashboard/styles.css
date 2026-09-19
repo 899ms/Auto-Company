@@ -347,7 +347,7 @@ button:focus:not(:focus-visible), main:focus {
   line-height: 1.5;
 }
 
-.section-heading-row time, .sidebar-update {
+.section-heading-row time {
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
@@ -488,18 +488,6 @@ button:focus:not(:focus-visible), main:focus {
   border-top: 1px solid var(--line);
   padding-top: 25px;
   margin-top: 27px;
-}
-
-.sidebar-update {
-  display: block;
-  margin-top: 5px;
-}
-
-.next-action {
-  font-size: 15px;
-  line-height: 1.85;
-  margin: 16px 0 0;
-  overflow-wrap: anywhere;
 }
 
 .sidebar-note {
@@ -1001,7 +989,7 @@ dialog .runtime-details {
   .report-intro {
     font-size: 17px;
   }
-  .result-text, .next-action {
+  .result-text {
     font-size: 15px;
   }
   .history-row>summary {
@@ -1065,9 +1053,6 @@ dialog .runtime-details {
   }
   .history-meta {
     font-size: 10px;
-  }
-  .next-action {
-    font-size: 14px;
   }
   .legacy-link {
     font-size: 12px;
@@ -1249,21 +1234,6 @@ dialog .runtime-details {
     border-top: 0;
     margin-top: 0;
     padding-top: 0;
-  }
-  .sidebar-block:first-child {
-    grid-column: 1 / -1;
-  }
-  .sidebar-block:first-child .section-heading-row {
-    display: flex;
-    flex-wrap: nowrap;
-    justify-content: space-between;
-  }
-  .sidebar-block:first-child .sidebar-update {
-    margin: 0;
-  }
-  .next-action {
-    margin-top: 10px;
-    max-width: 620px;
   }
   .sidebar-note {
     max-width: 560px;
@@ -1510,9 +1480,6 @@ dialog .runtime-details {
   }
   .history-content .result-item {
     grid-template-columns: 35px minmax(0,1fr);
-  }
-  .next-action {
-    font-size: 13px;
   }
   .artifact-list {
     gap: 13px;

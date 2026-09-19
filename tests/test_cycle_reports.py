@@ -12,7 +12,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts/core"))
 sys.path.insert(0, str(ROOT / "dashboard"))
-from cycle_reports import decode, read_report, write_report
+from cycle_reports import PROMPT, decode, read_report, write_report
 from journal_data import JournalSource
 
 
@@ -24,8 +24,7 @@ class CycleReportTests(unittest.TestCase):
         self.source = JournalSource(self.root, "en")
         self.cycle = {"id": "cycle-test", "active": False, "status": "interrupted"}
         self.fields = {"title": "验证 CSV 重复键", "summary": "已补充重复键检查，等待验收。",
-                       "phase": "review", "blocker": "", "next_action": "请核对导出结果。",
-                       "next_action_kind": "human_input", "final": True}
+                       "phase": "review", "blocker": "", "final": True}
 
     def write(self, **changes):
         return write_report(self.root, self.cycle["id"], {**self.fields, **changes}, "projects/probe")
@@ -35,6 +34,8 @@ class CycleReportTests(unittest.TestCase):
         self.assertEqual(read_report(self.source, self.cycle)["workReport"], report)
         self.assertEqual(report["source"], "model_report")
         self.assertEqual(report["project"], "projects/probe")
+        self.assertEqual(report["version"], 2)
+        self.assertNotIn("next_action", report)
         self.assertIn("+00:00", report["recorded_at"])
         self.assertEqual(self.cycle["status"], "interrupted")
 
@@ -49,15 +50,32 @@ class CycleReportTests(unittest.TestCase):
                 self.write(**changes)
             self.assertEqual((self.root / "logs/cycle-test.work.json").read_bytes(), original)
 
-    def test_blocked_and_no_next_action_have_explicit_meanings(self):
+    def test_blocked_report_requires_a_reason(self):
         report = self.write(phase="blocked", blocker="Need example input")
         self.assertEqual(report["blocker"], "Need example input")
-        report = self.write(next_action_kind="none", next_action="")
-        self.assertEqual(report["next_action"], "")
+
+    def test_legacy_report_projects_remaining_fields_without_rewriting_history(self):
+        current = self.write()
+        legacy = {**current, "version": 1, "next_action": "retired", "next_action_kind": "planned"}
+        path = self.root / "logs/cycle-test.work.json"
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+        original = path.read_bytes()
+        self.assertEqual(read_report(self.source, self.cycle)["workReport"], current)
+        self.assertEqual(path.read_bytes(), original)
+        for changes in ({"cycle_id": "other"}, {"summary": []}, {"unexpected": True}, {"version": True}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                decode(json.dumps({**legacy, **changes}), self.cycle["id"])
+        del legacy["next_action_kind"]
+        with self.assertRaises(ValueError):
+            decode(json.dumps(legacy), self.cycle["id"])
+
+    def test_prompt_no_longer_requests_retired_fields(self):
+        self.assertNotIn("--next-", PROMPT)
+        self.assertIn("consensus headings", PROMPT)
 
     def test_reader_rejects_wrong_cycle_version_unknown_keys_and_truncation(self):
         report = self.write()
-        for changes in ({"cycle_id": "cycle-other"}, {"version": 2}, {"version": True},
+        for changes in ({"cycle_id": "cycle-other"}, {"version": 3}, {"version": True},
                         {"source": "verified"}, {"project": "../outside"}, {"extra": "ignored?"},
                         {"recorded_at": "2026-09-19T10:00:00"}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
@@ -96,8 +114,7 @@ class CycleReportTests(unittest.TestCase):
         env = {**os.environ, "AUTO_COMPANY_ROOT": str(self.root),
                "AUTO_COMPANY_CYCLE_ID": "cycle-test", "ACTIVE_PROJECT": "projects/probe"}
         command = [sys.executable, str(ROOT / "scripts/core/cycle_reports.py"), "write",
-                   "--title", "Quote ' and 中文", "--summary", "Fixture", "--phase", "review",
-                   "--next-kind", "none", "--next-action", "", "--final"]
+                   "--title", "Quote ' and 中文", "--summary", "Fixture", "--phase", "review", "--final"]
         outcome = subprocess.run(command, env=env, capture_output=True)
         self.assertEqual(outcome.returncode, 0, outcome.stderr)
         self.assertEqual(read_report(self.source, self.cycle)["workReport"]["title"], "Quote ' and 中文")

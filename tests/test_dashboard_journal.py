@@ -100,7 +100,7 @@ class JournalTests(JournalFixture):
         consensus = self.source.snapshot()["consensus"]
         self.assertEqual(consensus["phase"], "交付")
         self.assertEqual(consensus["progress"], ["完成测试"])
-        self.assertEqual(consensus["nextAction"], "等待人工试用")
+        self.assertNotIn("nextAction", consensus)
         self.assertEqual(consensus["reportedUpdatedAt"], "2020-01-01T00:00:00+08:00")
         self.assertEqual(consensus["updatedAt"], "2027-01-15T08:00:00+00:00")
         self.assertEqual(consensus["raw"], path.read_bytes().decode("utf-8"))

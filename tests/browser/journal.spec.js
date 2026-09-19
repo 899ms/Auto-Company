@@ -99,7 +99,10 @@ test("journal renders source history and never treats a report as live telemetry
   await page.goto(`${journal.url}/journal`);
   await expect(page.locator("#cycleNumber")).toContainText("03");
   await expect(page.locator("#cycleTitle")).toContainText("第 3 轮工作已完成");
-  await expect(page.locator("body")).toContainText("等待用户检查新界面");
+  await expect(page.locator("body")).not.toContainText("等待用户检查新界面");
+  await expect(page.locator("#projectSidebar > section")).toHaveCount(2);
+  const snapshot = await (await page.request.get(`${journal.url}/api/journal`)).json();
+  expect(snapshot.consensus).not.toHaveProperty("nextAction");
   await expect(page.locator("body")).toContainText(/只读|预览/);
   await expect(page.locator("body")).not.toContainText("本轮执行中");
   await expect(page.locator("#startButton")).toBeDisabled();

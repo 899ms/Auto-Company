@@ -401,16 +401,6 @@
   function renderSidebar() {
     const sidebar = clear($('projectSidebar'));
     const data = state.data;
-    const next = element('section', 'sidebar-block');
-    const heading = element('div', 'section-heading-row');
-    heading.append(element('h2', '', message('nextAction')));
-    next.append(heading);
-    const work = state.currentCycle?.workReport;
-    const nextTime = work?.recorded_at || data.consensus?.updatedAt;
-    if (nextTime) heading.append(element('span', 'sidebar-update', message('updated', { time: formatTime(nextTime) })));
-    next.append(element('p', 'next-action', work ? (work.next_action || message('noPlannedAction')) : clean(data.consensus?.nextAction) || message('noNextAction')));
-    if (work?.next_action_kind === 'human_input') next.append(element('p', 'sidebar-note', message('humanInput')));
-    next.append(element('p', 'sidebar-note', message(readOnly() || (!state.statusFailed && data.runtime?.processState === 'stopped') ? 'stoppedNotice' : work ? 'workPlanNotice' : 'planNotice')));
     const artifacts = element('section', 'sidebar-block');
     artifacts.append(element('h2', '', message('artifacts')));
     if (data.artifacts?.length) {
@@ -452,7 +442,7 @@
     const details = bindDisclosure(element('details', 'runtime-disclosure'), 'runtime');
     details.append(element('summary', '', message('moreRuntime')), runtimeRows([[message('state'), runtimeLabel()], [message('phase'), clean(data.consensus?.phase) || message('phaseUnknown')], [message('source'), data.sourceName]]));
     runtime.append(details);
-    sidebar.append(next, artifacts, runtime);
+    sidebar.append(artifacts, runtime);
   }
   function applyLanguage() {
     document.documentElement.lang = state.language;

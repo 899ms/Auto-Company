@@ -408,7 +408,7 @@ class JournalSource:
                 "consensus": {"updatedAt": updated_at,
                               "reportedUpdatedAt": timestamp(section(parts, "Last Updated", "最后更新", "最近更新")),
                               "phase": section(parts, "Current Phase", "当前阶段"), "progress": progress_lines,
-                              "nextAction": section(parts, "Next Action", "下一步行动", "下一步"), "raw": raw},
+                              "raw": raw},
                 "cycles": cycles, "artifacts": self.documents(), "warnings": warnings}
 
     def legacy_status(self) -> dict[str, Any]:

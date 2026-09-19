@@ -25,7 +25,7 @@ Optional Cursor and OpenAI-compatible adapters require explicit configuration. S
 
 ![Auto Company Dashboard](presentation/dashboard-showcase.png)
 
-The current dashboard shows per-cycle work reports, results, next steps, and history, with separate usage and log views. This screenshot uses real records from a completed TableDelta run in read-only archive mode; it does not show live agent activity. Usage covers recorded data only; missing values remain unknown and do not represent a complete bill.
+The current dashboard shows per-cycle work reports, results, and history, with separate usage and log views. This screenshot uses real records from a completed TableDelta run in read-only archive mode; it does not show live agent activity. Usage covers recorded data only; missing values remain unknown and do not represent a complete bill.
 
 ## What Is This?
 
@@ -231,7 +231,7 @@ Auto-Company is not a simple LLM API wrapper, but a highly decoupled **Multi-Age
 
 ### Layer 5: Observability & HITL (Human-In-The-Loop)
 *   **File-based Steering**: Humans only need to edit `memories/consensus.md` and modify the `Next Action`. The AI team waking up in the next cycle will immediately pivot, enabling minimalist macro-control.
-*   **Logs & Dashboard**: `logs/` saves engine-emitted output after known credential redaction, together with per-cycle results and available usage records. Output detail depends on the engine; complete reasoning traces are not guaranteed. `dashboard/` organizes current and historical cycle reports, results, and next steps, alongside runtime controls, status, usage, budgets, and logs. It does not track individual agents' activity.
+*   **Logs & Dashboard**: `logs/` saves engine-emitted output after known credential redaction, together with per-cycle results and available usage records. Output detail depends on the engine; complete reasoning traces are not guaranteed. `dashboard/` organizes current and historical cycle reports and results, alongside runtime controls, status, usage, budgets, and logs. It does not track individual agents' activity.
 
 ### Layer 4: Workflow Routing & Teaming
 *   **Dynamic Squad Formation**: Powered by Agent Teams, the system dynamically selects 2-5 of the most suitable experts from the 14-person pool based on the "Next Action" in `consensus.md`, instantiating them as sub-agents for the current loop.
