@@ -25,7 +25,7 @@ Optional Cursor and OpenAI-compatible adapters require explicit configuration. S
 
 ![Auto Company Dashboard](presentation/dashboard-showcase.png)
 
-The current dashboard shows per-cycle work reports, results, and history, with separate usage and log views. This screenshot uses real records from a completed TableDelta run in read-only archive mode; it does not show live agent activity. Usage covers recorded data only; missing values remain unknown and do not represent a complete bill.
+The dashboard connects cycles in a vertical timeline, with recorded execution events, check results, deliverables, usage, and logs. This screenshot shows three real Outline Desk cycles in read-only archive mode. Titles and summaries are structured model reports; runtime facts and supported check results are recorded by the program. Missing or expired evidence stays explicit, and recorded usage is not a complete bill. See the [collection contract and supported tools](docs/runtime-observability.md).
 
 ## What Is This?
 
