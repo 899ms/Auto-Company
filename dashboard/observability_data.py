@@ -1,12 +1,29 @@
 """Bounded, read-only projections of program-recorded events and artifacts."""
 from __future__ import annotations
 
+from datetime import datetime
 import hashlib
+import heapq
 import http.client
-import itertools
 import json
 import re
 from urllib.parse import urlsplit
+
+
+CYCLE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
+ARTIFACT_ID = re.compile(r"[0-9a-f]{32}\Z")
+MAX_ARTIFACT_FILES = 500
+MAX_ARTIFACT_ITEMS = 100
+
+
+def valid_time(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except (ValueError, OverflowError):
+        return None
+    return parsed.isoformat() if parsed.tzinfo is not None else None
 
 
 def rows(raw):
@@ -19,6 +36,44 @@ def rows(raw):
             yield value
 
 
+def _event(item, identity):
+    kind = item.get("kind")
+    observed = valid_time(item.get("observedAt"))
+    if (item.get("cycleId") != identity or type(item.get("sequence")) is not int
+            or item["sequence"] < 1 or not observed):
+        return None
+    event_type = {
+        "process.started": "process", "process.exited": "process",
+        "turn.started": "turn", "turn.completed": "turn", "turn.failed": "turn",
+        "command": "command", "files": "files", "report": "report", "error": "error",
+    }.get(kind)
+    if not event_type:
+        return None
+    result = {"cycleId": identity, "sequence": item["sequence"], "observedAt": observed,
+              "kind": kind, "eventType": event_type,
+              "source": "agent_report" if kind == "report" and item.get("source") == "agent_report" else "runtime_events"}
+    if kind in {"command", "files", "report"}:
+        if isinstance(item.get("itemId"), str):
+            result["itemId"] = item["itemId"][:120]
+        if item.get("phase") in {"started", "updated", "completed"}:
+            result["phase"] = item["phase"]
+    if kind == "command":
+        command = item.get("command", "") if isinstance(item.get("command"), str) else ""
+        result["command"] = command[:1000]
+        result["commandTruncated"] = item.get("commandTruncated") is True or len(command) > 1000
+        result["exitCode"] = item.get("exitCode") if type(item.get("exitCode")) is int else None
+    elif kind == "files":
+        paths = item.get("paths")
+        result["paths"] = [path[:300] for path in paths[:30] if isinstance(path, str)] if isinstance(paths, list) else []
+    elif kind == "report":
+        result["text"] = item.get("text", "")[:3000] if isinstance(item.get("text"), str) else ""
+    elif kind == "process.exited":
+        result["exitCode"] = item.get("exitCode") if type(item.get("exitCode")) is int else None
+        result["interrupted"] = item.get("interrupted") is True
+        result["dropped"] = item.get("dropped") if type(item.get("dropped")) is int and item["dropped"] >= 0 else None
+    return result
+
+
 def cycle_events(source, cycle):
     identity = cycle["id"]
     path = f"logs/{identity}.events.jsonl"
@@ -27,24 +82,38 @@ def cycle_events(source, cycle):
         tail, truncated = source.read(path, 128 * 1024, tail=True)
     except (OSError, ValueError):
         return {"events": [], "eventStatus": "unavailable", "observedConfig": None}
-    values = {item.get("sequence"): item for item in rows(head + "\n" + tail)
-              if item.get("cycleId") == identity and type(item.get("sequence")) is int}
+    raw_values = list(rows(head + "\n" + tail))
+    values = {}
+    conflicting = 0
+    for item in raw_values:
+        sequence = item.get("sequence")
+        if item.get("cycleId") != identity or type(sequence) is not int:
+            continue
+        if sequence in values:
+            conflicting += item != values[sequence]
+            continue
+        values[sequence] = item
     ordered = [values[key] for key in sorted(values)]
     config = next((item for item in ordered if item.get("kind") == "session.config"
                    and item.get("source") == "session_context"
-                   and isinstance(item.get("model"), str) and isinstance(item.get("reasoning"), str)), None)
-    allowed = {"process.started", "process.exited", "turn.started", "turn.completed", "turn.failed", "error", "command", "files", "report"}
-    events = [item for item in ordered if isinstance(item.get("kind"), str) and item["kind"] in allowed][-80:]
+                   and isinstance(item.get("model"), str) and isinstance(item.get("reasoning"), str)
+                   and item["reasoning"] in {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
+                   and valid_time(item.get("observedAt"))), None)
+    if config:
+        config = {"model": config["model"][:200], "reasoning": config["reasoning"][:40],
+                  "source": "session_context", "observedAt": valid_time(config["observedAt"])}
+    events = [event for event in (_event(item, identity) for item in ordered) if event is not None][-80:]
     dropped = any(type(item.get("dropped")) is int and item["dropped"] > 0 for item in ordered)
     terminal = any(item.get("kind") == "process.exited" for item in ordered)
     interrupted = cycle.get("status") == "interrupted" or any(item.get("interrupted") is True for item in ordered)
-    return {"events": events, "eventStatus": "partial" if truncated or dropped or interrupted or (not cycle.get("active") and not terminal) else "recorded",
+    invalid = sum(_event(item, identity) is None and item.get("kind") != "session.config" for item in ordered)
+    return {"events": events,
+            "eventStatus": "partial" if truncated or dropped or interrupted or invalid or conflicting or (not cycle.get("active") and not terminal) else "recorded",
             "observedConfig": config}
 
 
 def preview_available(record):
     # No redirects, DNS, inherited proxies, remote hosts or arbitrary paths.
-    # The random runner token prevents a reused port from becoming a false hit.
     value = record.get("url")
     token = record.get("token")
     if record.get("state") != "running" or not isinstance(value, str) or not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{32}", token):
@@ -67,59 +136,177 @@ def preview_available(record):
         connection.close()
 
 
-def registered_artifacts(source):
+def _counts(value):
+    keys = ("tests", "failures", "errors", "skipped")
+    if (not isinstance(value, dict) or any(type(value.get(key)) is not int or not 0 <= value[key] <= 1000000 for key in keys)
+            or value["failures"] + value["errors"] + value["skipped"] > value["tests"]):
+        return None
+    return {key: value[key] for key in keys}
+
+
+def _artifact_entry(source, selected, record, preview_probe):
+    kind = record.get("kind")
+    identity = record.get("id")
+    cycle = record.get("cycleId")
+    recorded = valid_time(record.get("recordedAt"))
+    if (record.get("version") != 1 or record.get("source") != "runner" or record.get("project") != selected
+            or kind not in {"document", "check", "preview"} or not isinstance(identity, str)
+            or not ARTIFACT_ID.fullmatch(identity) or not recorded
+            or (cycle is not None and (not isinstance(cycle, str) or not CYCLE_ID.fullmatch(cycle)))):
+        return None
+    relative = record.get("path")
+    entry = {"id": identity, "kind": kind, "project": selected, "cycleId": cycle,
+             "associationStatus": "bound" if cycle else "unbound", "recordedAt": recorded,
+             "source": "runner", "label": relative or kind, "available": False,
+             "evidenceStatus": "unavailable"}
+    if kind == "preview":
+        available = preview_probe and preview_available(record)
+        state = record.get("state") if record.get("state") in {"running", "stopped", "interrupted", "launch_failed"} else "invalid"
+        entry.update(label="preview", available=available, state=state,
+                     startedAt=valid_time(record.get("startedAt")), endedAt=valid_time(record.get("endedAt")),
+                     evidenceStatus="running" if available else "invalid" if state == "invalid" else "stale")
+        if available:
+            entry["url"] = record["url"]
+        return entry
+    if isinstance(relative, str) and relative.startswith(selected + "/"):
+        entry.update(path=relative, fileStatus="unavailable")
+        try:
+            _, truncated = source.read(relative, 1024 * 1024)
+            target = source.safe_path(relative)
+            with target.open("rb") as data:
+                payload = data.read(1024 * 1024 + 1)
+            digest = hashlib.sha256(payload).hexdigest()
+            valid = not truncated and len(payload) <= 1024 * 1024 and digest == record.get("sha256")
+            entry.update(available=valid, fileStatus="recorded" if valid else "changed",
+                         evidenceStatus="completed" if valid else "stale")
+        except (OSError, ValueError):
+            pass
+    if kind == "document":
+        entry["modifiedAt"] = valid_time(record.get("modifiedAt"))
+        return entry
+
+    state = record.get("state")
+    if state is None and type(record.get("exitCode")) is int:
+        state = "completed"
+    if state not in {"running", "completed", "interrupted", "launch_failed"}:
+        state = "invalid"
+    started, ended = valid_time(record.get("startedAt")), valid_time(record.get("endedAt"))
+    if started and ended and datetime.fromisoformat(ended) < datetime.fromisoformat(started):
+        state = "invalid"
+    raw_command = record.get("command")
+    command = None
+    command_truncated = False
+    if isinstance(raw_command, list) and all(isinstance(arg, str) for arg in raw_command):
+        command_truncated = (record.get("commandTruncated") is True or len(raw_command) > 100
+                             or any(len(arg) > 2000 for arg in raw_command[:100]))
+        command = [arg[:2000] for arg in raw_command[:100]]
+    entry.update(state=state, startedAt=started, endedAt=ended,
+                 adapter=record.get("adapter") if record.get("adapter") in {"junit", "python-unittest", "node-test", "playwright", "exit-code"} else None,
+                 command=command, commandTruncated=command_truncated,
+                 exitCode=record.get("exitCode") if type(record.get("exitCode")) is int else None)
+    counts = _counts(record.get("tests"))
+    if counts is not None and entry["available"]:
+        entry["tests"] = counts
+        entry["countsStatus"] = "recorded"
+    elif "tests" in record:
+        entry["countsStatus"] = "invalid"
+    else:
+        entry["countsStatus"] = "unavailable"
+    report_status = record.get("reportStatus")
+    if report_status not in {"pending", "fresh", "recorded", "missing_or_stale", "unsupported", "unavailable"}:
+        report_status = entry.get("fileStatus", "unavailable")
+    freshness = ("invalid" if entry["countsStatus"] == "invalid" else
+                 "fresh" if report_status in {"fresh", "recorded"} and entry["available"] else
+                 "stale" if report_status == "missing_or_stale" or entry.get("fileStatus") == "changed" else
+                 "invalid" if report_status == "unsupported" or state == "invalid" else "unavailable")
+    evidence = ("running" if state == "running" else "interrupted" if state == "interrupted" else
+                "invalid" if state in {"invalid", "launch_failed"} or freshness == "invalid" else
+                "stale" if freshness == "stale" else "completed" if state == "completed" else "unavailable")
+    entry.update(reportStatus=report_status, freshness=freshness, evidenceStatus=evidence)
+    return entry
+
+
+def artifact_projection(source):
     selected = source.pairs(".auto-company.local").get("ACTIVE_PROJECT", "")
-    if not re.fullmatch(r"projects/[a-z0-9][a-z0-9-]*", selected):
-        return []
+    if not re.fullmatch(r"projects/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", selected):
+        return {"items": [], "status": "unavailable", "selectedProject": None,
+                "invalidRecords": 0, "truncated": False, "scannedRecords": 0, "returnedRecords": 0}
     try:
         folder = source.safe_path("logs/artifacts")
-        files = list(itertools.islice(folder.glob("*.json"), 501))
-        # Explicit bound; older entries outside this window are not invented.
-        files = sorted(files, key=lambda path: path.stat().st_mtime_ns, reverse=True)[:100]
+        if not folder.exists():
+            files, truncated, candidate_count, scan_invalid = [], False, 0, 0
+        elif not folder.is_dir():
+            raise ValueError("Artifact source is not a directory")
+        else:
+            newest = []
+            candidate_count = scan_invalid = 0
+            for path in folder.iterdir():
+                if not path.name.endswith(".json"):
+                    continue
+                candidate_count += 1
+                try:
+                    item = (path.lstat().st_mtime_ns, path.name, path)
+                except OSError:
+                    scan_invalid += 1
+                    continue
+                if len(newest) < MAX_ARTIFACT_FILES:
+                    heapq.heappush(newest, item)
+                elif item[:2] > newest[0][:2]:
+                    heapq.heapreplace(newest, item)
+            truncated = candidate_count > MAX_ARTIFACT_FILES
+            files = [item[2] for item in sorted(newest, reverse=True)]
     except (OSError, ValueError):
-        return []
-    result, seen = [], set()
+        return {"items": [], "status": "unavailable", "selectedProject": selected,
+                "invalidRecords": 0, "truncated": False, "scannedRecords": 0, "returnedRecords": 0}
+    result = []
+    invalid = scan_invalid
     preview_count = 0
     for path in files:
         try:
-            raw = source.read(path.relative_to(source.root).as_posix(), 16 * 1024)[0]
+            raw, raw_truncated = source.read(path.relative_to(source.root).as_posix(), 16 * 1024)
+            if raw_truncated:
+                invalid += 1
+                continue
             record = json.loads(raw)
-            if not isinstance(record, dict) or record.get("version") != 1 or record.get("source") != "runner" or record.get("project") != selected:
+            if not isinstance(record, dict):
+                invalid += 1
                 continue
-            kind, relative = record.get("kind"), record.get("path")
-            key = (kind, "project_preview" if kind == "preview" else relative or record.get("id"))
-            if key in seen or kind not in {"document", "check", "preview"}:
+            record_project = record.get("project")
+            if (isinstance(record_project, str)
+                    and re.fullmatch(r"projects/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", record_project)
+                    and record_project != selected):
+                # A valid record for another selected product is outside this
+                # projection, not corrupt evidence.
                 continue
-            seen.add(key)
-            entry = {"kind": kind, "cycleId": record.get("cycleId"), "recordedAt": record.get("recordedAt"),
-                     "source": "runner", "label": relative or kind, "available": False}
-            if kind == "preview":
+            if record.get("kind") == "preview":
                 preview_count += 1
-                available = preview_count <= 3 and preview_available(record)
-                entry.update(label="preview", available=available)
-                if available:
-                    entry["url"] = record["url"]
-            else:
-                if isinstance(relative, str) and relative.startswith(selected + "/"):
-                    entry.update(path=relative, fileStatus="unavailable")
-                    try:
-                        _, truncated = source.read(relative, 1024 * 1024)
-                        # Hash raw bytes (not decoded/re-encoded text) for BOM files.
-                        target = source.safe_path(relative)
-                        with target.open("rb") as data:
-                            digest = hashlib.sha256(data.read(1024 * 1024 + 1)).hexdigest()
-                        valid = not truncated and digest == record.get("sha256")
-                        entry.update(available=valid, fileStatus="recorded" if valid else "changed")
-                    except (OSError, ValueError):
-                        pass
-                if kind == "check":
-                    code = record.get("exitCode")
-                    entry["exitCode"] = code if type(code) is int else None
-                    counts = record.get("tests")
-                    if entry["available"] and isinstance(counts, dict) and all(type(counts.get(key)) is int and 0 <= counts[key] <= 1000000 for key in ("tests", "failures", "errors", "skipped")):
-                        entry["tests"] = counts
-                    entry["reportStatus"] = record.get("reportStatus", entry.get("fileStatus", "unavailable"))
+            entry = _artifact_entry(source, selected, record, preview_count <= 3)
+            if entry is None:
+                invalid += 1
+                continue
             result.append(entry)
-        except (OSError, ValueError, TypeError, RecursionError):
-            continue
-    return result[:20]
+        except (OSError, ValueError, TypeError, RecursionError, OverflowError):
+            invalid += 1
+    # Program timestamps, then stable IDs, determine "latest"; filesystem copy
+    # times are not execution evidence. Replaceable resources keep only newest.
+    result.sort(key=lambda entry: (datetime.fromisoformat(entry["recordedAt"]), entry["id"]), reverse=True)
+    deduped, seen = [], set()
+    for entry in result:
+        key = (entry["kind"], entry.get("path") if entry["kind"] == "document" else
+               "project_preview" if entry["kind"] == "preview" else entry["id"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(entry)
+    result = deduped
+    if len(result) > MAX_ARTIFACT_ITEMS:
+        truncated = True
+        result = result[:MAX_ARTIFACT_ITEMS]
+    status = "partial" if invalid or truncated else "recorded" if result else "empty"
+    return {"items": result, "status": status, "selectedProject": selected,
+            "invalidRecords": invalid, "truncated": truncated, "scannedRecords": candidate_count,
+            "returnedRecords": len(result)}
+
+
+def registered_artifacts(source):
+    """Compatibility list for existing document and preview consumers."""
+    return artifact_projection(source)["items"]

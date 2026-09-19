@@ -23,7 +23,7 @@ const test = base.extend({
     await fs.mkdir(path.join(directory, "memories"));
     const start = Date.now() - 30 * 60 * 1000;
     const cycles = [1, 2, 3].map((number) => ({
-      schema_version: 1, kind: "cycle_usage", cycle_id: `cycle-000${number}-fixture`,
+      schema_version: 1, kind: "cycle_usage", project: "projects/journal-fixture", cycle_id: `cycle-000${number}-fixture`,
       cycle_number: number, engine: "codex", model: "gpt-6-astra",
       started_at: new Date(start + number * 60000).toISOString(),
       ended_at: new Date(start + number * 60000 + 30000).toISOString(),
@@ -34,6 +34,10 @@ const test = base.extend({
     }));
     await fs.writeFile(path.join(directory, "logs", "usage.jsonl"), cycles.map(JSON.stringify).join("\n") + "\n");
     for (const cycle of cycles) {
+      await fs.writeFile(path.join(directory, "logs", `${cycle.cycle_id}.context.json`), JSON.stringify({
+        version: 1, cycleId: cycle.cycle_id, project: "projects/journal-fixture",
+        recordedAt: cycle.started_at, source: "runtime_context",
+      }));
       await fs.writeFile(path.join(directory, "logs", `${cycle.cycle_id}.json`), JSON.stringify({
         result: `**第 ${cycle.cycle_number} 轮工作已完成。**\n\n本轮记录：保留历史并核对结果。`,
       }));
@@ -45,7 +49,12 @@ const test = base.extend({
       "## Active Projects", "- Journal Fixture：本地预览", "## Next Action", "等待用户检查新界面。",
       "## Company State", "- Product: Journal Fixture，本地工作记录预览", "",
     ].join("\n"));
-    await fs.writeFile(path.join(directory, ".auto-company.local"), "AUTO_COMPANY_LANGUAGE=zh-CN\n");
+    await fs.mkdir(path.join(directory, "projects/journal-fixture"), { recursive: true });
+    await fs.writeFile(path.join(directory, "projects/journal-fixture/.auto-company-project.json"), JSON.stringify({
+      version: 1, project: "projects/journal-fixture", displayName: "Journal Fixture", description: "Local journal fixture",
+      recordedAt: new Date().toISOString(), source: "project_metadata",
+    }));
+    await fs.writeFile(path.join(directory, ".auto-company.local"), "ACTIVE_PROJECT=projects/journal-fixture\nAUTO_COMPANY_LANGUAGE=zh-CN\n");
     await fs.writeFile(path.join(directory, ".auto-loop-state"), "STATUS=stopped\nENGINE=codex\nMODEL=gpt-6-astra\nLOOP_COUNT=3\n");
     await fs.writeFile(path.join(directory, "DELIVERY.md"), "# Browser fixture delivery\nThis document stays read-only.\n");
     // Exercise the optional backup route without relying on private local files
@@ -194,12 +203,98 @@ test("empty archive follows English preference and remains navigable", async ({ 
 
 test("failed latest cycle never inherits an earlier consensus as its results", async ({ page, journal }) => {
   await fs.appendFile(path.join(journal.directory, "logs", "usage.jsonl"), JSON.stringify({
-    schema_version: 1, kind: "cycle_usage", cycle_id: "cycle-0004-failed",
+    schema_version: 1, kind: "cycle_usage", project: "projects/journal-fixture", cycle_id: "cycle-0004-failed",
     cycle_number: 4, started_at: new Date().toISOString(), ended_at: new Date().toISOString(),
     status: "failed", exit_code: 1, engine: "codex", model: "gpt-6-astra", usage: {},
   }) + "\n");
+  await fs.writeFile(path.join(journal.directory, "logs/cycle-0004-failed.context.json"), JSON.stringify({
+    version: 1, cycleId: "cycle-0004-failed", project: "projects/journal-fixture",
+    recordedAt: new Date().toISOString(), source: "runtime_context",
+  }));
   await page.goto(`${journal.url}/journal`);
   await expect(page.locator("#cycleNumber")).toContainText("04");
   await expect(page.locator("#currentCycle")).toContainText("执行失败");
   await expect(page.locator("#currentCycle")).not.toContainText("已完成当前轮次验证");
+});
+
+
+test("cycle timeline preserves disclosures, keyboard focus and selected logs across changed data", async ({ page, journal }) => {
+  await page.goto(`${journal.url}/journal`);
+  const summary = page.locator("#historyList > details > summary").first();
+  await summary.click();
+  await summary.focus();
+  const latest = path.join(journal.directory, "logs/cycle-0003-fixture.json");
+  await fs.writeFile(latest, JSON.stringify({ result: "Changed report after refresh" }));
+  await page.evaluate(() => document.getElementById("refreshButton").click());
+  await expect(page.locator("#cycleTitle")).toHaveText("Changed report after refresh");
+  await expect(page.locator("#historyList > details").first()).toHaveAttribute("open", "");
+  await expect(summary).toBeFocused();
+  await expect(page.locator(".current-cycle")).toHaveAttribute("aria-current", "step");
+  expect(await page.locator(".current-column").evaluate((node) => getComputedStyle(node, "::before").width)).toBe("1px");
+  await page.locator("#tab-logs").click();
+  await page.locator("#logSelect").selectOption("cycle-0001-fixture");
+  await fs.writeFile(latest, JSON.stringify({ result: "Another changed report" }));
+  await page.locator("#refreshButton").click();
+  await expect(page.locator("#logSelect")).toHaveValue("cycle-0001-fixture");
+  await expect(page.locator("#logText")).toContainText("Fixture log 1");
+});
+
+test("typed checks and exact commands retain unknowns, provenance and narrow bilingual layout", async ({ page, journal }) => {
+  const data = await (await page.request.get(`${journal.url}/api/journal`)).json();
+  const current = data.cycles[0];
+  current.checkStatus = "completed";
+  current.latestCheck = { id: "check-fixture", cycleId: current.id, state: "completed", available: false,
+    source: "runner", adapter: "junit", reportStatus: "fresh", freshness: "fresh", exitCode: 1,
+    tests: { tests: 12, failures: 2, errors: 1, skipped: 3 }, recordedAt: data.generatedAt,
+    command: ["python", "test_" + "long".repeat(80) + ".py"] };
+  current.events = [{ kind: "command", phase: "completed", itemId: "test", observedAt: data.generatedAt,
+    command: "node --test " + "long/path/".repeat(40), exitCode: 1 }];
+  let language = "en";
+  await page.route("**/api/journal", (route) => route.fulfill({ json: { ...data, language, languageState: null } }));
+  await page.goto(`${journal.url}/journal`);
+  await expect(page.locator("#currentCycle .recent-checks")).toContainText("Check failed");
+  await expect(page.locator("#currentCycle .check-counts")).toHaveText("Passed6Failed2Errors1Skipped3Total12");
+  await expect(page.locator("#currentCycle .observed-events")).toContainText("Command finished");
+  await page.locator("#currentCycle .event-command > summary").click();
+  await expect(page.locator("#currentCycle .event-command pre")).toHaveText(current.events[0].command);
+  await page.locator("#currentCycle .recent-checks .source-disclosure > summary").click();
+  await expect(page.locator("#currentCycle .recent-checks")).toContainText(current.id);
+  for (const locale of ["en", "zh-CN"]) {
+    language = locale;
+    await page.locator("#refreshButton").click();
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    for (const width of [1280, 360]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    }
+  }
+  current.latestCheck = null;
+  current.checkStatus = "unregistered";
+  await page.locator("#refreshButton").click();
+  await expect(page.locator("#currentCycle .recent-checks")).toContainText("暂无已登记检查");
+  await expect(page.locator("#currentCycle .check-counts")).toHaveCount(0);
+});
+
+test("running elapsed freezes on disconnect and rejects older snapshots", async ({ page, journal }) => {
+  const data = await (await page.request.get(`${journal.url}/api/journal`)).json();
+  data.readOnly = false;
+  data.runtime = { ...data.runtime, available: true, processState: "running", state: "running", elapsedReliable: true, elapsedSeconds: 60 };
+  data.cycles[0] = { ...data.cycles[0], active: true, status: "running", endedAt: null };
+  data.language = "en"; data.languageState = null;
+  await page.route("**/api/journal", (route) => route.fulfill({ json: data }));
+  await page.goto(`${journal.url}/journal`);
+  await expect(page.locator(".live-elapsed")).toContainText("Running for 1m");
+  await page.locator("#autoRefresh").uncheck();
+  await page.unroute("**/api/journal");
+  await page.route("**/api/journal", (route) => route.fulfill({ status: 503, json: { ok: false } }));
+  await page.locator("#refreshButton").click();
+  await expect(page.locator("#connectionError")).toBeVisible();
+  await expect(page.locator(".live-elapsed")).toHaveCount(0);
+  await expect(page.locator("#refreshStatus")).toContainText("Last updated");
+  await page.unroute("**/api/journal");
+  await page.route("**/api/journal", (route) => route.fulfill({ json: { ...data,
+    generatedAt: new Date(Date.parse(data.generatedAt) - 1000).toISOString(), cycles: [] } }));
+  await page.locator("#refreshButton").click();
+  await expect(page.locator("#cycleNumber")).toHaveText("03");
+  await expect(page.locator("#connectionError")).toBeVisible();
 });

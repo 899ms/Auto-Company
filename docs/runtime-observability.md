@@ -29,33 +29,105 @@ This is not a universal secret detector for arbitrary command arguments.
 
 ## Tool-owned artifacts
 
-Select a product through the existing project selection command. Then invoke
-the following from the framework root (replace `example` with the selected slug):
+The normal cycle prompt includes the following tools and their supported
+formats. Business tasks need no additional dashboard registration instructions.
+The coordinator chooses a matching runner and executes each check once through
+it; registration is part of that execution, not a second verification run.
+Commands that bypass these explicit entries remain uncollected.
+
+Select a product through the existing human-owned project selection command.
+Inside a cycle, `--root` and `--project` default to its runtime context. Outside
+a cycle, supply both explicitly, as in the first example. From the framework:
 
 ```sh
-python3 scripts/core/runtime_artifacts.py --root . --project projects/example check --report report.xml -- python3 tests.py
-python3 scripts/core/runtime_artifacts.py --root . --project projects/example document DELIVERY.md
-python3 scripts/core/runtime_artifacts.py --root . --project projects/example preview --directory public --port 8794
+python3 scripts/core/runtime_artifacts.py --root . --project projects/example check --adapter python-unittest -- discover -s tests
+python3 scripts/core/runtime_artifacts.py check --adapter node-test -- tests/example.test.js
+python3 scripts/core/runtime_artifacts.py check --adapter playwright -- npx playwright test
+python3 scripts/core/runtime_artifacts.py check --adapter junit --report report.xml -- python3 tests.py
+python3 scripts/core/runtime_artifacts.py check --adapter exit-code -- node custom-checks.js
+python3 scripts/core/runtime_artifacts.py document DELIVERY.md
+python3 scripts/core/runtime_artifacts.py preview --directory public --background
+python3 scripts/core/runtime_artifacts.py preview-stop
 ```
 
-The check wrapper preserves the command's exit status. It accepts newly written
-bounded JUnit XML reports, records actual testcase/failure/error/skip counts and
-file hashes, and does not reinterpret arbitrary console output. A zero command
-exit with no fresh report is not evidence of passing tests. Changed or missing
-files lose their usable link/counts. The dashboard shows only records for the
-selected product; artifact timestamps are registration times.
+| Adapter | Execution and evidence |
+| --- | --- |
+| `python-unittest` | Calls the standard unittest loader/runner once, observes terminal test outcomes, and writes a machine JSON report. Pass unittest arguments, not `python -m unittest`. Multiple failing subtests count their parent testcase once. Expected failures count as skipped; unexpected successes count as failures. |
+| `node-test` | Calls `node --test` with Node's built-in JUnit reporter and a separate console reporter. Pass test paths/options, not `node --test`; requires Node with its built-in JUnit reporter. TODO cases count as skipped even when their unfinished body fails. |
+| `playwright` | Executes the supplied Playwright Test argv with its JSON reporter and a unique output path. Reports count final tests once, including retries; flaky tests that eventually meet expectations are passing. |
+| `junit` | Executes the supplied argv and accepts the explicit project-relative XML file only when newly written. Counts actual testcase nodes; unsupported aggregate-only formats are not guessed. |
+| `exit-code` | Executes arbitrary explicit argv and records its exit status. It never extracts test counts from console output. |
+
+Arguments are passed as argv without a shell. Shell operators need an explicit
+shell in the requested command and are not interpreted by the wrapper. The
+wrapper retains recorded command argv, adapter, project/cycle identity, start/end
+timestamps, exit code and one unique record ID. That same record transitions
+from `running` to `completed`, `interrupted` or `launch_failed`; distinct
+executions remain distinct records. A failed check can be `completed` with a
+nonzero exit code. Observation-write or report-parse failure preserves that
+exit code and never changes governance or causes an automatic rerun.
+Recorded argv uses the event writer's known-credential redaction and an 8 KiB
+display bound; `commandTruncated` signals omitted text. The executed argv is
+unchanged. This is not a general secret detector for arbitrary arguments.
+
+Native adapters write unique reports below the product's
+`.auto-company/checks/`. New product repositories ignore that generated folder.
+Reports are bounded to 1 MiB and hashed. `reportStatus` distinguishes `pending`,
+`fresh`, `missing_or_stale`, `unsupported` and `unavailable`. A zero command exit
+with no fresh supported report is not evidence of passing tests. Class-fixture
+errors in unittest, or global Playwright runner errors, preserve the real
+failure and raw report but omit counts that cannot describe those errors.
+Changed or missing reports lose usable counts. Registering a document records
+its explicit path, modification time, SHA-256, project and cycle; it does not
+scan the repository for likely deliverables. The normal delivery instruction
+registers the product's `DELIVERY.md` after writing it.
 
 The optional preview runner serves static content from an explicit product
 directory on loopback. Its own health response includes a per-run token, so
 stopped servers and port reuse do not produce a working preview link. It does
 not discover, start or validate arbitrary Vite/Next/backend servers. Those
 require separate runner integration. A preview started inside a model cycle is
-owned by that cycle and ends during normal supervisor cleanup; keeping a preview
-alive is a separate operator action, not an implicit cycle side effect.
+owned by that cycle and ends during normal supervisor cleanup. `--background`
+returns after token-validated health is available and prints the actual URL;
+it does not detach from cycle supervision. `preview-stop` requests shutdown
+through that preview's token-checked loopback endpoint, not a remembered PID.
+Records include PID, explicit directory, `lifetime` (`cycle` or `operator`) and
+start/end times. A retained preview is a separate operator invocation outside
+a cycle, not an implicit side effect. The loop finalizes unfinished checks as
+interrupted after existing process supervision ends; an unknown end time stays
+null rather than being replaced by cleanup time.
 
 Artifact records live in `logs/artifacts/`. The reader bounds discovery to
 501 entries, checks the newest 100 of those, and exposes up to 20 records and
 three loopback checks per refresh. It is not an unlimited artifact archive.
+Lifecycle cleanup streams all record filenames, reading at most 16 KiB per
+regular file and handling one record at a time. Display limits never cause a
+later cycle-owned process or unfinished check to be excluded from cleanup.
+
+## Product identity and metadata
+
+Before invoking an engine, the loop writes
+`logs/<cycle-id>.context.json` with its explicit selected project, cycle ID,
+UTC timestamp and `source: runtime_context`. This is program-owned identity;
+the dashboard does not derive cycle ownership from a model's title or consensus.
+Historical cycles without a reliable project binding remain unknown.
+
+`project-new` creates `projects/<slug>/.auto-company-project.json`, defaulting
+the display name to the slug and leaving the description empty. The normal
+cycle prompt asks the coordinator to describe a new/default product once:
+
+```sh
+python3 scripts/core/project_metadata.py --display-name 'Product name' --description 'One sentence describing its purpose'
+```
+
+This optional description is authored metadata, not independent certification.
+Its versioned schema binds `project` exactly to the containing product and
+validates `displayName` (1–80 characters), `description` (0–300), a timezone-aware
+`recordedAt` and `source: project_metadata`. Reads are bounded, link-safe and
+never parse free-form consensus for a description. Failed updates preserve the
+previous file. Missing metadata falls back to the directory name with no
+description. Creating/editing metadata never changes selection, language,
+Human Overrides, project history or publication permissions.
 
 ## Verification settings
 

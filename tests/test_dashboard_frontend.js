@@ -21,7 +21,7 @@ function helpers() {
   // copied application logic, network request or production testing hook.
   const binding = app.indexOf("\n  document.querySelectorAll('[data-tab]').forEach");
   assert.ok(binding > 0, "Journal event wiring must follow its helper declarations");
-  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows };\n})();", context);
+  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows, liveDuration, checkCounts, latestCycle };\n})();", context);
   context.journal.state.language = "en";
   return { ...context.journal, messages: context.window.JOURNAL_MESSAGES, fields };
 }
@@ -125,4 +125,46 @@ test("day and week usage filters use ledger end dates and exclude active work", 
   assert.equal(filterUsage().length, 7);
   assert.equal(filterUsage().some((cycle) => cycle.active), false);
   assert.equal(fields.get("usageDate").hidden, true);
+});
+
+
+test("live elapsed time advances only with fresh verified runtime identity", () => {
+  const { state, liveDuration } = helpers();
+  state.statusFailed = false;
+  state.receivedAt = 1000;
+  state.data = { runtime: { processState: "running", elapsedReliable: true, elapsedSeconds: 60 } };
+  const cycle = { active: true, status: "running" };
+  assert.equal(liveDuration(cycle, 4000), "Running for 1m 3s");
+  assert.equal(liveDuration(cycle, 17000), "Elapsed time unconfirmed");
+  assert.equal(liveDuration(cycle, 999), "Elapsed time unconfirmed");
+  state.action = "stop";
+  assert.equal(liveDuration(cycle, 4000), "Elapsed time unconfirmed");
+  state.action = "";
+  state.statusFailed = true;
+  assert.equal(liveDuration(cycle, 4000), "Elapsed time unconfirmed");
+  state.statusFailed = false;
+  state.data.runtime.elapsedReliable = false;
+  assert.equal(liveDuration(cycle, 4000), "Elapsed time unconfirmed");
+});
+
+test("check pass counts require a complete internally consistent machine summary", () => {
+  const { checkCounts } = helpers();
+  assert.equal(checkCounts({ tests: 12, failures: 2, errors: 1, skipped: 3 }).passed, 6);
+  assert.equal(checkCounts({ tests: 0, failures: 0, errors: 0, skipped: 0 }).passed, 0);
+  assert.equal(checkCounts({ tests: 12, failures: 0 }).passed, undefined);
+  assert.equal(checkCounts({ tests: 1, failures: 2, errors: 0, skipped: 0 }).passed, undefined);
+  assert.equal(checkCounts(null).passed, undefined);
+});
+
+
+test("project selection never promotes unrelated or unknown history into current work", () => {
+  const { latestCycle } = helpers();
+  const old = { id: "old", projectStatus: "other", active: false };
+  const unknown = { id: "unknown", projectStatus: "unknown", active: false };
+  const current = { id: "current", projectStatus: "current", active: false };
+  const project = { id: "projects/current" };
+  assert.equal(latestCycle({ project, cycles: [old, unknown], latestProjectCycleId: null }), undefined);
+  assert.equal(latestCycle({ project, cycles: [old, unknown, current], latestProjectCycleId: "current" }), current);
+  assert.equal(latestCycle({ project: { id: null }, cycles: [unknown], latestProjectCycleId: null }), unknown);
+  assert.equal(latestCycle({ cycles: [old] }), old);
 });

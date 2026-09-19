@@ -203,12 +203,17 @@ project_migrate_rollback() {
 }
 
 project_new() {
-    local name=""
+    local name="" display_name="" description=""
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --name)
                 [ "$#" -ge 2 ] || die "--name requires a value"
                 name="$2"
+                shift 2
+                ;;
+            --display-name|--description)
+                [ "$#" -ge 2 ] || die "$1 requires a value"
+                if [ "$1" = "--display-name" ]; then display_name="$2"; else description="$2"; fi
                 shift 2
                 ;;
             *)
@@ -241,7 +246,12 @@ project_new() {
         git -C "$target" symbolic-ref HEAD refs/heads/main
     fi
     printf '# %s\n\nIndependent product repository managed by Auto Company.\n' "$name" > "$target/README.md"
-    printf '# Local secrets and generated output\n.env\n.env.*\ndist/\nbuild/\n' > "$target/.gitignore"
+    printf '# Local secrets and generated output\n.env\n.env.*\ndist/\nbuild/\n.auto-company/\n' > "$target/.gitignore"
+    # Description is optional observation data and cannot change selection or
+    # make a successfully created product fail because reporting is unavailable.
+    python3 "$SCRIPT_DIR/project_metadata.py" --root "$FRAMEWORK_DIR" --project "projects/$name" \
+        --display-name "${display_name:-$name}" --description "$description" || \
+        echo "Project metadata unavailable; product creation continues." >&2
 
     mv "$registry_tmp" "$REGISTRY_FILE"
     created=0

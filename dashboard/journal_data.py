@@ -17,10 +17,11 @@ import stat
 import sys
 from typing import Any
 
-from observability_data import cycle_events, registered_artifacts
+from observability_data import artifact_projection, cycle_events, registered_artifacts
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "core"))
 from cycle_reports import read_report  # noqa: E402
+from project_metadata import read_metadata  # noqa: E402
 
 
 MAX_LEDGER_BYTES = 4 * 1024 * 1024
@@ -174,7 +175,10 @@ class JournalSource:
             if (not isinstance(record, dict) or record.get("kind") != "cycle_usage"
                     or type(record.get("schema_version")) is not int or record["schema_version"] != 1
                     or not isinstance(record.get("cycle_id"), str) or not CYCLE_ID.fullmatch(record["cycle_id"])
-                    or type(record.get("cycle_number")) is not int or record["cycle_number"] < 1):
+                    or type(record.get("cycle_number")) is not int or record["cycle_number"] < 1
+                    or (record.get("project") is not None and
+                        (not isinstance(record.get("project"), str)
+                         or not re.fullmatch(r"projects/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", record["project"])) )):
                 invalid += 1
                 continue
             identity = record["cycle_id"]
@@ -196,9 +200,13 @@ class JournalSource:
             warnings.append("cycle_list_truncated")
         return records[:MAX_CYCLES], warnings
 
-    def documents(self) -> list[dict[str, str]]:
+    def documents(self, registered: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
         delivery = self.optional("DELIVERY.md")
-        registered = registered_artifacts(self)
+        registered = registered_artifacts(self) if registered is None else registered
+        # Root DELIVERY.md was the legacy archive convention. Once a product is
+        # explicitly selected, only identity-bound runner records may surface.
+        if self.project()["id"]:
+            return registered
         if not delivery:
             return registered
         result = [{"label": "DELIVERY.md", "path": "DELIVERY.md", "kind": "document"}]
@@ -209,6 +217,48 @@ class JournalSource:
             if self.optional(path):
                 result.append({"label": path.split("/")[1] + " / README", "path": path, "kind": "document"})
         return result + registered
+
+    def project(self) -> dict[str, Any]:
+        """Return only selection-bound metadata; consensus is never identity."""
+        selected = self.pairs(".auto-company.local").get("ACTIVE_PROJECT", "")
+        if not re.fullmatch(r"projects/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", selected):
+            return {"id": None, "name": "Auto Company", "displayName": "Auto Company",
+                    "description": "", "source": "workspace", "status": "unselected",
+                    "recordedAt": None}
+        fallback = selected.split("/", 1)[1]
+        try:
+            metadata = read_metadata(self.root, selected)
+        except FileNotFoundError:
+            return {"id": selected, "name": fallback, "displayName": fallback,
+                    "description": "", "source": "selection", "status": "missing",
+                    "recordedAt": None}
+        except (OSError, ValueError, TypeError, RecursionError, OverflowError):
+            return {"id": selected, "name": fallback, "displayName": fallback,
+                    "description": "", "source": "project_metadata", "status": "invalid",
+                    "recordedAt": None}
+        return {"id": selected, "name": metadata["displayName"],
+                "displayName": metadata["displayName"], "description": metadata["description"],
+                "source": metadata["source"], "status": "recorded",
+                "recordedAt": timestamp(metadata["recordedAt"])}
+
+    def cycle_context(self, identity: str) -> dict[str, Any]:
+        """Read one program-owned cycle/project association."""
+        try:
+            raw, truncated = self.read(f"logs/{identity}.context.json", 4096)
+            value = json.loads(raw)
+            expected = {"version", "cycleId", "project", "recordedAt", "source"}
+            if (truncated or not isinstance(value, dict) or set(value) != expected
+                    or value.get("version") != 1 or value.get("cycleId") != identity
+                    or value.get("source") != "runtime_context" or not timestamp(value.get("recordedAt"))
+                    or not isinstance(value.get("project"), str)
+                    or (value["project"] and not re.fullmatch(r"projects/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", value["project"]))):
+                raise ValueError("Invalid cycle context")
+            return {"project": value["project"] or None, "status": "recorded",
+                    "recordedAt": timestamp(value["recordedAt"]), "source": "runtime_context"}
+        except FileNotFoundError:
+            return {"project": None, "status": "missing", "recordedAt": None, "source": None}
+        except (OSError, ValueError, TypeError, RecursionError, OverflowError):
+            return {"project": None, "status": "invalid", "recordedAt": None, "source": "runtime_context"}
 
     def document(self, relative: str) -> tuple[str, bool]:
         allowed = {"memories/consensus.md", *(item["path"] for item in self.documents() if item.get("path") and item.get("available", True))}
@@ -235,10 +285,13 @@ class JournalSource:
             identity = pending.get("cycle_id")
             number = pending.get("cycle_number")
             started = timestamp(pending.get("started_at"))
+            selected = self.pairs(".auto-company.local").get("ACTIVE_PROJECT")
+            context = self.cycle_context(identity) if isinstance(identity, str) and CYCLE_ID.fullmatch(identity) else {}
             if (type(pending.get("schema_version")) is not int or pending["schema_version"] != 1
                     or pending.get("kind") != "cycle_usage" or not isinstance(identity, str)
                     or not CYCLE_ID.fullmatch(identity) or type(number) is not int or number < 1
                     or str(number) != state.get("LOOP_COUNT") or not started
+                    or context.get("status") != "recorded" or context.get("project") != selected
                     or any(not state.get(key) or pending.get(key.lower()) != state[key]
                            for key in ("ENGINE", "MODEL"))):
                 return None
@@ -259,6 +312,7 @@ class JournalSource:
                     "durationReliable": False, "endedAtKind": "unavailable",
                     "engine": pending["engine"][:200], "model": pending["model"][:200],
                     "summary": "", "report": "", "logAvailable": available,
+                    "projectId": context["project"], "projectIdentity": context,
                     "usage": {"inputTokens": None, "outputTokens": None, "totalTokens": None,
                               "status": "unavailable"}, "costUsd": None, "costStatus": "unavailable", "budget": None}
         except (OSError, ValueError, RecursionError):
@@ -287,7 +341,12 @@ class JournalSource:
 
     def snapshot(self, *, status: dict[str, Any] | None = None,
                  language_state: dict[str, Any] | None = None) -> dict[str, Any]:
+        generated = datetime.now(timezone.utc)
+        generated_at = generated.isoformat()
         records, warnings = self.ledger()
+        artifact_data = artifact_projection(self)
+        registered = artifact_data["items"]
+        project = self.project()
         raw = ""
         updated_at = None
         try:
@@ -336,6 +395,7 @@ class JournalSource:
                            "engine": record["engine"][:200] if isinstance(record.get("engine"), str) else "unknown",
                            "model": record["model"][:200] if isinstance(record.get("model"), str) else "unknown",
                            "summary": summary, "report": report, "logAvailable": available,
+                           "projectId": record.get("project"),
                            "active": False, "costUsd": cost,
                            "costStatus": record.get("cost_usd_status", "reported") if cost is not None else "unavailable",
                            "budget": record.get("budget") if isinstance(record.get("budget"), dict) else None,
@@ -343,20 +403,13 @@ class JournalSource:
         state = self.pairs(".auto-loop-state")
         selected_language = self.language() if language_state is None else language_state
         language = selected_language["language"]
-        delivery = self.optional("DELIVERY.md")
-        heading = re.search(r"^#\s+(.+)$", delivery, re.M)
-        name = re.split(r"\s+[—–]\s+", heading[1], maxsplit=1)[0].strip() if heading else self.root.name
-        company = section(parts, "Company State", "公司状态")
-        description = re.search(r"^\s*[-*]?\s*(?:Product|产品)\s*[:：]\s*(.+)$", company, re.M | re.I)
-        if not heading and not description:
-            name = "Auto Company"
-        selected_project = self.pairs(".auto-company.local").get("ACTIVE_PROJECT", "")
-        if re.fullmatch(r"projects/[a-z0-9][a-z0-9-]*", selected_project):
-            name = selected_project.split("/")[1]
+        selected_project = project["id"]
         latest = cycles[0] if cycles else {}
         runtime = {"state": "stopped", "processState": "stopped", "pid": None,
                    "available": True, "error": None, "pauseReason": "",
                    "currentCycleId": None, "currentCycleNumber": None,
+                   "active": False, "startedAt": None, "elapsedSeconds": None,
+                   "elapsedReliable": False,
                    "engine": state.get("ENGINE") or latest.get("engine", "unknown"),
                    "model": state.get("MODEL") or latest.get("model", "unknown"),
                    "reasoning": "unknown", "language": language}
@@ -374,13 +427,15 @@ class JournalSource:
             active = self.active_cycle(status)
             if active and active["id"] not in {cycle["id"] for cycle in cycles}:
                 cycles.insert(0, active)
-                runtime.update({"currentCycleId": active["id"], "currentCycleNumber": active["number"]})
+                runtime.update({"currentCycleId": active["id"], "currentCycleNumber": active["number"],
+                                "active": True, "startedAt": active["startedAt"]})
             elif available and runtime["processState"] == "running":
                 if runtime["state"] == "running":
                     warnings.append("active_cycle_unavailable")
             if not available:
                 warnings.append("runtime_unavailable")
         for cycle in cycles[:30]:
+            cycle["detailStatus"] = "recorded"
             cycle.update(read_report(self, cycle))
             cycle.update(cycle_events(self, cycle))
             if cycle.get("active") or cycle["status"] == "interrupted":
@@ -394,22 +449,77 @@ class JournalSource:
                     cycle["reportObservedAt"] = timestamp(observed_report.get("observedAt"))
                 elif cycle["events"]:
                     cycle["report"] = cycle["summary"] = ""
+            reported_project = cycle.get("workReport", {}).get("project") if isinstance(cycle.get("workReport"), dict) else None
+            bound = [item for item in registered if item.get("cycleId") == cycle["id"]]
+            context = cycle.get("projectIdentity") or self.cycle_context(cycle["id"])
+            recorded_project = cycle.get("projectId")
+            artifact_projects = {item["project"] for item in bound}
+            if context["status"] == "recorded":
+                cycle_project = context["project"]
+            elif context["status"] == "missing" and recorded_project:
+                cycle_project = recorded_project
+                context = {"project": recorded_project, "status": "recorded",
+                           "recordedAt": None, "source": "usage_ledger"}
+            elif context["status"] == "missing" and len(artifact_projects) == 1:
+                cycle_project = next(iter(artifact_projects))
+                context = {"project": cycle_project, "status": "recorded",
+                           "recordedAt": bound[0].get("recordedAt"), "source": "runner"}
+            else:
+                cycle_project = None
+            if cycle_project and reported_project and reported_project != cycle_project:
+                cycle["workReport"] = None
+                cycle["workReportStatus"] = "identity_mismatch"
+            cycle["projectId"] = cycle_project
+            cycle["projectIdentity"] = context
+            cycle["projectStatus"] = ("current" if cycle_project and cycle_project == selected_project else
+                                      "other" if cycle_project else "unknown")
+            cycle["belongsToCurrentProject"] = cycle["projectStatus"] == "current"
+            cycle_artifacts = [item for item in bound if cycle_project and item.get("project") == cycle_project]
+            checks = [item for item in cycle_artifacts if item["kind"] == "check"]
+            cycle["artifacts"] = cycle_artifacts
+            cycle["checks"] = checks
+            cycle["latestCheck"] = checks[0] if checks else None
+            cycle["checkStatus"] = checks[0]["evidenceStatus"] if checks else "unregistered"
+        if len(cycles) > 30:
+            warnings.append("cycle_details_truncated")
+        for cycle in cycles[30:]:
+            recorded_project = cycle.get("projectId")
+            cycle.update({"detailStatus": "limited", "projectIdentity": {
+                              "project": recorded_project, "status": "recorded" if recorded_project else "not_loaded",
+                              "recordedAt": None, "source": "usage_ledger" if recorded_project else None},
+                          "projectStatus": "current" if recorded_project and recorded_project == selected_project else
+                                           "other" if recorded_project else "unknown",
+                          "artifacts": [], "checks": [], "latestCheck": None,
+                          "checkStatus": "unregistered"})
+            cycle["belongsToCurrentProject"] = cycle["projectStatus"] == "current"
         if cycles:
-            observed = cycles[0].get("observedConfig")
+            observed_cycle = next((cycle for cycle in cycles if cycle.get("projectStatus") == "current"), None)
+            observed = observed_cycle.get("observedConfig") if observed_cycle else None
             if observed:
                 runtime.update(model=observed["model"], reasoning=observed["reasoning"], configSource="session_context")
+        if runtime["active"] and runtime["startedAt"]:
+            started = datetime.fromisoformat(runtime["startedAt"])
+            if started <= generated:
+                runtime["elapsedSeconds"] = int((generated - started).total_seconds())
+                runtime["elapsedReliable"] = True
         recorded_budget = next((record["budget"] for record in records if isinstance(record.get("budget"), dict)), None)
+        latest_check = next((item for item in registered if item["kind"] == "check" and item.get("cycleId")), None)
+        latest_project_cycle = next((cycle for cycle in cycles if cycle.get("projectStatus") == "current"), None)
         return {"ok": True, "readOnly": status is None, "sourceName": self.root.name,
                 "legacyAvailable": False, "languageState": selected_language,
                 "status": status, "recordedBudget": recorded_budget,
-                "generatedAt": datetime.now(timezone.utc).isoformat(), "language": language,
-                "project": {"name": plain_text(name), "description": plain_text(description[1]) if description else ""},
+                "generatedAt": generated_at, "language": language,
+                "project": project,
                 "runtime": runtime,
                 "consensus": {"updatedAt": updated_at,
                               "reportedUpdatedAt": timestamp(section(parts, "Last Updated", "最后更新", "最近更新")),
                               "phase": section(parts, "Current Phase", "当前阶段"), "progress": progress_lines,
                               "raw": raw},
-                "cycles": cycles, "artifacts": self.documents(), "warnings": warnings}
+                "cycles": cycles, "artifacts": self.documents(registered),
+                "artifactCollection": {key: value for key, value in artifact_data.items() if key != "items"},
+                "latestCheck": latest_check,
+                "latestProjectCycleId": latest_project_cycle["id"] if latest_project_cycle else None,
+                "warnings": warnings}
 
     def legacy_status(self) -> dict[str, Any]:
         snapshot = self.snapshot()
