@@ -47,6 +47,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     return text.length > length ? `${text.slice(0, length).trim()}…` : text;
   }
   function statusLabel(status) {
+    if (['not_started', 'startup_unconfirmed'].includes(status)) return message(status);
     return ['stopping', 'stop_failed', 'completed', 'completed_with_timeout', 'failed', 'interrupted', 'stopped_status', 'running', 'idle', 'paused', 'waiting_limit', 'circuit_break', 'stopped', 'active', 'inactive', 'configured', 'not_configured', 'not_installed', 'mismatched', 'activating', 'deactivating', 'reloading', 'unsupported'].includes(status) ? message(status) : status === 'unavailable' ? message('statusUnavailable') : message('unknown');
   }
   function readOnly() { return state.data?.readOnly !== false; }
@@ -94,6 +95,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   }
   function cycleTitle(cycle) {
     if (cycle.workReport) return cycle.workReport.title;
+    if (['not_started', 'startup_unconfirmed'].includes(cycle.status)) return statusLabel(cycle.status);
     if (cycle.status === 'interrupted' && cycle.events?.length) return message('interruptedSummary');
     if (cycle.synthetic && cycle.status !== 'running') return statusLabel(cycle.status);
     let title = clean(cycle.summary || cycle.report || '').split('\n').find((line) => line.trim()) || '';
@@ -106,9 +108,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   }
   function metadata(cycle) {
     const row = element('div', 'cycle-meta');
+    if (cycle.numbering === 'legacy') row.append(element('span', '', message('legacyCycles')));
+    if (cycle.identityKind === 'exploration') row.append(element('span', '', message('explorationCycles')));
     if (cycle.workReport?.phase) row.append(element('span', 'reported-phase', message(`workPhase_${cycle.workReport.phase}`)));
     if (['failed', 'interrupted', 'unknown', 'completed_with_timeout'].includes(cycle.status)) row.append(element('span', cycle.status === 'failed' ? 'status-failed' : '', statusLabel(cycle.status)));
-    row.append(element('span', '', message('startAt', { time: formatTime(cycle.startedAt) })));
+    row.append(element('span', '', message(cycle.reservedAt && !cycle.startedAt ? 'reservedAt' : 'startAt', { time: formatTime(cycle.startedAt || cycle.reservedAt) })));
     const elapsed = duration(cycle);
     if (elapsed) row.append(element('span', '', elapsed));
     if (cycle.active && cycle.status === 'running') {
@@ -335,12 +339,18 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   function renderHistory() {
     const history = clear($('historyList'));
     const older = state.data.cycles.filter((cycle) => cycle.id !== state.currentCycle?.id);
+    older.sort((a, b) => Number(a.numbering === 'legacy') - Number(b.numbering === 'legacy'));
     const visible = state.older ? older : older.slice(0, 2);
+    $('historyNote').textContent = message(state.data.cycleNumbering?.mode === 'persistent' ? (state.data.cycleNumbering.hasLegacy ? 'mixedHistoryNote' : 'persistentHistoryNote') : state.data.cycleNumbering?.mode === 'unavailable' ? 'numberingUnavailable' : 'historyNote');
+    let group = null;
     for (const cycle of visible) {
+      const nextGroup = cycle.numbering === 'legacy' ? 'legacy' : 'persistent';
+      if (nextGroup !== group && nextGroup === 'legacy' && state.data.cycleNumbering?.mode === 'persistent') history.append(element('h3', 'history-group-label', message('legacyCycles')));
+      group = nextGroup;
       const row = bindDisclosure(element('details', 'history-row'), `cycle:${cycle.id}`);
       row.dataset.cycleId = cycle.id;
       const summary = element('summary');
-      const association = cycle.projectStatus === 'other' ? message('otherProjectCycle') : cycle.projectStatus === 'unknown' ? message('unknownProjectCycle') : '';
+      const association = cycle.projectStatus === 'other' ? message('otherProjectCycle') : cycle.projectStatus === 'unknown' ? message('unknownProjectCycle') : cycle.identityKind === 'exploration' ? message('explorationCycles') : '';
       const timing = `${statusLabel(cycle.status)} · ${formatTime(cycle.startedAt)}${association ? ` · ${association}` : ''}`;
       summary.append(element('span', 'history-number', String(cycle.number ?? '—').padStart(2, '0')), progressIcon(cycle.status), element('span', 'history-title', cycleTitle(cycle)), element('span', `history-meta${cycle.status === 'failed' ? ' status-failed' : ''}`, timing));
       const arrow = icon('chevron-right'); arrow.classList.add('history-chevron');
@@ -405,7 +415,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     const process = runtime.processState || runtime.state;
     const action = state.action || data?.control?.action;
     const retryStop = data?.control?.stopUnconfirmed === true;
-    const locked = !data || readOnly() || (unavailable && !retryStop) || Boolean(action);
+    const locked = !data || readOnly() || (unavailable && !retryStop) || Boolean(action || state.mediaAction);
     $('runtimeState').textContent = runtimeLabel();
     $('runtimeState').dataset.state = unavailable ? 'unavailable' : runtime.state || 'unknown';
     $('startButton').disabled = locked || retryStop || !['stopped', 'inactive'].includes(process);
@@ -500,6 +510,97 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     }
     return message(artifact.evidenceStatus === 'stale' ? 'artifactStale' : 'artifactUnavailable');
   }
+  function mediaURL(value, productId) {
+    if (typeof productId !== 'string' || !/^[0-9a-f]{32}$/.test(productId) || typeof value !== 'string') return null;
+    return new RegExp(`^/api/product-media/${productId}/[a-zA-Z0-9_.-]+\\.(?:png|svg)$`).test(value) ? value : null;
+  }
+  async function retryProductMedia(productId) {
+    if (readOnly() || state.mediaAction || productId !== state.data?.productMedia?.productId) return;
+    const previousCapture = state.data?.productMedia?.screenshot;
+    const previousSuccess = previousCapture?.latestSuccess?.capturedAt || null;
+    state.mediaAction = true; state.mediaError = null;
+    renderSidebar();
+    renderRuntime();
+    try {
+      await fetchJSON('/api/product-media/capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId }) }, 170000);
+    } catch (_) { state.mediaError = { productId, previousSuccess }; }
+    finally {
+      state.mediaAction = false;
+      await refresh();
+      renderSidebar();
+      renderRuntime();
+    }
+  }
+  function mediaRetryError(media) {
+    const error = state.mediaError;
+    if (!error) return false;
+    const capture = media?.screenshot;
+    if (error.productId !== media?.productId || (capture?.state === 'success' && capture.latestSuccess?.capturedAt !== error.previousSuccess)) {
+      state.mediaError = null;
+      return false;
+    }
+    return true;
+  }
+  function iconPublicationWarning(icon) {
+    if (icon?.publicationStatus === 'conflict') return 'iconPublicationConflict';
+    if (icon?.publicationStatus === 'failed') return 'iconPublicationFailed';
+    if (['stale', 'unavailable'].includes(icon?.publicationStatus)) return 'iconPublicationChanged';
+    const reference = icon?.reference;
+    if (reference?.state === 'preserved') return 'iconReferencePreserved';
+    return reference && !['inserted', 'linked', 'not_applicable'].includes(reference.state) ? 'iconReferenceUnconfirmed' : null;
+  }
+  function renderProductMedia(media) {
+    if (!media?.productId) return null;
+    const section = element('section', 'sidebar-block product-media');
+    section.append(element('h2', '', message('productScreenshot')));
+    const capture = media.screenshot || {};
+    const success = capture.latestSuccess;
+    const variants = (success?.variants || []).filter((item) => mediaURL(item.href, media.productId));
+    const desktop = variants.find((item) => item.viewport === 'desktop') || variants[0];
+    if (desktop) {
+      const link = element('a', 'product-screenshot-link');
+      link.href = mediaURL(desktop.href, media.productId);
+      link.target = '_blank'; link.rel = 'noopener';
+      link.setAttribute('aria-label', message('openScreenshot'));
+      const image = element('img', 'product-screenshot');
+      image.src = link.href;
+      image.alt = message('screenshotAlt', { name: state.data.project?.name || message('noProject') });
+      image.loading = 'lazy'; image.decoding = 'async';
+      if (Number.isInteger(desktop.width) && Number.isInteger(desktop.height) && desktop.width > 0 && desktop.height > 0) {
+        image.width = desktop.width; image.height = desktop.height;
+      }
+      image.addEventListener('error', () => {
+        link.replaceWith(element('p', 'sidebar-note status-failed', message('screenshotResourceUnavailable')));
+      }, { once: true });
+      link.append(image); section.append(link);
+      const caption = element('p', 'sidebar-note screenshot-caption', message('capturedAt', { time: formatTime(success.capturedAt, true) }));
+      if (capture.currentVersion && success.version !== capture.currentVersion) caption.append(element('span', 'screenshot-stale', message('screenshotOldVersion')));
+      section.append(caption);
+      const links = element('div', 'screenshot-links');
+      for (const variant of variants) {
+        const item = element('a', '', message(variant.viewport === 'mobile' ? 'mobileScreenshot' : 'desktopScreenshot'));
+        item.href = mediaURL(variant.href, media.productId); item.target = '_blank'; item.rel = 'noopener';
+        links.append(item);
+      }
+      section.append(links);
+    }
+    if (!desktop || !['completed', 'ready', 'success', 'unchanged'].includes(capture.state)) {
+      const key = { capturing: 'screenshotCapturing', running: 'screenshotCapturing', pending: 'screenshotCapturing',
+        failed: 'screenshotFailed', interrupted: 'screenshotInterrupted', unsupported: 'screenshotUnsupported',
+        not_applicable: 'screenshotNotApplicable', unavailable: 'screenshotUnavailable', stale: 'screenshotOldVersion' }[capture.state] || 'screenshotMissing';
+      section.append(element('p', 'sidebar-note', message(key)));
+    }
+    if (!readOnly()) {
+      const retry = element('button', 'text-button screenshot-retry', message(state.mediaAction ? 'screenshotCapturing' : 'retryScreenshot'));
+      retry.id = 'retryScreenshot';
+      retry.disabled = Boolean(state.mediaAction || state.statusFailed || state.action || state.data?.control?.action || state.data?.control?.stopUnconfirmed || !['stopped', 'inactive'].includes(state.data?.runtime?.processState));
+      retry.title = message('retryScreenshotHint');
+      retry.addEventListener('click', () => retryProductMedia(media.productId));
+      section.append(retry);
+      if (mediaRetryError(media)) section.append(element('p', 'sidebar-note status-failed', message('screenshotRetryFailed')));
+    }
+    return section;
+  }
   function renderSidebar() {
     const sidebar = clear($('projectSidebar'));
     const data = state.data;
@@ -508,7 +609,20 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     const description = element('p', 'project-description', clean(data.project?.description)); description.id = 'projectDescription'; description.title = description.textContent;
     const latest = state.currentCycle;
     const date = element('p', 'sidebar-note', latest?.active ? message('currentRun') : latest ? message('latestRun', { date: formatDate(latest.startedAt) }) : message(readOnly() ? 'archived' : 'ready')); date.id = 'runHeading';
-    overview.append(name, description, date);
+    const identity = element('div', 'project-identity');
+    const media = data.productMedia;
+    const productIcon = mediaURL(media?.icon?.href, media?.productId);
+    if (productIcon) {
+      const image = element('img', 'product-icon');
+      image.src = productIcon; image.alt = ''; image.width = image.height = 36;
+      image.title = message(media.icon.source === 'default' ? 'defaultProductIcon' : 'productIcon');
+      image.addEventListener('error', () => image.remove(), { once: true });
+      identity.append(image);
+    }
+    identity.append(name);
+    overview.append(identity, description, date);
+    const iconWarning = iconPublicationWarning(media?.icon);
+    if (iconWarning) overview.append(element('p', 'sidebar-note status-failed', message(iconWarning)));
     const artifacts = element('section', 'sidebar-block');
     artifacts.append(element('h2', '', message('artifacts')));
     const visibleArtifacts = (data.artifacts || []).filter((artifact) => artifact.kind !== 'check');
@@ -546,7 +660,10 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     details.append(element('summary', '', message('moreRuntime')), runtimeRows([[message('state'), runtimeLabel()], [message('source'), data.sourceName]]));
     details.append(element('p', 'sidebar-note', message(config.configSource === 'session_context' ? 'observedSession' : 'unconfirmedSession')));
     runtime.append(details);
-    sidebar.append(overview, artifacts, runtime);
+    sidebar.append(overview);
+    const productMedia = renderProductMedia(media);
+    if (productMedia) sidebar.append(productMedia);
+    sidebar.append(artifacts, runtime);
   }
   function applyLanguage() {
     document.documentElement.lang = state.language;

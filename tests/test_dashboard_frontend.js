@@ -21,7 +21,7 @@ function helpers() {
   // copied application logic, network request or production testing hook.
   const binding = app.indexOf("\n  document.querySelectorAll('[data-tab]').forEach");
   assert.ok(binding > 0, "Journal event wiring must follow its helper declarations");
-  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows, liveDuration, checkCounts, checkPresentation, progressState, latestCycle, unavailableArtifact };\n})();", context);
+  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows, liveDuration, checkCounts, checkPresentation, progressState, latestCycle, unavailableArtifact, mediaURL, mediaRetryError, iconPublicationWarning };\n})();", context);
   context.journal.state.language = "en";
   return { ...context.journal, messages: context.window.JOURNAL_MESSAGES, fields };
 }
@@ -37,6 +37,43 @@ test("both languages cover rendered keys and preserve interpolation fields", () 
   }
   const keys = [...html.matchAll(/data-i18n="([^"]+)"/g), ...app.matchAll(/message\('([^']+)'/g)];
   for (const [, key] of keys) assert.ok(messages.en[key], `Missing rendered translation: ${key}`);
+});
+
+test("media links must belong to the exact managed product", () => {
+  const { mediaURL } = helpers();
+  const id = 'a'.repeat(32);
+  const url = `/api/product-media/${id}/${'b'.repeat(64)}.png`;
+  assert.equal(mediaURL(url, id), url);
+  for (const value of [url.replace(id, 'c'.repeat(32)), 'https://example.com/image.png', 'javascript:alert(1)', `/api/product-media/${id}/../private.svg`, `${url}?path=private`]) assert.equal(mediaURL(value, id), null);
+});
+
+test("unconfirmed starts never become completed cycles", () => {
+  const { cycleTitle, progressState, messages } = helpers();
+  assert.equal(cycleTitle({status: 'startup_unconfirmed'}), messages.en.startup_unconfirmed);
+  assert.equal(progressState('startup_unconfirmed'), 'unknown');
+  assert.equal(progressState('not_started'), 'pending');
+});
+
+test("media retry errors expire after a new success or product change", () => {
+  const { state, mediaRetryError } = helpers();
+  state.mediaError = {productId: 'a', previousSuccess: 'old'};
+  assert.equal(mediaRetryError({productId: 'a', screenshot: {state: 'failed'}}), true);
+  assert.equal(mediaRetryError({productId: 'a', screenshot: {state: 'success', latestSuccess: {capturedAt: 'new'}}}), false);
+  assert.equal(state.mediaError, null);
+  state.mediaError = {productId: 'a', previousSuccess: null};
+  assert.equal(mediaRetryError({productId: 'b', screenshot: {state: 'failed'}}), false);
+});
+
+test("canonical icon publication failures stay visible independently of source", () => {
+  const { iconPublicationWarning } = helpers();
+  assert.equal(iconPublicationWarning({source: 'default', publicationStatus: 'published'}), null);
+  assert.equal(iconPublicationWarning({source: 'product', publicationStatus: 'existing_valid'}), null);
+  assert.equal(iconPublicationWarning({source: 'product', publicationStatus: 'conflict'}), 'iconPublicationConflict');
+  assert.equal(iconPublicationWarning({source: 'default', publicationStatus: 'failed'}), 'iconPublicationFailed');
+  for (const publicationStatus of ['stale', 'unavailable']) assert.equal(iconPublicationWarning({source: 'product', publicationStatus}), 'iconPublicationChanged');
+  assert.equal(iconPublicationWarning({reference: {state: 'preserved'}}), 'iconReferencePreserved');
+  for (const state of ['missing', 'unsupported', 'unconfirmed', 'conflict', 'failed']) assert.equal(iconPublicationWarning({reference: {state}}), 'iconReferenceUnconfirmed');
+  for (const state of ['inserted', 'linked', 'not_applicable']) assert.equal(iconPublicationWarning({reference: {state}}), null);
 });
 
 test("usage totals keep unknown values and coverage separate from measured zero", () => {

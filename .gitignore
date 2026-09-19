@@ -140,6 +140,7 @@ logs/
 .auto-loop-budget-paused.*
 .auto-loop.env
 .auto-company.local
+.auto-company/
 .auto-company.local.*
 .auto-company-migrations/
 .auto-loop-awake.pid
@@ -212,6 +213,8 @@ docs/*/*
 !docs/windows-setup.md
 !docs/usage-governance.md
 !docs/runtime-observability.md
+!docs/product-media.md
+!docs/product-cycles.md
 # Ignore all memories (keep folder marker only)
 memories/*
 !memories/.gitkeep

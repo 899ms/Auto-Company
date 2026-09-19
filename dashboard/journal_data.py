@@ -1,6 +1,6 @@
 """Bounded journal projections of an Auto Company run.
 
-Cycle identities come only from the usage ledger. A consensus is the latest
+Cycle identities come from program-owned ledgers. A consensus is the latest
 work report, not proof of a running process or a stream of agent activity.
 """
 
@@ -22,6 +22,8 @@ from observability_data import artifact_projection, cycle_events, registered_art
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "core"))
 from cycle_reports import read_report  # noqa: E402
 from project_metadata import read_metadata  # noqa: E402
+from product_identity import continuation_project, cycle_projects, get_identity, list_cycle_projections  # noqa: E402
+from product_media import media_projection, read_resource  # noqa: E402
 
 
 MAX_LEDGER_BYTES = 4 * 1024 * 1024
@@ -221,6 +223,11 @@ class JournalSource:
     def project(self) -> dict[str, Any]:
         """Return only selection-bound metadata; consensus is never identity."""
         selected = self.pairs(".auto-company.local").get("ACTIVE_PROJECT", "")
+        if not selected:
+            try:
+                selected = continuation_project(self.root)
+            except (OSError, ValueError, TypeError):
+                selected = ""
         if not re.fullmatch(r"projects/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", selected):
             return {"id": None, "name": "Auto Company", "displayName": "Auto Company",
                     "description": "", "source": "workspace", "status": "unselected",
@@ -240,6 +247,59 @@ class JournalSource:
                 "displayName": metadata["displayName"], "description": metadata["description"],
                 "source": metadata["source"], "status": "recorded",
                 "recordedAt": timestamp(metadata["recordedAt"])}
+
+    def media_resource(self, product_id: str, name: str) -> tuple[bytes, str]:
+        result = read_resource(self.root, product_id, name)
+        if result is None:
+            raise FileNotFoundError("Registered media resource is unavailable")
+        return result
+
+    def persistent_cycles(self, cycles, project, warnings):
+        """Merge identity-owned attempts without rewriting old usage records."""
+        try:
+            identity = get_identity(self.root, project["id"], create=False) if project["id"] else None
+        except (OSError, ValueError, TypeError, KeyError):
+            warnings.append("product_cycle_identity_unavailable")
+            identity = None
+        projection_available = True
+        try:
+            projections = list_cycle_projections(self.root, limit=MAX_CYCLES)
+        except (OSError, ValueError, TypeError, KeyError):
+            warnings.append("product_cycle_ledger_unavailable")
+            projection_available = False
+            projections = {"cycles": [], "total": 0}
+        project["stableId"] = identity["id"] if identity else None
+        rows = {row["cycleId"]: row for row in projections["cycles"]}
+        known = {cycle["id"] for cycle in cycles}
+        for row in rows.values():
+            if row["cycleId"] in known:
+                continue
+            state = row["state"]
+            # Pending attempts are never promoted to live execution from intent.
+            status = {"reserved": "not_started", "dispatching": "startup_unconfirmed"}.get(state, state)
+            cycles.append({"id": row["cycleId"], "number": row["productCycleNumber"],
+                           "startedAt": timestamp(row.get("startedAt")), "reservedAt": timestamp(row["reservedAt"]),
+                           "endedAt": timestamp(row.get("endedAt")), "status": status,
+                           "durationReliable": False, "endedAtKind": "identity_ledger",
+                           "engine": row.get("engine") or "unknown", "model": row.get("model") or "unknown",
+                           "summary": "", "report": "", "active": False, "logAvailable": False,
+                           "projectId": row.get("project") or None, "costUsd": None, "costStatus": "unavailable",
+                           "budget": None, "usage": {"inputTokens": None, "outputTokens": None,
+                                                      "totalTokens": None, "status": "unavailable"}})
+        for cycle in cycles:
+            row = rows.get(cycle["id"])
+            cycle["runCycleNumber"] = cycle["number"]
+            cycle["numbering"] = "persistent" if row else "legacy" if projection_available else "unavailable"
+            if row:
+                cycle.update(number=row["productCycleNumber"], productCycleNumber=row["productCycleNumber"], runCycleNumber=row["runCycleNumber"],
+                             stableProductId=row.get("productId"), identityKind=row["kind"],
+                             linkedProductId=row.get("linkedProductId"), identityState=row["state"])
+        cycles.sort(key=lambda cycle: (datetime.fromisoformat(cycle.get("startedAt") or cycle["reservedAt"]).timestamp() if cycle.get("startedAt") or cycle.get("reservedAt") else 0, cycle["id"]), reverse=True)
+        if projections.get("total", 0) > len(rows):
+            warnings.append("product_cycle_history_truncated")
+        return {"mode": "persistent" if identity else "legacy" if projection_available else "unavailable", "productId": project["stableId"],
+                "hasLegacy": any(cycle["numbering"] == "legacy" for cycle in cycles),
+                "total": projections.get("total", len(rows))}
 
     def cycle_context(self, identity: str) -> dict[str, Any]:
         """Read one program-owned cycle/project association."""
@@ -285,7 +345,7 @@ class JournalSource:
             identity = pending.get("cycle_id")
             number = pending.get("cycle_number")
             started = timestamp(pending.get("started_at"))
-            selected = self.pairs(".auto-company.local").get("ACTIVE_PROJECT")
+            selected = self.project()["id"]
             context = self.cycle_context(identity) if isinstance(identity, str) and CYCLE_ID.fullmatch(identity) else {}
             if (type(pending.get("schema_version")) is not int or pending["schema_version"] != 1
                     or pending.get("kind") != "cycle_usage" or not isinstance(identity, str)
@@ -344,9 +404,9 @@ class JournalSource:
         generated = datetime.now(timezone.utc)
         generated_at = generated.isoformat()
         records, warnings = self.ledger()
-        artifact_data = artifact_projection(self)
-        registered = artifact_data["items"]
         project = self.project()
+        artifact_data = artifact_projection(self, project["id"] or "")
+        registered = artifact_data["items"]
         raw = ""
         updated_at = None
         try:
@@ -434,6 +494,11 @@ class JournalSource:
                     warnings.append("active_cycle_unavailable")
             if not available:
                 warnings.append("runtime_unavailable")
+        numbering = self.persistent_cycles(cycles, project, warnings)
+        if runtime["currentCycleId"]:
+            current = next((cycle for cycle in cycles if cycle["id"] == runtime["currentCycleId"]), None)
+            if current:
+                runtime["currentCycleNumber"] = current["number"]
         for cycle in cycles[:30]:
             cycle["detailStatus"] = "recorded"
             cycle.update(read_report(self, cycle))
@@ -466,6 +531,14 @@ class JournalSource:
                            "recordedAt": bound[0].get("recordedAt"), "source": "runner"}
             else:
                 cycle_project = None
+            if cycle.get("identityKind") == "exploration" and cycle.get("linkedProductId") == project["stableId"] and project["stableId"]:
+                try:
+                    if selected_project in cycle_projects(self.root, cycle["id"]):
+                        cycle_project = selected_project
+                        context = {"project": selected_project, "status": "recorded", "recordedAt": None,
+                                   "source": "product_cycle_ledger", "kind": "linked_exploration"}
+                except (OSError, ValueError, TypeError, KeyError):
+                    warnings.append("exploration_association_unavailable")
             if cycle_project and reported_project and reported_project != cycle_project:
                 cycle["workReport"] = None
                 cycle["workReportStatus"] = "identity_mismatch"
@@ -473,6 +546,8 @@ class JournalSource:
             cycle["projectIdentity"] = context
             cycle["projectStatus"] = ("current" if cycle_project and cycle_project == selected_project else
                                       "other" if cycle_project else "unknown")
+            if cycle.get("stableProductId") and cycle["stableProductId"] != project["stableId"]:
+                cycle["projectStatus"] = "other"
             cycle["belongsToCurrentProject"] = cycle["projectStatus"] == "current"
             cycle_artifacts = [item for item in bound if cycle_project and item.get("project") == cycle_project]
             checks = [item for item in cycle_artifacts if item["kind"] == "check"]
@@ -491,6 +566,8 @@ class JournalSource:
                                            "other" if recorded_project else "unknown",
                           "artifacts": [], "checks": [], "latestCheck": None,
                           "checkStatus": "unregistered"})
+            if cycle.get("stableProductId") and cycle["stableProductId"] != project["stableId"]:
+                cycle["projectStatus"] = "other"
             cycle["belongsToCurrentProject"] = cycle["projectStatus"] == "current"
         if cycles:
             observed_cycle = next((cycle for cycle in cycles if cycle.get("projectStatus") == "current"), None)
@@ -505,11 +582,17 @@ class JournalSource:
         recorded_budget = next((record["budget"] for record in records if isinstance(record.get("budget"), dict)), None)
         latest_check = next((item for item in registered if item["kind"] == "check" and item.get("cycleId")), None)
         latest_project_cycle = next((cycle for cycle in cycles if cycle.get("projectStatus") == "current"), None)
+        try:
+            product_media = media_projection(self.root, selected_project, readonly=status is None) if selected_project else None
+        except (OSError, ValueError, TypeError, KeyError):
+            product_media = None
+            warnings.append("product_media_unavailable")
         return {"ok": True, "readOnly": status is None, "sourceName": self.root.name,
                 "legacyAvailable": False, "languageState": selected_language,
                 "status": status, "recordedBudget": recorded_budget,
                 "generatedAt": generated_at, "language": language,
                 "project": project,
+                "cycleNumbering": numbering, "productMedia": product_media,
                 "runtime": runtime,
                 "consensus": {"updatedAt": updated_at,
                               "reportedUpdatedAt": timestamp(section(parts, "Last Updated", "最后更新", "最近更新")),

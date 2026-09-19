@@ -627,6 +627,32 @@ def gather_journal_payload() -> dict[str, Any]:
     return payload
 
 
+def capture_product_media(product_id: str) -> dict[str, Any]:
+    """Run the bounded media command in the runtime's OS, without a model call."""
+    source = JournalSource(REPO_ROOT)
+    project = source.project()["id"]
+    from product_identity import get_identity
+    identity = get_identity(REPO_ROOT, project, create=False) if project else None
+    if not identity or identity["id"] != product_id:
+        raise ValueError("The selected product has changed")
+    arguments = ["scripts/core/runtime_artifacts.py", "--project", project, "media", "--retry"]
+    if detect_host_kind() == WINDOWS_HOST:
+        conversion = subprocess.run(["wsl.exe", "-d", "Ubuntu", "--exec", "wslpath", "-a", REPO_ROOT.as_posix()],
+                                    capture_output=True, text=True, timeout=15, check=True,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+        root = conversion.stdout.strip()
+        if not root.startswith("/") or "\n" in root or "\r" in root:
+            raise ValueError("Runtime path conversion failed")
+        command = ["wsl.exe", "-d", "Ubuntu", "--cd", root, "--exec", "python3", *arguments]
+    else:
+        command = [sys.executable, *arguments]
+    result = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, timeout=150,
+                            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}))
+    from product_media import media_projection
+    return {"ok": result.returncode == 0, "productMedia": media_projection(REPO_ROOT, project),
+            "error": None if result.returncode == 0 else "Product screenshot was not completed."}
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     def _request_allowed(self) -> bool:
         address, port = self.server.server_address[:2]
@@ -679,6 +705,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path.startswith("/api/product-media/"):
+            try:
+                match = re.fullmatch(r"/api/product-media/([0-9a-f]{32})/([A-Za-z0-9_.-]+\.(?:png|svg))", path)
+                if not match or parsed.query:
+                    raise ValueError("Invalid media identity")
+                raw, mime = JournalSource(REPO_ROOT).media_resource(*match.groups())
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+                self.end_headers()
+                self.wfile.write(raw)
+            except (ValueError, KeyError, UnicodeError):
+                self._json({"ok": False, "error": "Invalid media resource."}, code=400)
+            except OSError:
+                self._json({"ok": False, "error": "Media resource unavailable."}, code=404)
+            return
         if path in {"/api/journal", "/api/journal/log", "/api/journal/document"}:
             try:
                 query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=12)
@@ -771,6 +816,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == "/api/product-media/capture":
+            if not CONTROL_LOCK.acquire(blocking=False):
+                self._json({"ok": False, "error": "A runtime action is already in progress."}, code=409)
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 1024 or self.headers.get("Transfer-Encoding") or parsed.query:
+                    raise ValueError("Invalid request size")
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                if not isinstance(body, dict) or set(body) != {"productId"} or not isinstance(body["productId"], str) or not re.fullmatch(r"[0-9a-f]{32}", body["productId"]):
+                    raise ValueError("Invalid product identity")
+                status = gather_status_payload()
+                process = status.get("parsed", {}).get("loop", {}).get("processState")
+                if CONTROL_ACTION or (REPO_ROOT / ".auto-loop-stop-pending").exists() or status.get("ok") is not True or process not in {"stopped", "inactive"}:
+                    self._json({"ok": False, "error": "Capture retries require an idle runtime."}, code=409)
+                    return
+                CONTROL_ACTION = "capture"
+                payload = capture_product_media(body["productId"])
+                self._json(payload, code=200 if payload["ok"] else 400)
+            except (ValueError, KeyError, UnicodeError):
+                self._json({"ok": False, "error": "Invalid or changed product identity."}, code=400)
+            except (OSError, subprocess.SubprocessError):
+                self._json({"ok": False, "error": "Product screenshot command unavailable."}, code=503)
+            finally:
+                CONTROL_ACTION = ""
+                CONTROL_LOCK.release()
+            return
         if path == "/api/language":
             try:
                 length = int(self.headers.get("Content-Length", "0"))

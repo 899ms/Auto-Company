@@ -64,6 +64,62 @@ class JournalFixture(unittest.TestCase):
 
 
 class JournalTests(JournalFixture):
+    def test_persistent_numbers_replace_only_their_exact_program_bound_cycles(self):
+        from product_identity import reserve_cycle, update_cycle
+        self.write("projects/probe/index.html", "<p>Real file</p>")
+        self.write(".auto-company.local", "ACTIVE_PROJECT=projects/probe\n")
+        first = reserve_cycle(self.root, "projects/probe", "attempt-a", 1)
+        update_cycle(self.root, first["cycleId"], "completed")
+        second = reserve_cycle(self.root, "projects/probe", "attempt-b", 1)
+        update_cycle(self.root, second["cycleId"], "completed")
+        self.ledger(record(first["cycleId"], project="projects/probe"),
+                    record(second["cycleId"], project="projects/probe"), record())
+        before = (self.root / "logs/usage.jsonl").read_bytes()
+        data = self.source.snapshot()
+        rows = {cycle["id"]: cycle for cycle in data["cycles"]}
+        self.assertEqual([rows[row["cycleId"]]["number"] for row in (first, second)], [1, 2])
+        self.assertEqual(rows[second["cycleId"]]["runCycleNumber"], 1)
+        self.assertEqual(rows["cycle-0001-run-a"]["numbering"], "legacy")
+        self.assertEqual(data["project"]["stableId"], second["productId"])
+        self.assertEqual((self.root / "logs/usage.jsonl").read_bytes(), before)
+
+    def test_unconfirmed_reservation_is_visible_without_invented_usage_or_live_status(self):
+        from product_identity import reserve_cycle, update_cycle, recover_cycles
+        self.write("projects/probe/index.html", "<p>Real file</p>")
+        self.write(".auto-company.local", "ACTIVE_PROJECT=projects/probe\n")
+        cycle = reserve_cycle(self.root, "projects/probe", "uncertain", 1)
+        update_cycle(self.root, cycle["cycleId"], "dispatching")
+        recover_cycles(self.root)
+        row = self.source.snapshot()["cycles"][0]
+        self.assertEqual(row["status"], "startup_unconfirmed")
+        self.assertFalse(row["active"])
+        self.assertIsNone(row["usage"]["totalTokens"])
+        self.assertFalse(row["durationReliable"])
+
+    def test_creation_links_exploration_explicitly_without_relabeling_its_number(self):
+        from product_identity import reserve_cycle, register_project, update_cycle
+        cycle = reserve_cycle(self.root, "", "exploration", 1)
+        self.write("projects/probe/index.html", "<p>Real file</p>")
+        register_project(self.root, "projects/probe", cycle["cycleId"])
+        update_cycle(self.root, cycle["cycleId"], "completed")
+        import hashlib
+        text = "# Real delivery file\n"
+        self.write("projects/probe/DELIVERY.md", text)
+        self.write("logs/artifacts/" + "a" * 32 + ".json", json.dumps({
+            "version": 1, "id": "a" * 32, "kind": "document", "project": "projects/probe",
+            "cycleId": cycle["cycleId"], "recordedAt": "2026-09-19T01:00:00+00:00", "source": "runner",
+            "path": "projects/probe/DELIVERY.md", "sha256": hashlib.sha256(text.encode()).hexdigest()}))
+        data = self.source.snapshot()
+        self.assertEqual(data["project"]["id"], "projects/probe")
+        row = data["cycles"][0]
+        self.assertEqual(row["identityKind"], "exploration")
+        self.assertIsNone(row["stableProductId"])
+        self.assertEqual(row["linkedProductId"], data["project"]["stableId"])
+        self.assertEqual(row["projectStatus"], "current")
+        self.assertEqual(data["artifactCollection"]["selectedProject"], "projects/probe")
+        self.assertEqual(row["artifacts"][0]["path"], "projects/probe/DELIVERY.md")
+        self.assertEqual(data["artifacts"][0]["path"], "projects/probe/DELIVERY.md")
+
     def test_unique_id_preserves_restarted_numbers_and_ignores_prose_cycle_count(self):
         first = record()
         second = record("cycle-0001-run-b", started_at="2026-09-18T13:00:00+08:00")
@@ -170,7 +226,7 @@ class JournalTests(JournalFixture):
         project = self.source.snapshot()["project"]
         self.assertEqual(project, {"id": "projects/probe", "name": "Probe", "displayName": "Probe",
                                   "description": "Bound description", "source": "project_metadata",
-                                  "status": "recorded", "recordedAt": "2026-09-19T01:00:00+00:00"})
+                                  "status": "recorded", "recordedAt": "2026-09-19T01:00:00+00:00", "stableId": None})
         self.assertEqual(self.source.documents(), [], "legacy root delivery cannot cross product selection")
         self.write(".auto-company.local", "ACTIVE_PROJECT=projects/other\n")
         self.write("projects/other/README.md", "new selection")
@@ -374,10 +430,10 @@ class JournalHTTPTests(JournalFixture):
             thread.join(3)
         self.addCleanup(close)
 
-    def request(self, path, method="GET", headers=None):
+    def request(self, path, method="GET", headers=None, body=None):
         connection = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
         try:
-            connection.request(method, path, headers=headers or {})
+            connection.request(method, path, body=body, headers=headers or {})
             response = connection.getresponse()
             return response.status, response.read(), dict(response.getheaders())
         finally:
@@ -386,7 +442,7 @@ class JournalHTTPTests(JournalFixture):
     def test_every_write_route_is_forbidden_and_source_unchanged(self):
         self.ledger(record())
         before = {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
-        for path in ("/api/action/start", "/api/action/stop", "/api/language", "/api/journal", "/anything"):
+        for path in ("/api/action/start", "/api/action/stop", "/api/language", "/api/journal", "/api/product-media/capture", "/anything"):
             for method in ("POST", "PUT", "PATCH", "DELETE"):
                 self.assertEqual(self.request(path, method)[0], 403)
         after = {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
@@ -464,6 +520,50 @@ class ProductionJournalHTTPTests(JournalFixture):
         self.addCleanup(close)
 
     request = JournalHTTPTests.request
+
+    def test_registered_media_is_served_as_bytes_and_unknown_paths_are_rejected(self):
+        raw = b"\x89PNG\r\n\x1a\n\xff\x00"
+        path = "/api/product-media/" + "a" * 32 + "/" + "b" * 64 + ".png"
+        with mock.patch.object(data_module.JournalSource, "media_resource", return_value=(raw, "image/png")) as read:
+            code, body, headers = self.request(path)
+            self.assertEqual((code, body, headers["Content-Type"]), (200, raw, "image/png"))
+            self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+            read.assert_called_once_with("a" * 32, "b" * 64 + ".png")
+            self.assertEqual(self.request(path + "?path=private")[0], 400)
+            self.assertEqual(self.request("/api/product-media/../../.env")[0], 400)
+
+    def test_media_retry_requires_idle_runtime_and_never_calls_start(self):
+        body = json.dumps({"productId": "a" * 32})
+        headers = {"Content-Type": "application/json"}
+        with mock.patch.object(production, "capture_product_media", return_value={"ok": True}) as capture, \
+                mock.patch.object(production, "run_dashboard_action", side_effect=AssertionError("Must not run models")):
+            self.runtime_status["parsed"]["loop"]["processState"] = "running"
+            self.assertEqual(self.request("/api/product-media/capture", "POST", headers, body)[0], 409)
+            capture.assert_not_called()
+            self.runtime_status["parsed"]["loop"]["processState"] = "stopped"
+            self.assertEqual(self.request("/api/product-media/capture", "POST", headers, body)[0], 200)
+            capture.assert_called_once_with("a" * 32)
+            self.assertEqual(self.request("/api/product-media/capture", "POST", headers, '{}')[0], 400)
+
+    def test_start_cannot_race_with_a_manual_capture(self):
+        entered, finish = threading.Event(), threading.Event()
+        def capture(_product):
+            entered.set()
+            finish.wait(3)
+            return {"ok": True}
+        headers = {"Content-Type": "application/json"}
+        with mock.patch.object(production, "capture_product_media", side_effect=capture), \
+                mock.patch.object(production, "run_dashboard_action", side_effect=AssertionError("No concurrent start")):
+            thread = threading.Thread(target=lambda: self.request("/api/product-media/capture", "POST", headers, json.dumps({"productId": "a" * 32})))
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(2))
+                self.assertEqual(production.CONTROL_ACTION, "capture")
+                self.assertEqual(self.request("/api/action/start", "POST", headers, '{}')[0], 409)
+            finally:
+                finish.set()
+                thread.join(4)
+        self.assertEqual(production.CONTROL_ACTION, "")
 
     def test_root_and_journal_aliases_use_current_dashboard(self):
         for route in ("/", "/index.html", "/journal", "/journal/", "/journal/index.html"):
