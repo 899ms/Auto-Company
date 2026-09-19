@@ -106,7 +106,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   }
   function metadata(cycle) {
     const row = element('div', 'cycle-meta');
-    row.append(element('span', cycle.status === 'failed' ? 'status-failed' : '', statusLabel(cycle.status)));
+    if (cycle.workReport?.phase) row.append(element('span', 'reported-phase', message(`workPhase_${cycle.workReport.phase}`)));
+    if (['failed', 'interrupted', 'unknown', 'completed_with_timeout'].includes(cycle.status)) row.append(element('span', cycle.status === 'failed' ? 'status-failed' : '', statusLabel(cycle.status)));
     row.append(element('span', '', message('startAt', { time: formatTime(cycle.startedAt) })));
     const elapsed = duration(cycle);
     if (elapsed) row.append(element('span', '', elapsed));
@@ -164,73 +165,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     }
     return list;
   }
-  function fullReport(cycle) {
-    if (!cycle.report) return null;
-    const details = bindDisclosure(element('details', 'report-disclosure'), `report:${cycle.id}`);
-    const summary = element('summary', '', message('fullReport'));
-    const body = element('div', 'full-report');
-    for (const block of String(cycle.report).split(/\n\s*\n/)) {
-      if (!block.trim()) continue;
-      if (block.trim().startsWith('```')) {
-        body.append(element('pre', 'report-code', block.replace(/^```[^\n]*\n?/, '').replace(/\n?```\s*$/, '')));
-      } else if (block.trim().startsWith('|')) {
-        const rows = reportRows({ report: block }, Infinity);
-        if (rows.length) body.append(resultList(rows));
-      } else if (/^\s*[-*]\s/.test(block)) {
-        const list = element('ul');
-        block.split('\n').filter((line) => line.trim()).forEach((line) => list.append(element('li', '', clean(line))));
-        body.append(list);
-      } else {
-        body.append(element('p', '', clean(block)));
-      }
-    }
-    details.append(summary, body);
-    return details;
-  }
-  function recentExecution(events) {
-    const commands = new Set();
-    const recent = [];
-    for (const event of [...(events || [])].reverse()) {
-      if (!['command', 'files', 'error'].includes(event.kind)) continue;
-      if (event.kind === 'command' && event.itemId) {
-        if (commands.has(event.itemId)) continue;
-        commands.add(event.itemId);
-      }
-      recent.push(event);
-      if (recent.length === 3) break;
-    }
-    return recent;
-  }
-  function eventList(cycle) {
-    const events = recentExecution(cycle.events);
-    const section = element('section', 'observed-events');
-    const heading = iconLabel(element('h3', 'content-heading'), 'terminal', message('recentExecution'));
-    section.append(heading);
-    if (!events.length) { section.append(element('p', 'sidebar-note', message('noEvents'))); return section; }
-    const list = element('ol', 'event-list');
-    for (const [index, event] of events.entries()) {
-      const row = element('li');
-      const time = element('time', '', formatTime(event.observedAt));
-      if (event.observedAt) time.dateTime = event.observedAt;
-      const body = element('div', 'event-body');
-      const label = event.kind === 'command' ? message(event.phase === 'completed' ? 'commandEndedLabel' : 'commandStartedLabel') : event.kind === 'files' ? message('fileChangesLabel') : message(`event_${event.kind}`);
-      body.append(iconLabel(element('span', 'event-label'), event.kind === 'files' ? 'file-text' : 'terminal', label));
-      if (event.kind === 'command' && event.command) {
-        const details = bindDisclosure(element('details', 'event-command'), `command:${cycle.id}:${event.itemId || event.observedAt || index}`);
-        details.append(element('summary', '', message('exactCommand')), element('pre', 'report-code', event.command));
-        body.append(element('code', 'command-preview', event.command), details);
-        if (event.commandTruncated) body.append(element('span', 'sidebar-note', message('commandTruncated')));
-      } else if (event.kind === 'files') body.append(element('p', 'event-paths', (event.paths || []).join('\n')));
-      if (event.kind === 'command' && event.phase === 'completed') body.append(element('span', 'event-result', `${message('exitCode')}: ${Number.isInteger(event.exitCode) ? event.exitCode : message('unknown')}`));
-      row.append(time, body); list.append(row);
-    }
-    section.append(list);
-    const source = bindDisclosure(element('details', 'source-disclosure'), `event-source:${cycle.id}`);
-    source.append(element('summary', '', message('sourceAndScope')), element('p', 'sidebar-note', message('eventTimeNote')));
-    if (cycle.eventStatus === 'partial') source.append(element('p', 'sidebar-note', message('partialEvents')));
-    section.append(source);
-    return section;
-  }
   function checkCounts(tests) {
     if (!tests) return {};
     const result = { ...tests };
@@ -238,37 +172,102 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     if (keys.every((key) => Number.isInteger(tests[key]) && tests[key] >= 0) && tests.failures + tests.errors + tests.skipped <= tests.tests) result.passed = tests.tests - tests.failures - tests.errors - tests.skipped;
     return result;
   }
-  function checkSection(cycle) {
-    const section = element('section', 'recent-checks');
-    section.append(iconLabel(element('h3', 'content-heading'), 'list-checks', message('recentChecks')));
+  function progressState(status) {
+    if (status === 'completed') return 'completed';
+    if (status === 'running') return 'running';
+    if (['paused', 'waiting_limit', 'circuit_break', 'interrupted', 'completed_with_timeout', 'stopped'].includes(status)) return 'paused';
+    if (status === 'failed') return 'failed';
+    if (['pending', 'not_started'].includes(status)) return 'pending';
+    return 'unknown';
+  }
+  function progressIcon(status, label = statusLabel(status)) {
+    const state = progressState(status);
+    const node = element('span', `progress-node progress-${state}`);
+    if (state === 'pending') label = message('pendingCycle');
+    node.setAttribute('role', 'img'); node.setAttribute('aria-label', label); node.title = label;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    for (const [key, value] of Object.entries({ viewBox: '0 0 32 32', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) svg.setAttribute(key, value);
+    // Original status geometry: the sector indicates activity, never a measured percentage.
+    const marks = {
+      completed: '<path d="m10.5 16 3.8 3.8 7.2-8"/>',
+      running: '<path d="M16 6a10 10 0 0 1 10 10H16Z" fill="currentColor" opacity=".35" stroke="none"/><path d="M16 8v8l-4 3"/>',
+      paused: '<path d="M12.8 11.5v9m6.4-9v9" stroke-width="2.8"/>',
+      pending: '<path d="M16 9v7l4 2"/>',
+      failed: '<path d="m12 12 8 8m0-8-8 8"/>',
+      unknown: '<path d="M12.5 12a3.5 3.5 0 0 1 7 0c0 3-3.5 2.5-3.5 5m0 4h.01"/>',
+    };
+    svg.innerHTML = `<circle cx="16" cy="16" r="13"/>${marks[state]}`;
+    node.append(svg);
+    return node;
+  }
+  function checkPresentation(cycle) {
     const check = cycle.latestCheck;
-    if (!check) { section.append(element('p', 'sidebar-note', message(cycle.checkStatus === 'invalid' ? 'check_invalid' : 'check_unregistered'))); return section; }
-    const status = check.freshness === 'stale' || check.evidenceStatus === 'changed' || check.evidenceStatus === 'missing' ? 'stale' : cycle.checkStatus || check.state;
-    const failed = status === 'completed' && (check.exitCode > 0 || check.tests?.failures > 0 || check.tests?.errors > 0);
-    const result = element('p', `check-state${failed ? ' status-failed' : ''}`, message(failed ? 'checkFailedRun' : `check_${status}`));
-    if (Number.isInteger(check.exitCode)) result.append(element('span', '', ` · ${message('exitCode')}: ${check.exitCode}`));
-    section.append(result);
-    const tests = check.tests ? checkCounts(check.tests) : null;
-    if (tests && status !== 'invalid') {
-      const counts = element('dl', 'check-counts');
-      for (const [key, label] of [['passed', 'checkPassed'], ['failures', 'checkFailed'], ['errors', 'checkErrors'], ['skipped', 'checkSkipped'], ['tests', 'checkTotal']]) {
-        if (knownNumber(tests[key])) counts.append(element('dt', '', message(label)), element('dd', '', number(tests[key])));
+    if (!check) return { status: 'unknown', detail: message(cycle.checkStatus === 'invalid' ? 'check_invalid' : 'noRegisteredCheck') };
+    const stale = cycle.checkStatus === 'stale' || check.freshness === 'stale' || ['changed', 'missing', 'stale'].includes(check.evidenceStatus);
+    if (stale) return { status: 'unknown', detail: message('check_stale') };
+    const status = cycle.checkStatus || check.state;
+    if (status === 'running') return { status, detail: message('check_running') };
+    if (status === 'interrupted') return { status, detail: message('check_interrupted') };
+    if (status === 'invalid') return { status: 'unknown', detail: message('check_invalid') };
+    const counts = checkCounts(check.tests);
+    const valid = Number.isInteger(counts.passed);
+    const failed = check.exitCode > 0 || counts.failures > 0 || counts.errors > 0;
+    const completed = check.evidenceStatus === 'completed' && status === 'completed';
+    const result = completed && failed ? 'failed' : completed && check.exitCode === 0 && valid && counts.passed > 0 ? 'completed' : 'unknown';
+    const parts = [];
+    if (valid && completed) {
+      for (const [key, label] of [['passed', 'countPassed'], ['failures', 'countFailed'], ['errors', 'countErrors'], ['skipped', 'countSkipped']]) {
+        if (counts[key] > 0 || key === 'passed') parts.push(message(label, { count: number(counts[key]) }));
       }
-      if (counts.childElementCount) section.append(counts);
-      else section.append(element('p', 'sidebar-note', message('checkCountsUnknown')));
-    } else section.append(element('p', 'sidebar-note', message('checkCountsUnknown')));
-    const timestamp = check.endedAt || check.recordedAt || check.startedAt;
-    if (timestamp) section.append(element('p', 'sidebar-note', message('recordedAt', { time: formatTime(timestamp, true) })));
-    if (check.available === true && check.path) {
-      const link = element('a', 'check-report', message('checkReport'));
-      link.href = `/api/journal/document?path=${encodeURIComponent(check.path)}`; link.target = '_blank'; link.rel = 'noopener';
-      section.append(link);
     }
-    const source = bindDisclosure(element('details', 'source-disclosure'), `check-source:${cycle.id}:${check.id}`);
-    source.append(element('summary', '', message('sourceAndScope')), runtimeRows([[message('cycle'), `Cycle ${cycle.number ?? '—'} · ${check.cycleId || message('unknown')}`], [message('source'), [check.adapter, check.source].filter(Boolean).join(' · ') || message('unknown')], [message('reportAvailability'), message(`report_${['fresh', 'recorded', 'missing_or_stale', 'unsupported', 'unavailable'].includes(check.reportStatus) ? check.reportStatus : 'unavailable'}`)]]));
-    if (check.command) source.append(element('pre', 'report-code', Array.isArray(check.command) ? JSON.stringify(check.command) : check.command));
-    source.append(element('p', 'sidebar-note', message('checkScopeNote')));
-    section.append(source);
+    if (result === 'failed' && !(counts.failures > 0 || counts.errors > 0)) parts.push(message('checkFailedRun'));
+    if (!valid) parts.push(message('checkCountsUnknown'));
+    else if (!completed || result === 'unknown') parts.push(message('checkUnconfirmed'));
+    return { status: result, detail: parts.join(' · ') };
+  }
+  function cycleRecords(cycle) {
+    const section = element('section', 'cycle-records');
+    section.append(element('h3', 'content-heading', message('cycleRecords')));
+    if (cycle.projectStatus === 'other' || cycle.projectStatus === 'unknown') {
+      section.append(element('p', 'sidebar-note', message(cycle.projectStatus === 'other' ? 'otherProjectCycle' : 'unknownProjectCycle')));
+      return section;
+    }
+    const rows = [];
+    const check = cycle.latestCheck;
+    const presentation = checkPresentation(cycle);
+    rows.push({ kind: 'check', title: message('latestCheckRecord'), status: presentation.status, detail: presentation.detail,
+      time: check?.endedAt || check?.recordedAt || check?.startedAt,
+      path: check?.available === true ? check.path : null });
+    for (const artifact of cycle.artifacts || []) {
+      if (artifact.kind !== 'document') continue;
+      rows.push({ kind: 'document', time: artifact.recordedAt, title: message(artifact.available === true ? 'documentRecorded' : 'documentUnavailable'),
+        detail: String(artifact.path || artifact.label || '').split(/[\\/]/).pop() });
+    }
+    if (cycle.workReport && cycle.workReportStatus === 'valid') rows.push({ kind: 'report', time: cycle.workReport.recorded_at, title: message('workRecorded') });
+    // Missing timestamps remain unknown, rather than borrowing a cycle or consensus time.
+    rows.sort((a, b) => (Date.parse(a.time) || Infinity) - (Date.parse(b.time) || Infinity));
+    const list = element('ol', 'record-list');
+    for (const record of rows) {
+      const row = element('li', `record-row record-${record.kind}`);
+      const time = element('time', '', record.time ? formatTime(record.time) : '—');
+      if (record.time) { time.dateTime = record.time; time.title = formatTime(record.time, true); }
+      const body = element('div', 'record-body');
+      const title = element('div', 'record-title', record.title);
+      if (record.status) title.append(progressIcon(record.status, record.detail));
+      body.append(title);
+      if (record.detail || record.path) {
+        const detail = element('div', `record-detail${record.status === 'failed' ? ' status-failed' : ''}`);
+        if (record.detail) detail.append(element('span', 'record-counts', record.detail));
+        if (record.path) {
+          const link = element('a', 'check-report', message('checkReport'));
+          link.href = `/api/journal/document?path=${encodeURIComponent(record.path)}`; link.target = '_blank'; link.rel = 'noopener';
+          link.append(icon('external-link')); detail.append(link);
+        }
+        body.append(detail);
+      }
+      row.append(time, body); list.append(row);
+    }
+    section.append(list);
     return section;
   }
   function workReportDetails(cycle) {
@@ -279,9 +278,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
       section.append(element('p', 'sidebar-note', message(cycle.workReportStatus === 'invalid' ? 'invalidWorkReport' : 'missingWorkReport')));
       return section;
     }
-    section.append(element('p', 'report-source', `${message('reportedPhase')} · ${message(`workPhase_${work.phase}`)}`));
     if (work.blocker) section.append(element('p', 'work-blocker', `${message('workBlocker')}：${work.blocker}`));
-    section.append(element('p', 'report-source', message('structuredReportSource')));
     if (!cycle.active && !work.final) section.append(element('p', 'sidebar-note', message('unfinishedWorkReport')));
     return section;
   }
@@ -297,7 +294,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     article.setAttribute('aria-current', 'step');
     article.setAttribute('aria-labelledby', 'cycleTitle');
     const gutter = element('div', 'cycle-gutter');
-    gutter.append(element('span', 'cycle-word', 'CYCLE'));
     const cycleNumber = element('span', 'cycle-number', String(cycle.number ?? '—').padStart(2, '0'));
     cycleNumber.id = 'cycleNumber';
     gutter.append(cycleNumber);
@@ -322,9 +318,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     const workDetails = workReportDetails(cycle);
     if (workDetails) report.append(workDetails);
     body.append(report);
-    const observed = eventList(cycle);
-    if (observed) body.append(observed);
-    body.append(checkSection(cycle));
+    body.append(cycleRecords(cycle));
     const rows = cycle.workReport ? [] : reportRows(cycle);
     if (rows.length) {
       const results = element('section', 'results-section');
@@ -334,10 +328,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
       body.append(results);
     }
     if (cycle.report && !cycle.workReport) body.append(element('p', 'report-source', message('reportSource')));
-    const disclosure = fullReport(cycle);
-    if (disclosure) body.append(disclosure);
     body.append(logButton(cycle));
-    article.append(gutter, body);
+    article.append(gutter, progressIcon(cycle.status), body);
     container.append(article);
   }
   function renderHistory() {
@@ -350,15 +342,12 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
       const summary = element('summary');
       const association = cycle.projectStatus === 'other' ? message('otherProjectCycle') : cycle.projectStatus === 'unknown' ? message('unknownProjectCycle') : '';
       const timing = `${statusLabel(cycle.status)} · ${formatTime(cycle.startedAt)}${association ? ` · ${association}` : ''}`;
-      summary.append(element('span', 'history-number', String(cycle.number ?? '—').padStart(2, '0')), element('span', 'history-title', cycleTitle(cycle)), element('span', `history-meta${cycle.status === 'failed' ? ' status-failed' : ''}`, timing));
+      summary.append(element('span', 'history-number', String(cycle.number ?? '—').padStart(2, '0')), progressIcon(cycle.status), element('span', 'history-title', cycleTitle(cycle)), element('span', `history-meta${cycle.status === 'failed' ? ' status-failed' : ''}`, timing));
       const arrow = icon('chevron-right'); arrow.classList.add('history-chevron');
       arrow.setAttribute('aria-hidden', 'true');
       summary.append(arrow);
       const content = element('div', 'history-content');
       content.append(metadata(cycle));
-      const observed = eventList(cycle);
-      if (observed) content.append(observed);
-      content.append(checkSection(cycle));
       let report = cycle.workReport?.summary || clean(cycle.summary || '');
       if (/^[\[{]/.test(report)) report = cycleTitle(cycle);
       content.append(element('p', '', report || message('noSummary')));
@@ -366,8 +355,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
       if (workDetails) content.append(workDetails);
       const results = cycle.workReport ? [] : reportRows(cycle);
       if (results.length) content.append(resultList(results));
-      const disclosure = fullReport(cycle);
-      if (disclosure) content.append(disclosure);
+      content.append(cycleRecords(cycle));
       content.append(logButton(cycle));
       row.append(summary, content);
       history.append(row);
@@ -515,6 +503,12 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   function renderSidebar() {
     const sidebar = clear($('projectSidebar'));
     const data = state.data;
+    const overview = element('section', 'sidebar-block project-overview');
+    const name = element('h1', '', data.project?.name || message('noProject')); name.id = 'projectName';
+    const description = element('p', 'project-description', clean(data.project?.description)); description.id = 'projectDescription'; description.title = description.textContent;
+    const latest = state.currentCycle;
+    const date = element('p', 'sidebar-note', latest?.active ? message('currentRun') : latest ? message('latestRun', { date: formatDate(latest.startedAt) }) : message(readOnly() ? 'archived' : 'ready')); date.id = 'runHeading';
+    overview.append(name, description, date);
     const artifacts = element('section', 'sidebar-block');
     artifacts.append(element('h2', '', message('artifacts')));
     const visibleArtifacts = (data.artifacts || []).filter((artifact) => artifact.kind !== 'check');
@@ -522,7 +516,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
       const list = element('ul', 'artifact-list');
       for (const artifact of visibleArtifacts) {
         const item = element('li');
-        const label = artifact.kind === 'preview' ? message(artifact.available === false ? 'previewName' : 'productPreview') : artifact.label || artifact.path;
+        const label = artifact.kind === 'preview' ? message(artifact.available === false ? 'previewName' : 'productPreview') : artifact.path?.split(/[\\/]/).pop()?.toUpperCase() === 'DELIVERY.MD' ? message('deliveryDocument') : String(artifact.label || artifact.path || '').split(/[\\/]/).pop();
         if (artifact.available === false || (!artifact.path && !artifact.url)) {
           item.append(element('span', '', `${label} · ${unavailableArtifact(artifact)}`));
         } else {
@@ -548,11 +542,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     const usage = `${compactNumber(sum.totalTokens)}${knownNumber(sum.totalTokens) ? ' tokens' : ''}${sum.partial && sum.known ? message('usagePartialShort') : ''}`;
     const config = data.runtime || {};
     runtime.append(runtimeRows([[message('engine'), config.engine], [message('model'), config.model], [message('reasoning'), config.reasoning === 'unknown' ? message('unknown') : config.reasoning], [message('language'), languageLabel(config.language || data.language)], [message('recordedUsage'), usage]]));
-    runtime.append(element('p', 'sidebar-note', message(config.configSource === 'session_context' ? 'observedSession' : 'unconfirmedSession')));
     const details = bindDisclosure(element('details', 'runtime-disclosure'), 'runtime');
     details.append(element('summary', '', message('moreRuntime')), runtimeRows([[message('state'), runtimeLabel()], [message('source'), data.sourceName]]));
+    details.append(element('p', 'sidebar-note', message(config.configSource === 'session_context' ? 'observedSession' : 'unconfirmedSession')));
     runtime.append(details);
-    sidebar.append(artifacts, runtime);
+    sidebar.append(overview, artifacts, runtime);
   }
   function applyLanguage() {
     document.documentElement.lang = state.language;
@@ -588,19 +582,10 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     const focus = rememberFocus();
     const data = state.data;
     applyLanguage();
-    $('projectName').textContent = data.project?.name || message('noProject');
-    const fullDescription = clean(data.project?.description);
-    let description = fullDescription;
-    if (data.project?.name && description.startsWith(data.project.name)) {
-      description = description.slice(data.project.name.length).replace(/^[\s，,:：·—-]+/, '');
-    }
-    $('projectDescription').textContent = description.split(/[；;]/)[0];
-    $('projectDescription').title = fullDescription;
     let latest = latestCycle(data);
     if (!latest?.active && liveProcess() && data.runtime?.state === 'running') latest = { id: '__current__', number: data.runtime?.currentCycleNumber, startedAt: data.runtime?.lastRun, status: 'running', active: true, synthetic: true };
     if (latest?.active && state.statusFailed) latest = { ...latest, active: false, status: 'unknown' };
     state.currentCycle = latest;
-    $('runHeading').textContent = latest?.active ? message('currentRun') : latest ? message('latestRun', { date: formatDate(latest.startedAt) }) : message(readOnly() ? 'archived' : 'ready');
     renderCurrent(latest);
     renderHistory();
     renderSidebar();

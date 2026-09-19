@@ -119,7 +119,8 @@ test("journal renders source history and never treats a report as live telemetry
   await expect(page.locator("#cycleNumber")).toContainText("03");
   await expect(page.locator("#cycleTitle")).toContainText("第 3 轮工作已完成");
   await expect(page.locator("body")).not.toContainText("等待用户检查新界面");
-  await expect(page.locator("#projectSidebar > section")).toHaveCount(2);
+  await expect(page.locator("#projectSidebar #projectName")).toHaveText("Journal Fixture");
+  await expect(page.locator(".topbar #projectName")).toHaveCount(0);
   const snapshot = await (await page.request.get(`${journal.url}/api/journal`)).json();
   expect(snapshot.consensus).not.toHaveProperty("nextAction");
   await expect(page.locator("body")).toContainText(/只读|预览/);
@@ -249,11 +250,11 @@ test("cycle timeline preserves disclosures, keyboard focus and selected logs acr
   await expect(page.locator("#logText")).toContainText("Fixture log 1");
 });
 
-test("typed checks and exact commands retain unknowns, provenance and narrow bilingual layout", async ({ page, journal }) => {
+test("compact records preserve failures and unknowns while hiding technical details in both languages", async ({ page, journal }) => {
   const data = await (await page.request.get(`${journal.url}/api/journal`)).json();
   const current = data.cycles[0];
   current.checkStatus = "completed";
-  current.latestCheck = { id: "check-fixture", cycleId: current.id, state: "completed", available: false,
+  current.latestCheck = { id: "check-fixture", cycleId: current.id, state: "completed", evidenceStatus: "completed", available: false,
     source: "runner", adapter: "junit", reportStatus: "fresh", freshness: "fresh", exitCode: 1,
     tests: { tests: 12, failures: 2, errors: 1, skipped: 3 }, recordedAt: data.generatedAt,
     command: ["python", "test_" + "long".repeat(80) + ".py"] };
@@ -270,17 +271,12 @@ test("typed checks and exact commands retain unknowns, provenance and narrow bil
   let language = "en";
   await page.route("**/api/journal", (route) => route.fulfill({ json: { ...data, language, languageState: null } }));
   await page.goto(`${journal.url}/journal`);
-  await expect(page.locator("#currentCycle .recent-checks")).toContainText("Check failed");
-  await expect(page.locator("#currentCycle .check-counts")).toHaveText("Passed6Failed2Errors1Skipped3Total12");
-  await expect(page.locator("#currentCycle .observed-events")).toContainText("Command finished");
-  await expect(page.locator("#currentCycle .event-list > li")).toHaveCount(3);
-  await expect(page.locator("#currentCycle .event-command")).toHaveCount(1);
+  await expect(page.locator("#currentCycle .record-check")).toContainText("6 passed · 2 failed · 1 errors · 3 skipped");
+  await expect(page.locator("#currentCycle .record-check .progress-failed")).toHaveCount(1);
+  await expect(page.locator("#currentCycle")).not.toContainText(command);
+  await expect(page.locator("#currentCycle .report-disclosure, #currentCycle .event-command")).toHaveCount(0);
   await expect(page.locator("#projectSidebar")).toContainText("Preview ended");
   await expect(page.locator("#projectSidebar")).not.toContainText("File changed or missing");
-  await page.locator("#currentCycle .event-command > summary").click();
-  await expect(page.locator("#currentCycle .event-command pre")).toHaveText(command);
-  await page.locator("#currentCycle .recent-checks .source-disclosure > summary").click();
-  await expect(page.locator("#currentCycle .recent-checks")).toContainText(current.id);
   for (const locale of ["en", "zh-CN"]) {
     language = locale;
     await page.locator("#refreshButton").click();
@@ -293,8 +289,17 @@ test("typed checks and exact commands retain unknowns, provenance and narrow bil
   current.latestCheck = null;
   current.checkStatus = "unregistered";
   await page.locator("#refreshButton").click();
-  await expect(page.locator("#currentCycle .recent-checks")).toContainText("暂无已登记检查");
-  await expect(page.locator("#currentCycle .check-counts")).toHaveCount(0);
+  await expect(page.locator("#currentCycle .record-check")).toContainText("暂无已登记检查");
+  await expect(page.locator("#currentCycle .record-check")).not.toContainText("通过");
+  current.latestCheck = { state: "completed", evidenceStatus: "missing", exitCode: 0, tests: { tests: 7, failures: 0, errors: 0, skipped: 0 } };
+  current.checkStatus = "stale";
+  await page.locator("#refreshButton").click();
+  await expect(page.locator("#currentCycle .record-check")).toContainText("过期");
+  await expect(page.locator("#currentCycle .record-check")).not.toContainText("7 项通过");
+  current.projectStatus = "unknown";
+  data.project.id = null;
+  await page.locator("#refreshButton").click();
+  await expect(page.locator("#currentCycle .record-check")).toHaveCount(0);
 });
 
 test("running elapsed freezes on disconnect and rejects older snapshots", async ({ page, journal }) => {

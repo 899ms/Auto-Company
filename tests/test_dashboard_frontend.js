@@ -21,7 +21,7 @@ function helpers() {
   // copied application logic, network request or production testing hook.
   const binding = app.indexOf("\n  document.querySelectorAll('[data-tab]').forEach");
   assert.ok(binding > 0, "Journal event wiring must follow its helper declarations");
-  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows, liveDuration, checkCounts, latestCycle, recentExecution, unavailableArtifact };\n})();", context);
+  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows, liveDuration, checkCounts, checkPresentation, progressState, latestCycle, unavailableArtifact };\n})();", context);
   context.journal.state.language = "en";
   return { ...context.journal, messages: context.window.JOURNAL_MESSAGES, fields };
 }
@@ -170,19 +170,32 @@ test("project selection never promotes unrelated or unknown history into current
 });
 
 
-test("recent execution keeps three distinct actual actions and the latest command state", () => {
-  const { recentExecution } = helpers();
-  const events = [
-    { kind: "command", itemId: "old", phase: "completed" },
-    { kind: "command", itemId: "a", phase: "started", command: "exact command" },
-    { kind: "command", itemId: "a", phase: "completed", command: "exact command", exitCode: 0 },
-    { kind: "files", paths: ["file.txt"] }, { kind: "error" },
-    { kind: "turn.completed" }, { kind: "process.exited" },
-  ];
-  assert.deepEqual(Array.from(recentExecution(events)), [events[4], events[3], events[2]]);
-  assert.equal(recentExecution(events)[2].command, "exact command");
-  assert.equal(events.length, 7);
-  assert.equal(recentExecution([{ kind: "command" }, { kind: "command" }]).length, 2);
+test("compact checks never promote stale, incomplete or failed evidence to success", () => {
+  const { checkPresentation } = helpers();
+  const check = { state: "completed", evidenceStatus: "completed", exitCode: 0, tests: { tests: 7, failures: 0, errors: 0, skipped: 0 } };
+  const show = (changes) => checkPresentation({ latestCheck: { ...check, ...changes } });
+  assert.equal(show({}).status, "completed");
+  assert.equal(show({}).detail, "7 passed");
+  for (const changes of [{ evidenceStatus: "missing" }, { freshness: "stale" }, { tests: null }, { exitCode: null }, { evidenceStatus: "unknown" }]) {
+    assert.equal(show(changes).status, "unknown");
+  }
+  assert.equal(show({ exitCode: 1 }).status, "failed");
+  assert.match(show({ exitCode: 1 }).detail, /failed/i);
+  assert.equal(show({ tests: { tests: 7, failures: 1, errors: 0, skipped: 0 } }).status, "failed");
+  assert.equal(show({ state: "interrupted" }).status, "interrupted");
+  assert.equal(show({ tests: { tests: 7, failures: 0, errors: 0, skipped: 7 } }).status, "unknown");
+  assert.equal(checkPresentation({}).status, "unknown");
+});
+
+test("cycle progress distinguishes execution completion, pauses and unknown states", () => {
+  const { progressState } = helpers();
+  assert.equal(progressState("completed"), "completed");
+  assert.equal(progressState("running"), "running");
+  assert.equal(progressState("pending"), "pending");
+  for (const status of ["interrupted", "paused", "completed_with_timeout", "waiting_limit"]) assert.equal(progressState(status), "paused");
+  assert.equal(progressState("failed"), "failed");
+  assert.equal(progressState("unexpected"), "unknown");
+  assert.equal(progressState(undefined), "unknown");
 });
 
 test("unavailable previews use lifecycle labels while documents keep file evidence labels", () => {

@@ -25,7 +25,7 @@ Optional Cursor and OpenAI-compatible adapters require explicit configuration. S
 
 ![Auto Company Dashboard](presentation/dashboard-showcase.png)
 
-The dashboard connects cycles in a vertical timeline, with recorded execution events, check results, deliverables, usage, and logs. This screenshot shows three real Outline Desk cycles in read-only archive mode. Titles and summaries are structured model reports; runtime facts and supported check results are recorded by the program. Missing or expired evidence stays explicit, and recorded usage is not a complete bill. See the [collection contract and supported tools](docs/runtime-observability.md).
+The dashboard connects cycles in a vertical timeline, with concise work records, check results, deliverables, usage, and logs. This screenshot shows three real Outline Desk cycles in read-only archive mode. Titles and summaries are structured model reports; runtime facts and supported check results are recorded by the program. Missing or expired evidence stays explicit, and recorded usage is not a complete bill. See the [collection contract and supported tools](docs/runtime-observability.md).
 
 ## What Is This?
 
