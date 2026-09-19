@@ -1,4 +1,4 @@
-# Runtime observations (local prototype)
+# Runtime observations and cycle work reports
 
 The Codex adapter projects its JSONL stream into `logs/<cycle-id>.events.jsonl`.
 The dashboard reads that stream while the cycle runs. No extra model calls or
@@ -53,16 +53,19 @@ require separate runner integration. A preview started inside a model cycle is
 owned by that cycle and ends during normal supervisor cleanup; keeping a preview
 alive is a separate operator action, not an implicit cycle side effect.
 
-Artifact records live in `logs/artifacts/`. The prototype bounds discovery to
+Artifact records live in `logs/artifacts/`. The reader bounds discovery to
 501 entries, checks the newest 100 of those, and exposes up to 20 records and
 three loopback checks per refresh. It is not an unlimited artifact archive.
 
-## Verification model
+## Verification settings
 
-`MODEL=gpt-5.6-luna CODEX_REASONING_EFFORT=high ENGINE=codex`.
-This is the local experiment's policy in ignored `AGENTS.md`; it is not a new
-production default. `CODEX_REASONING_EFFORT` is optional and does not substitute
-for observed configuration in the dashboard.
+Continuous-cycle verification covered both `MODEL=gpt-5.6-luna` and
+`MODEL=gpt-5.6-terra`, each with `CODEX_REASONING_EFFORT=high ENGINE=codex`.
+Each model completed three successive cycles with distinct session identities,
+live and final work reports, preserved historical reports and registered checks.
+These are bounded local verification settings, not new production defaults or a
+long-term reliability guarantee. `CODEX_REASONING_EFFORT` is optional and does
+not substitute for observed configuration in the dashboard.
 
 ## Cycle work report v1
 
