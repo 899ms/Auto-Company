@@ -77,6 +77,14 @@ test("full report tables retain rows that the summary intentionally abbreviates"
   assert.equal(complete[5].text, "Passed 6");
 });
 
+test("structured task titles preserve meaning while interruption remains a runtime fact", () => {
+  const { cycleTitle, statusLabel, messages } = helpers();
+  const cycle = { status: "interrupted", events: [{}], summary: "Unrelated legacy sentence",
+    workReport: { title: "修复重复键匹配，补齐验证" } };
+  assert.equal(cycleTitle(cycle), "修复重复键匹配，补齐验证");
+  assert.equal(statusLabel(cycle.status), messages.en.interrupted);
+});
+
 test("duration and timestamps never imply a reliable end to interrupted work", () => {
   const { duration, formatTime, messages } = helpers();
   const cycle = { startedAt: "2026-09-18T12:00:00Z", endedAt: "2026-09-18T12:01:30Z", status: "completed" };

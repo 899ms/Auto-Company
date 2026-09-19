@@ -63,3 +63,64 @@ three loopback checks per refresh. It is not an unlimited artifact archive.
 This is the local experiment's policy in ignored `AGENTS.md`; it is not a new
 production default. `CODEX_REASONING_EFFORT` is optional and does not substitute
 for observed configuration in the dashboard.
+
+## Cycle work report v1
+
+The existing `/api/journal` response adds `cycles[].workReport` and
+`workReportStatus` (`valid`, `missing`, `invalid`) for the most recent 30 cycles.
+The work report is a model-authored description, not verified business state.
+Runtime state, unique cycle identity, elapsed time, checks, artifacts and usage
+continue to use their existing program-owned sources. No extra model extraction
+or summarization call is made, and no new Web API is required.
+
+The coordinator writes early, after material progress or a blocker, and before
+finishing. Subagents do not write this report. `auto-loop.sh` appends the same
+contract after localized/customized instructions, without changing `PROMPT.md`,
+consensus headings, protected human instructions or the normal final answer.
+The protocol is engine-neutral; real model verification currently covers Codex.
+
+From the framework directory, inside a cycle:
+
+```sh
+python3 scripts/core/cycle_reports.py write \
+  --title 'Check duplicate CSV keys' \
+  --summary 'Added duplicate-key handling and ran the registered checks.' \
+  --phase review --next-kind human_input \
+  --next-action 'Review the example comparison and exported report.' --final
+```
+
+| CLI field | Contract |
+| --- | --- |
+| `--title` | 1–60 characters; concise business task, not a completion assertion |
+| `--summary` | 1–500 characters; latest factual work description |
+| `--phase` | `planning`, `implementing`, `validating`, `blocked`, `review` |
+| `--blocker` | Required only when blocked, 1–300 characters; otherwise empty |
+| `--next-kind` | `planned`, `human_input`, `none` |
+| `--next-action` | 1–300 characters, or empty exactly when kind is `none` |
+| `--final` | This is the cycle's final report, not product acceptance |
+
+All text is trimmed, single-line plain text, in the current product language.
+`implementing` describes carrying out the task, including analysis; it does not
+independently assert that product code has changed.
+The helper supplies `version: 1`, `cycle_id`, `project`, UTC `recorded_at` and
+`source: model_report` from the current runtime context. JSON uses `title`,
+`summary`, `phase`, `blocker`, `next_action`, `next_action_kind` and boolean `final`
+for the user fields. Unknown/missing keys, unsupported versions and wrong cycle
+identities are rejected; report input is bounded to 16 KiB. The helper replaces
+`logs/<cycle-id>.work.json` atomically; failed validation or replacement preserves
+the last valid report. Log rotation removes its paired work report.
+
+No report value is allowed to classify a cycle as successful, unblock governance,
+change language/selection, stop execution, or mark tests passed. A blocked work
+report can coexist with a normally completed model call; an interrupted cycle
+can have a final or partial report. The dashboard keeps these facts separate.
+Next action remains a recorded intention, never an inferred execution state.
+
+On a missing/invalid report the page explicitly falls back to the existing
+report. If no final update arrives, it shows the last valid update as unfinished.
+The optional prompt helper failing does not prevent the loop from running.
+Report failure does not create automatic model retries; the coordinator may
+correct input once before continuing its original task. This is validated local
+tool input, not provider-level constrained decoding: models can omit reporting.
+Single coordinator ownership is a workflow contract, not a filesystem security
+boundary; an agent with direct file access can still edit its own report.

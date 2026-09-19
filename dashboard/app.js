@@ -58,6 +58,7 @@
     return seconds < 60 ? message('seconds', { seconds }) : message('minutes', { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
   }
   function cycleTitle(cycle) {
+    if (cycle.workReport) return cycle.workReport.title;
     if (cycle.status === 'interrupted' && cycle.events?.length) return message('interruptedSummary');
     if (cycle.synthetic && cycle.status !== 'running') return statusLabel(cycle.status);
     let title = clean(cycle.summary || cycle.report || '').split('\n').find((line) => line.trim()) || '';
@@ -148,8 +149,8 @@
   function eventList(cycle) {
     const events = (cycle.events || []).filter((event) => event.kind !== 'report');
     if (!events.length) return null;
-    const section = element('section', 'observed-events');
-    section.append(element('h3', '', message('observedEvents')));
+    const section = bindDisclosure(element('details', 'observed-events report-disclosure'), `events:${cycle.id}`);
+    section.append(element('summary', '', message('observedEvents')));
     section.append(element('p', 'sidebar-note', message('eventTimeNote')));
     const list = element('ol', 'event-list');
     for (const event of events.slice(-12)) {
@@ -165,6 +166,20 @@
     }
     section.append(list);
     if (cycle.eventStatus === 'partial') section.append(element('p', 'sidebar-note', message('partialEvents')));
+    return section;
+  }
+  function workReportDetails(cycle) {
+    const work = cycle.workReport;
+    if (!work && !['invalid', 'missing'].includes(cycle.workReportStatus)) return null;
+    const section = element('div', 'work-report-details');
+    if (!work) {
+      section.append(element('p', 'sidebar-note', message(cycle.workReportStatus === 'invalid' ? 'invalidWorkReport' : 'missingWorkReport')));
+      return section;
+    }
+    section.append(element('p', 'report-source', `${message('reportedPhase')} · ${message(`workPhase_${work.phase}`)}`));
+    if (work.blocker) section.append(element('p', 'work-blocker', `${message('workBlocker')}：${work.blocker}`));
+    section.append(element('p', 'report-source', message('structuredReportSource')));
+    if (!cycle.active && !work.final) section.append(element('p', 'sidebar-note', message('unfinishedWorkReport')));
     return section;
   }
   function renderCurrent(cycle) {
@@ -188,21 +203,23 @@
     const report = element('section', 'report-section');
     const heading = element('div', 'section-heading-row');
     heading.append(element('h3', '', message('latestReport')));
-    const timestamp = cycle.reportObservedAt || (cycle.durationReliable !== false && cycle.endedAtKind !== 'recovered' && cycle.status !== 'interrupted' ? cycle.endedAt : null);
+    const timestamp = cycle.workReport?.recorded_at || cycle.reportObservedAt || (cycle.durationReliable !== false && cycle.endedAtKind !== 'recovered' && cycle.status !== 'interrupted' ? cycle.endedAt : null);
     if (timestamp) {
       const time = element('time', '', message('recordedAt', { time: formatTime(timestamp) }));
       time.dateTime = timestamp;
       heading.append(time);
     }
     const liveReport = cycle.active ? [...(cycle.events || [])].reverse().find((event) => event.kind === 'report') : null;
-    let intro = clean(cycle.summary || liveReport?.text || '');
+    let intro = cycle.workReport?.summary || clean(cycle.summary || liveReport?.text || '');
     if (/^[\[{]/.test(intro)) intro = cycleTitle(cycle);
     if (!intro) intro = message(cycle.active ? 'runningNoReport' : 'noReport');
     report.append(heading, element('p', 'report-intro', intro));
+    const workDetails = workReportDetails(cycle);
+    if (workDetails) report.append(workDetails);
     body.append(report);
     const observed = eventList(cycle);
     if (observed) body.append(observed);
-    const rows = reportRows(cycle);
+    const rows = cycle.workReport ? [] : reportRows(cycle);
     if (rows.length) {
       const results = element('section', 'results-section');
       const resultHeading = element('div', 'section-heading-row');
@@ -210,7 +227,7 @@
       results.append(resultHeading, resultList(rows));
       body.append(results);
     }
-    if (cycle.report) body.append(element('p', 'report-source', message('reportSource')));
+    if (cycle.report && !cycle.workReport) body.append(element('p', 'report-source', message('reportSource')));
     const disclosure = fullReport(cycle);
     if (disclosure) body.append(disclosure);
     body.append(logButton(cycle));
@@ -234,10 +251,12 @@
       content.append(metadata(cycle));
       const observed = eventList(cycle);
       if (observed) content.append(observed);
-      let report = clean(cycle.summary || '');
+      let report = cycle.workReport?.summary || clean(cycle.summary || '');
       if (/^[\[{]/.test(report)) report = cycleTitle(cycle);
       content.append(element('p', '', report || message('noSummary')));
-      const results = reportRows(cycle);
+      const workDetails = workReportDetails(cycle);
+      if (workDetails) content.append(workDetails);
+      const results = cycle.workReport ? [] : reportRows(cycle);
       if (results.length) content.append(resultList(results));
       const disclosure = fullReport(cycle);
       if (disclosure) content.append(disclosure);
@@ -386,9 +405,12 @@
     const heading = element('div', 'section-heading-row');
     heading.append(element('h2', '', message('nextAction')));
     next.append(heading);
-    if (data.consensus?.updatedAt) heading.append(element('span', 'sidebar-update', message('updated', { time: formatTime(data.consensus.updatedAt) })));
-    next.append(element('p', 'next-action', clean(data.consensus?.nextAction) || message('noNextAction')));
-    next.append(element('p', 'sidebar-note', message(readOnly() || (!state.statusFailed && data.runtime?.processState === 'stopped') ? 'stoppedNotice' : 'planNotice')));
+    const work = state.currentCycle?.workReport;
+    const nextTime = work?.recorded_at || data.consensus?.updatedAt;
+    if (nextTime) heading.append(element('span', 'sidebar-update', message('updated', { time: formatTime(nextTime) })));
+    next.append(element('p', 'next-action', work ? (work.next_action || message('noPlannedAction')) : clean(data.consensus?.nextAction) || message('noNextAction')));
+    if (work?.next_action_kind === 'human_input') next.append(element('p', 'sidebar-note', message('humanInput')));
+    next.append(element('p', 'sidebar-note', message(readOnly() || (!state.statusFailed && data.runtime?.processState === 'stopped') ? 'stoppedNotice' : work ? 'workPlanNotice' : 'planNotice')));
     const artifacts = element('section', 'sidebar-block');
     artifacts.append(element('h2', '', message('artifacts')));
     if (data.artifacts?.length) {

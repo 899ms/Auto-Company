@@ -14,6 +14,7 @@ def rotate(directory: Path, maximum: int) -> int:
         path.unlink()
         path.with_suffix(".json").unlink(missing_ok=True)
         path.with_suffix(".events.jsonl").unlink(missing_ok=True)
+        path.with_suffix(".work.json").unlink(missing_ok=True)
     return len(expired)
 
 

@@ -14,9 +14,13 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import sys
 from typing import Any
 
 from observability_data import cycle_events, registered_artifacts
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "core"))
+from cycle_reports import read_report  # noqa: E402
 
 
 MAX_LEDGER_BYTES = 4 * 1024 * 1024
@@ -377,6 +381,7 @@ class JournalSource:
             if not available:
                 warnings.append("runtime_unavailable")
         for cycle in cycles[:30]:
+            cycle.update(read_report(self, cycle))
             cycle.update(cycle_events(self, cycle))
             if cycle.get("active") or cycle["status"] == "interrupted":
                 # Interrupted adapter sidecars can contain mixed raw JSONL.

@@ -644,6 +644,8 @@ while true; do
 
     # Build prompt with consensus pre-injected
     CONSENSUS=$(cat "$CONSENSUS_FILE" 2>/dev/null || echo "No consensus file found. This is the very first cycle.")
+    # Optional observation instructions must never block the existing cycle.
+    REPORT_INSTRUCTIONS=$(python3 "$SCRIPT_DIR/cycle_reports.py" prompt 2>/dev/null) || REPORT_INSTRUCTIONS=""
     FULL_PROMPT="$PROMPT
 
 ---
@@ -667,6 +669,8 @@ while true; do
 - Selected product repository: \`${ACTIVE_PROJECT_PATH:-none}\`
 - If a project is selected, perform all product source work there and use \`git -C \"$ACTIVE_PROJECT_PATH\"\` for product Git operations. Keep product commits and remotes out of the framework repository.
 - Framework cwd remains available for company coordination and consensus. Project selection is workflow routing, not an OS filesystem or network sandbox.
+
+$REPORT_INSTRUCTIONS
 
 ---
 
