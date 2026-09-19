@@ -275,7 +275,11 @@ window.JOURNAL_MESSAGES = {
     "unknownProjectCycle": "项目归属未记录",
     "durationUnknown": "耗时未确认",
     "commandTruncated": "命令记录已截断。",
-    "artifactStale": "文件已变更或缺失"
+    "artifactStale": "文件已变更或缺失",
+    "previewEnded": "预览已结束",
+    "previewInterrupted": "预览已中断",
+    "previewUnavailable": "预览不可用",
+    "previewName": "产品预览"
   },
   "en": {
     "reportedPhase": "Reported work phase",
@@ -552,6 +556,10 @@ window.JOURNAL_MESSAGES = {
     "unknownProjectCycle": "Project not recorded",
     "durationUnknown": "Duration unconfirmed",
     "commandTruncated": "The recorded command is truncated.",
-    "artifactStale": "File changed or missing"
+    "artifactStale": "File changed or missing",
+    "previewEnded": "Preview ended",
+    "previewInterrupted": "Preview interrupted",
+    "previewUnavailable": "Preview unavailable",
+    "previewName": "Product preview"
   }
 };

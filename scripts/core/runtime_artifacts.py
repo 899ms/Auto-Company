@@ -294,8 +294,8 @@ Reports must be genuine runner output. If the project uses custom assertions, us
 At delivery, write/update a concise DELIVERY.md inside the product, then register that existing file:
 python3 scripts/core/runtime_artifacts.py document DELIVERY.md
 For a static UI, start a cycle-owned loopback preview with its explicit web root:
-python3 scripts/core/runtime_artifacts.py preview --directory . --background
-The command prints its actual URL. Use that URL for the real browser check where applicable. Cycle previews stop with cycle cleanup; never promise a retained preview. Arbitrary Vite/Next/backend servers are not supported by this static runner. Do not start previews for non-UI products. Do not edit artifact JSON or manufacture a report if collection is unavailable.
+python3 scripts/core/runtime_artifacts.py preview --directory .
+This is an intentionally long-running foreground command. Use your engine's persistent command session, keep that session open while checking the printed URL in the browser, then run python3 scripts/core/runtime_artifacts.py preview-stop. Do not wait for the preview command to finish before using its URL. Do not use --background, shell &, nohup or detach inside a cycle: a short-lived tool terminal can kill those children as soon as the tool command exits. If the engine cannot retain a command session, report that preview limitation rather than claiming a working link. Cycle previews stop with cycle cleanup; never promise a retained preview. Arbitrary Vite/Next/backend servers are not supported by this static runner. Do not start previews for non-UI products. Do not edit artifact JSON or manufacture a report if collection is unavailable.
 """
 
 
@@ -318,7 +318,7 @@ def main():
     preview = sub.add_parser("preview")
     preview.add_argument("--directory", default=".")
     preview.add_argument("--port", type=int, default=0)
-    preview.add_argument("--background", action="store_true")
+    preview.add_argument("--background", action="store_true", help="Operator-only; inside a cycle keep the foreground tool session open")
     preview.add_argument("--identity", help=argparse.SUPPRESS)
     sub.add_parser("preview-stop")
     args = parser.parse_args()
@@ -345,6 +345,8 @@ def main():
         return 0 if observe(root, record) else 1
     if args.action == "check":
         return run_check(root, project, record, args)
+    if args.action == "preview" and args.background and record["cycleId"]:
+        parser.error("Cycle previews require a persistent foreground tool session; omit --background, keep the session open while checking the printed URL, then use preview-stop")
     if args.action == "preview-stop":
         stopped = True
         for existing in artifact_records(root):
@@ -430,6 +432,8 @@ def main():
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, stop)
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, stop)
     try:
         server.serve_forever(poll_interval=0.2)
     except KeyboardInterrupt:

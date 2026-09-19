@@ -257,16 +257,28 @@ test("typed checks and exact commands retain unknowns, provenance and narrow bil
     source: "runner", adapter: "junit", reportStatus: "fresh", freshness: "fresh", exitCode: 1,
     tests: { tests: 12, failures: 2, errors: 1, skipped: 3 }, recordedAt: data.generatedAt,
     command: ["python", "test_" + "long".repeat(80) + ".py"] };
-  current.events = [{ kind: "command", phase: "completed", itemId: "test", observedAt: data.generatedAt,
-    command: "node --test " + "long/path/".repeat(40), exitCode: 1 }];
+  const command = "node --test " + "long/path/".repeat(40);
+  current.events = [
+    { kind: "files", observedAt: data.generatedAt, paths: ["older.txt"] },
+    { kind: "command", phase: "started", itemId: "test", observedAt: data.generatedAt, command },
+    { kind: "files", observedAt: data.generatedAt, paths: ["recent.txt"] },
+    { kind: "command", phase: "completed", itemId: "test", observedAt: data.generatedAt, command, exitCode: 1 },
+    { kind: "turn.completed", observedAt: data.generatedAt },
+    { kind: "process.exited", observedAt: data.generatedAt },
+  ];
+  data.artifacts = [{ kind: "preview", state: "stopped", evidenceStatus: "stale", available: false }];
   let language = "en";
   await page.route("**/api/journal", (route) => route.fulfill({ json: { ...data, language, languageState: null } }));
   await page.goto(`${journal.url}/journal`);
   await expect(page.locator("#currentCycle .recent-checks")).toContainText("Check failed");
   await expect(page.locator("#currentCycle .check-counts")).toHaveText("Passed6Failed2Errors1Skipped3Total12");
   await expect(page.locator("#currentCycle .observed-events")).toContainText("Command finished");
+  await expect(page.locator("#currentCycle .event-list > li")).toHaveCount(3);
+  await expect(page.locator("#currentCycle .event-command")).toHaveCount(1);
+  await expect(page.locator("#projectSidebar")).toContainText("Preview ended");
+  await expect(page.locator("#projectSidebar")).not.toContainText("File changed or missing");
   await page.locator("#currentCycle .event-command > summary").click();
-  await expect(page.locator("#currentCycle .event-command pre")).toHaveText(current.events[0].command);
+  await expect(page.locator("#currentCycle .event-command pre")).toHaveText(command);
   await page.locator("#currentCycle .recent-checks .source-disclosure > summary").click();
   await expect(page.locator("#currentCycle .recent-checks")).toContainText(current.id);
   for (const locale of ["en", "zh-CN"]) {

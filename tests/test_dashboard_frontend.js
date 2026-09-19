@@ -21,7 +21,7 @@ function helpers() {
   // copied application logic, network request or production testing hook.
   const binding = app.indexOf("\n  document.querySelectorAll('[data-tab]').forEach");
   assert.ok(binding > 0, "Journal event wiring must follow its helper declarations");
-  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows, liveDuration, checkCounts, latestCycle };\n})();", context);
+  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows, liveDuration, checkCounts, latestCycle, recentExecution, unavailableArtifact };\n})();", context);
   context.journal.state.language = "en";
   return { ...context.journal, messages: context.window.JOURNAL_MESSAGES, fields };
 }
@@ -167,4 +167,31 @@ test("project selection never promotes unrelated or unknown history into current
   assert.equal(latestCycle({ project, cycles: [old, unknown, current], latestProjectCycleId: "current" }), current);
   assert.equal(latestCycle({ project: { id: null }, cycles: [unknown], latestProjectCycleId: null }), unknown);
   assert.equal(latestCycle({ cycles: [old] }), old);
+});
+
+
+test("recent execution keeps three distinct actual actions and the latest command state", () => {
+  const { recentExecution } = helpers();
+  const events = [
+    { kind: "command", itemId: "old", phase: "completed" },
+    { kind: "command", itemId: "a", phase: "started", command: "exact command" },
+    { kind: "command", itemId: "a", phase: "completed", command: "exact command", exitCode: 0 },
+    { kind: "files", paths: ["file.txt"] }, { kind: "error" },
+    { kind: "turn.completed" }, { kind: "process.exited" },
+  ];
+  assert.deepEqual(Array.from(recentExecution(events)), [events[4], events[3], events[2]]);
+  assert.equal(recentExecution(events)[2].command, "exact command");
+  assert.equal(events.length, 7);
+  assert.equal(recentExecution([{ kind: "command" }, { kind: "command" }]).length, 2);
+});
+
+test("unavailable previews use lifecycle labels while documents keep file evidence labels", () => {
+  const { state, unavailableArtifact, messages } = helpers();
+  for (const language of ["en", "zh-CN"]) {
+    state.language = language;
+    for (const [status, label] of [["stopped", "previewEnded"], ["interrupted", "previewInterrupted"], ["running", "previewUnavailable"], ["launch_failed", "previewUnavailable"]]) {
+      assert.equal(unavailableArtifact({ kind: "preview", state: status, evidenceStatus: "stale" }), messages[language][label]);
+    }
+    assert.equal(unavailableArtifact({ kind: "document", evidenceStatus: "stale" }), messages[language].artifactStale);
+  }
 });

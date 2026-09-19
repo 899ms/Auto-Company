@@ -187,14 +187,28 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     details.append(summary, body);
     return details;
   }
+  function recentExecution(events) {
+    const commands = new Set();
+    const recent = [];
+    for (const event of [...(events || [])].reverse()) {
+      if (!['command', 'files', 'error'].includes(event.kind)) continue;
+      if (event.kind === 'command' && event.itemId) {
+        if (commands.has(event.itemId)) continue;
+        commands.add(event.itemId);
+      }
+      recent.push(event);
+      if (recent.length === 3) break;
+    }
+    return recent;
+  }
   function eventList(cycle) {
-    const events = (cycle.events || []).filter((event) => ['command', 'files', 'process.started', 'process.exited', 'turn.started', 'turn.completed', 'turn.failed', 'error'].includes(event.kind));
+    const events = recentExecution(cycle.events);
     const section = element('section', 'observed-events');
     const heading = iconLabel(element('h3', 'content-heading'), 'terminal', message('recentExecution'));
     section.append(heading);
     if (!events.length) { section.append(element('p', 'sidebar-note', message('noEvents'))); return section; }
     const list = element('ol', 'event-list');
-    for (const [index, event] of events.slice(-5).reverse().entries()) {
+    for (const [index, event] of events.entries()) {
       const row = element('li');
       const time = element('time', '', formatTime(event.observedAt));
       if (event.observedAt) time.dateTime = event.observedAt;
@@ -202,7 +216,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
       const label = event.kind === 'command' ? message(event.phase === 'completed' ? 'commandEndedLabel' : 'commandStartedLabel') : event.kind === 'files' ? message('fileChangesLabel') : message(`event_${event.kind}`);
       body.append(iconLabel(element('span', 'event-label'), event.kind === 'files' ? 'file-text' : 'terminal', label));
       if (event.kind === 'command' && event.command) {
-        const details = bindDisclosure(element('details', 'event-command'), `command:${cycle.id}:${event.itemId || event.observedAt || index}:${event.phase}`);
+        const details = bindDisclosure(element('details', 'event-command'), `command:${cycle.id}:${event.itemId || event.observedAt || index}`);
         details.append(element('summary', '', message('exactCommand')), element('pre', 'report-code', event.command));
         body.append(element('code', 'command-preview', event.command), details);
         if (event.commandTruncated) body.append(element('span', 'sidebar-note', message('commandTruncated')));
@@ -492,6 +506,12 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     } catch (_) { state.languageError = 'languageSaveFailed'; }
     finally { state.languageSaving = false; renderLanguage(); }
   }
+  function unavailableArtifact(artifact) {
+    if (artifact.kind === 'preview') {
+      return message(artifact.state === 'stopped' ? 'previewEnded' : artifact.state === 'interrupted' ? 'previewInterrupted' : 'previewUnavailable');
+    }
+    return message(artifact.evidenceStatus === 'stale' ? 'artifactStale' : 'artifactUnavailable');
+  }
   function renderSidebar() {
     const sidebar = clear($('projectSidebar'));
     const data = state.data;
@@ -502,9 +522,9 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
       const list = element('ul', 'artifact-list');
       for (const artifact of visibleArtifacts) {
         const item = element('li');
-        const label = artifact.kind === 'preview' ? message('productPreview') : artifact.label || artifact.path;
+        const label = artifact.kind === 'preview' ? message(artifact.available === false ? 'previewName' : 'productPreview') : artifact.label || artifact.path;
         if (artifact.available === false || (!artifact.path && !artifact.url)) {
-          item.append(element('span', '', `${label} · ${message(artifact.evidenceStatus === 'stale' ? 'artifactStale' : 'artifactUnavailable')}`));
+          item.append(element('span', '', `${label} · ${unavailableArtifact(artifact)}`));
         } else {
           const link = element('a', 'artifact-link');
           link.href = artifact.url || `/api/journal/document?path=${encodeURIComponent(artifact.path)}`;

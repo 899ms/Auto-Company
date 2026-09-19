@@ -36,6 +36,32 @@ class RuntimeArtifactTests(unittest.TestCase):
     def records(self):
         return [json.loads(path.read_text(encoding="utf-8")) for path in (self.root / "logs/artifacts").glob("*.json")]
 
+    def start_preview(self):
+        previous = {row["id"] for row in self.records()}
+        process = subprocess.Popen(self.command("preview"), env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        def clean():
+            for row in self.records():
+                if row["id"] not in previous and row.get("kind") == "preview":
+                    preview_request(row, stop=True)
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.terminate()
+            process.wait(timeout=5)
+
+        self.addCleanup(clean)
+        deadline = time.monotonic() + 5
+        while process.poll() is None and time.monotonic() < deadline:
+            # Windows virtualenv launchers can have a different PID from the
+            # Python process; the new registered identity is authoritative.
+            record = next((row for row in self.records() if row["id"] not in previous and row.get("kind") == "preview"), None)
+            if record and preview_request(record):
+                return record
+            time.sleep(0.02)
+        self.fail("Foreground preview did not become available")
+
     def test_metadata_roundtrip_identity_and_invalid_update_preservation(self):
         value = write_metadata(self.root, "projects/probe", "检查工具", "真实项目简介")
         self.assertEqual(read_metadata(self.root, "projects/probe"), value)
@@ -191,15 +217,12 @@ class RuntimeArtifactTests(unittest.TestCase):
         self.assertEqual(len(record["sha256"]), 64)
         self.assertIsNotNone(datetime.fromisoformat(record["modifiedAt"]).tzinfo)
 
-    def test_background_preview_health_stop_and_cycle_ownership(self):
+    def test_foreground_preview_health_stop_and_cycle_ownership(self):
         (self.project / "index.html").write_text("<h1>Actual static fixture</h1>")
-        result = self.invoke("preview", "--background")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        record, = self.records()
+        record = self.start_preview()
         try:
             self.assertTrue(preview_request(record))
             self.assertEqual(record["lifetime"], "cycle")
-            self.assertEqual(result.stdout.strip(), record["url"])
             finalize(self.root, "cycle-other")
             self.assertTrue(preview_request(record))
             finalize(self.root, "cycle-probe")
@@ -211,8 +234,7 @@ class RuntimeArtifactTests(unittest.TestCase):
             preview_request(record, stop=True)
 
     def test_preview_stop_authenticates_response_and_returns_success(self):
-        self.assertEqual(self.invoke("preview", "--background").returncode, 0)
-        record, = self.records()
+        record = self.start_preview()
         try:
             wrong = {**record, "token": "0" * 32}
             self.assertFalse(preview_request(wrong, stop=True))
@@ -243,8 +265,7 @@ class RuntimeArtifactTests(unittest.TestCase):
             record = base_record("projects/probe", "check")
             record.update(cycleId="cycle-probe", state="running", endedAt=None, exitCode=None)
             save(self.root, record)
-        self.assertEqual(self.invoke("preview", "--background").returncode, 0)
-        preview = next(row for row in self.records() if row["kind"] == "preview")
+        preview = self.start_preview()
         try:
             finalize(self.root, "cycle-probe")
             self.assertEqual(sum(row["state"] == "interrupted" for row in self.records()), 501)
@@ -254,6 +275,31 @@ class RuntimeArtifactTests(unittest.TestCase):
             self.assertFalse(preview_request(preview))
         finally:
             preview_request(preview, stop=True)
+
+    def test_cycle_background_rejects_before_spawning_or_registering(self):
+        result = self.invoke("preview", "--background")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("persistent foreground tool session", result.stderr)
+        self.assertEqual(self.records(), [])
+
+    def test_operator_background_remains_available_outside_cycle(self):
+        environment = {key: value for key, value in self.env.items() if key != "AUTO_COMPANY_CYCLE_ID"}
+        result = subprocess.run(self.command("preview", "--background"), env=environment, capture_output=True,
+                                text=True, encoding="utf-8", errors="replace", timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record, = self.records()
+        try:
+            self.assertEqual(record["lifetime"], "operator")
+            self.assertTrue(preview_request(record))
+            finalize(self.root, "cycle-probe")
+            self.assertTrue(preview_request(record))
+        finally:
+            preview_request(record, stop=True)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if self.records()[0].get("state") == "stopped":
+                    break
+                time.sleep(0.02)
 
     def test_cycle_context_is_explicit_and_does_not_read_consensus(self):
         write_context(self.root, "cycle-bound", "projects/probe")

@@ -46,7 +46,7 @@ python3 scripts/core/runtime_artifacts.py check --adapter playwright -- npx play
 python3 scripts/core/runtime_artifacts.py check --adapter junit --report report.xml -- python3 tests.py
 python3 scripts/core/runtime_artifacts.py check --adapter exit-code -- node custom-checks.js
 python3 scripts/core/runtime_artifacts.py document DELIVERY.md
-python3 scripts/core/runtime_artifacts.py preview --directory public --background
+python3 scripts/core/runtime_artifacts.py preview --directory public
 python3 scripts/core/runtime_artifacts.py preview-stop
 ```
 
@@ -87,13 +87,22 @@ directory on loopback. Its own health response includes a per-run token, so
 stopped servers and port reuse do not produce a working preview link. It does
 not discover, start or validate arbitrary Vite/Next/backend servers. Those
 require separate runner integration. A preview started inside a model cycle is
-owned by that cycle and ends during normal supervisor cleanup. `--background`
-returns after token-validated health is available and prints the actual URL;
-it does not detach from cycle supervision. `preview-stop` requests shutdown
+owned by that cycle and ends during normal supervisor cleanup. Run it as a
+long-lived foreground command in the engine's persistent tool session, inspect
+the printed URL while that session stays open, then use `preview-stop`. Do not
+wait for server exit before opening the URL. Short-lived managed tool terminals
+can send a hangup to children when the launching command exits; a background
+process that initially passed health can therefore disappear immediately.
+Inside a cycle, `--background` is rejected before spawning or registration.
+The normal prompt explains this lifecycle without adding acceptance-only task
+instructions. Engines without persistent command sessions must report that
+preview limitation. `preview-stop` requests shutdown
 through that preview's token-checked loopback endpoint, not a remembered PID.
 Records include PID, explicit directory, `lifetime` (`cycle` or `operator`) and
 start/end times. A retained preview is a separate operator invocation outside
-a cycle, not an implicit side effect. The loop finalizes unfinished checks as
+a cycle, not an implicit side effect. Outside cycles, an operator may use
+`--background` from a durable terminal; it returns after token-validated health
+and does not create a detached session. The loop finalizes unfinished checks as
 interrupted after existing process supervision ends; an unknown end time stays
 null rather than being replaced by cleanup time.
 
