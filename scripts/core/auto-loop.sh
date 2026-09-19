@@ -64,11 +64,14 @@ STATE_FILE="$PROJECT_DIR/.auto-loop-state"
 PAUSE_FLAG="$PROJECT_DIR/.auto-loop-paused"
 CONSENSUS_GUARD="$SCRIPT_DIR/consensus-guard.sh"
 PROJECT_CONTEXT_TOOL="$SCRIPT_DIR/project-context.py"
+PRODUCT_IDENTITY_TOOL="$SCRIPT_DIR/product_identity.py"
 LOCALIZATION_TOOL="$SCRIPT_DIR/localization.py"
 USAGE_FILE="$LOG_DIR/usage.jsonl"
 USAGE_TOOL="$PROJECT_DIR/scripts/core/usage.py"
 BUDGET_PAUSE_FILE="$PROJECT_DIR/.auto-loop-budget-paused"
 LOOP_SLEEP_PID=""
+CURRENT_PRODUCT_CYCLE_ID=""
+MEDIA_FINALIZER_PID=""
 
 # Loop settings (all overridable via env vars)
 ENGINE="${ENGINE:-claude}"
@@ -200,6 +203,9 @@ STATUS=$status
 PAUSE_REASON=$pause_reason
 MODEL=$MODEL_LABEL
 ENGINE=$ENGINE
+PRODUCT_ID=${PRODUCT_ID:-}
+PRODUCT_CYCLE_NUMBER=${PRODUCT_CYCLE_NUMBER:-}
+PRODUCT_CYCLE_ID=$CURRENT_PRODUCT_CYCLE_ID
 EOF
 }
 
@@ -248,6 +254,32 @@ record_cycle_usage() {
     echo "record_error"
 }
 
+cancel_media_finalizer() {
+    if [ -n "$MEDIA_FINALIZER_PID" ]; then
+        kill -TERM "$MEDIA_FINALIZER_PID" 2>/dev/null || true
+        wait "$MEDIA_FINALIZER_PID" 2>/dev/null || true
+        MEDIA_FINALIZER_PID=""
+    fi
+}
+
+finalize_cycle_media() {
+    [ ! -f "$PROJECT_DIR/.auto-loop-stop" ] || return 0
+    python3 "$SCRIPT_DIR/runtime_artifacts.py" --root "$PROJECT_DIR" finalize \
+        --cycle "$CURRENT_PRODUCT_CYCLE_ID" >/dev/null 2>&1 &
+    MEDIA_FINALIZER_PID=$!
+    # Waiting on a tracked background process lets TERM run cleanup immediately.
+    # A plain stop flag also cancels optional media while retaining cycle facts.
+    while kill -0 "$MEDIA_FINALIZER_PID" 2>/dev/null; do
+        if [ -f "$PROJECT_DIR/.auto-loop-stop" ]; then
+            cancel_media_finalizer
+            return 0
+        fi
+        loop_sleep 0.1
+    done
+    wait "$MEDIA_FINALIZER_PID" 2>/dev/null || true
+    MEDIA_FINALIZER_PID=""
+}
+
 cleanup() {
     local requested_exit="${1:-0}" final_state="${2:-stopped}"
     trap '' SIGTERM SIGINT SIGHUP
@@ -256,6 +288,7 @@ cleanup() {
         wait "$LOOP_SLEEP_PID" 2>/dev/null || true
         LOOP_SLEEP_PID=""
     fi
+    cancel_media_finalizer
     if ! cycle_supervisor_cleanup; then
         requested_exit=1
         final_state="process_cleanup_failed"
@@ -263,7 +296,7 @@ cleanup() {
     else
         if [ -n "${AUTO_COMPANY_CYCLE_ID:-}" ]; then
             python3 "$SCRIPT_DIR/runtime_artifacts.py" --root "$PROJECT_DIR" finalize \
-                --cycle "$AUTO_COMPANY_CYCLE_ID" >/dev/null 2>&1 || true
+                --cycle "$AUTO_COMPANY_CYCLE_ID" --cleanup-only >/dev/null 2>&1 || true
         fi
         # A signal interrupts adapter_execute before it can publish its output.
         # Preserve already emitted evidence after the owned process tree exits.
@@ -288,6 +321,9 @@ cleanup() {
         "$CONSENSUS_GUARD" recover || true
     fi
     python3 "$USAGE_TOOL" recover --ledger "$USAGE_FILE" --pause-file "$BUDGET_PAUSE_FILE" || log "Interrupted usage recovery failed; pending identity retained for restart"
+    if [ "$CYCLE_SUPERVISOR_CLEANUP_FAILED" -eq 0 ]; then
+        python3 "$PRODUCT_IDENTITY_TOOL" --root "$PROJECT_DIR" recover >/dev/null || log "Product cycle recovery failed; reservation retained for restart"
+    fi
     log "=== Auto Loop Shutting Down (PID $$) ==="
     log "$(ui_message loop.stopping)"
     # Keep the inode: unlinking a held lock lets another process lock a new file.
@@ -467,11 +503,15 @@ run_engine_cycle() {
     export ACTIVE_PROJECT ACTIVE_PROJECT_PATH
     python3 "$SCRIPT_DIR/runtime_artifacts.py" --root "$PROJECT_DIR" --project "$ACTIVE_PROJECT" context \
         --cycle "$AUTO_COMPANY_CYCLE_ID" >/dev/null 2>&1 || true
+    if ! python3 "$PRODUCT_IDENTITY_TOOL" --root "$PROJECT_DIR" update \
+        --cycle "$AUTO_COMPANY_CYCLE_ID" --state dispatching >/dev/null; then
+        cleanup 1 product_cycle_state_error
+    fi
     engine_adapter_run "$prompt"
     # Observation cleanup does not classify the cycle or replace supervision.
     if [ "$CYCLE_SUPERVISOR_CLEANUP_FAILED" -eq 0 ]; then
         python3 "$SCRIPT_DIR/runtime_artifacts.py" --root "$PROJECT_DIR" finalize \
-            --cycle "$AUTO_COMPANY_CYCLE_ID" >/dev/null 2>&1 || true
+            --cycle "$AUTO_COMPANY_CYCLE_ID" --cleanup-only >/dev/null 2>&1 || true
     fi
     unset AUTO_COMPANY_CYCLE
     unset AUTO_COMPANY_CYCLE_ID
@@ -520,6 +560,10 @@ if [ "$governance_recovery_status" -ne 0 ] && [ "$governance_recovery_status" -n
     exit 1
 fi
 "$CONSENSUS_GUARD" init
+if ! python3 "$PRODUCT_IDENTITY_TOOL" --root "$PROJECT_DIR" recover >/dev/null; then
+    echo "Error: unfinished product cycle recovery failed; no new cycle was started."
+    exit 1
+fi
 
 # Recover human-owned configuration before interpreting its language setting.
 if ! python3 "$LOCALIZATION_TOOL" check --root "$PROJECT_DIR" >/dev/null; then
@@ -624,8 +668,19 @@ while true; do
         continue
     fi
     ACTIVE_PROJECT=""
+    PROJECT_CONTEXT_SOURCE="human selection"
     if [ -n "$ACTIVE_PROJECT_PATH" ]; then
         ACTIVE_PROJECT="projects/${ACTIVE_PROJECT_PATH##*/}"
+    else
+        # Creation links exploration to a product without editing human selection.
+        if ! ACTIVE_PROJECT=$(python3 "$PRODUCT_IDENTITY_TOOL" --root "$PROJECT_DIR" continuation) ||
+           { [ -n "$ACTIVE_PROJECT" ] && ! ACTIVE_PROJECT_PATH=$(python3 "$PROJECT_CONTEXT_TOOL" validate --root "$PROJECT_DIR" --project "$ACTIVE_PROJECT"); }; then
+            log_cycle "$next_cycle" "FAIL" "Registered product continuation is invalid; engine invocation blocked"
+            printf 'PAUSE_REASON=product_continuation_invalid\n' > "$PAUSE_FLAG"
+            wait_while_paused
+            continue
+        fi
+        PROJECT_CONTEXT_SOURCE="registered exploration continuation"
     fi
 
     # Pin once for the whole product, including later iterations and restarts.
@@ -640,11 +695,7 @@ while true; do
     export AUTO_COMPANY_LANGUAGE
 
     loop_count=$next_cycle
-    cycle_log="$LOG_DIR/cycle-$(printf '%04d' "$loop_count")-$(date '+%Y%m%d-%H%M%S')-${run_id}.log"
     cycle_started_at=$(date '+%Y-%m-%dT%H:%M:%S%z')
-
-    log_cycle "$loop_count" "START" "Beginning work cycle"
-    save_state "running"
 
     # Log rotation
     rotate_logs
@@ -658,6 +709,19 @@ while true; do
     # Optional observation instructions must never block the existing cycle.
     REPORT_INSTRUCTIONS=$(python3 "$SCRIPT_DIR/cycle_reports.py" prompt 2>/dev/null) || REPORT_INSTRUCTIONS=""
     ARTIFACT_INSTRUCTIONS=$(python3 "$SCRIPT_DIR/runtime_artifacts.py" prompt 2>/dev/null) || ARTIFACT_INSTRUCTIONS=""
+    # All preflight checks passed. Allocate identity, number and pending record
+    # atomically immediately before invoking the provider; logs never count work.
+    if ! cycle_reservation=$(python3 "$PRODUCT_IDENTITY_TOOL" --root "$PROJECT_DIR" --project "$ACTIVE_PROJECT" reserve \
+        --attempt "${run_id}-${loop_count}" --run-cycle "$loop_count" --engine "$ENGINE" --model "$MODEL_LABEL" --shell); then
+        log_cycle "$loop_count" "FAIL" "Cannot reserve durable product cycle identity"
+        cleanup 1 product_cycle_state_error
+    fi
+    read -r CURRENT_PRODUCT_CYCLE_ID PRODUCT_ID PRODUCT_CYCLE_NUMBER PRODUCT_IDENTITY_KIND <<< "$cycle_reservation"
+    cycle_log="$LOG_DIR/${CURRENT_PRODUCT_CYCLE_ID}.log"
+    export AUTO_COMPANY_STABLE_PRODUCT_ID="$PRODUCT_ID"
+    export AUTO_COMPANY_PRODUCT_CYCLE_NUMBER="$PRODUCT_CYCLE_NUMBER"
+    log_cycle "$loop_count" "START" "Beginning $PRODUCT_IDENTITY_KIND cycle #$PRODUCT_CYCLE_NUMBER"
+    save_state "running"
     FULL_PROMPT="$PROMPT
 
 ---
@@ -677,7 +741,7 @@ while true; do
 
 - Framework working directory: \`$PROJECT_DIR\`
 - Consensus baton: \`$CONSENSUS_FILE\`
-- Human-selected ACTIVE_PROJECT: \`${ACTIVE_PROJECT:-none (framework exploration)}\`
+- Bound ACTIVE_PROJECT: \`${ACTIVE_PROJECT:-none (framework exploration)}\` (source: $PROJECT_CONTEXT_SOURCE)
 - Selected product repository: \`${ACTIVE_PROJECT_PATH:-none}\`
 - If a project is selected, perform all product source work there and use \`git -C \"$ACTIVE_PROJECT_PATH\"\` for product Git operations. Keep product commits and remotes out of the framework repository.
 - Framework cwd remains available for company coordination and consensus. Project selection is workflow routing, not an OS filesystem or network sandbox.
@@ -694,7 +758,9 @@ $CONSENSUS
 
 ---
 
-This is Cycle #$loop_count. Act decisively."
+This is $PRODUCT_IDENTITY_KIND cycle #$PRODUCT_CYCLE_NUMBER (process-local attempt #$loop_count).
+The stable runtime identity is $PRODUCT_ID. Process restarts and model changes do not restart product discovery.
+Resume the work and phase in the current consensus. First-exploration rules apply only when this is exploration cycle #1 and no earlier decision is recorded. Act decisively."
 
     # Run selected engine in headless mode with per-cycle timeout
     if ! python3 "$USAGE_TOOL" begin --ledger "$USAGE_FILE" \
@@ -812,6 +878,14 @@ This is Cycle #$loop_count. Act decisively."
     fi
 
     budget_state=$(record_cycle_usage)
+    if ! python3 "$PRODUCT_IDENTITY_TOOL" --root "$PROJECT_DIR" update \
+        --cycle "$CURRENT_PRODUCT_CYCLE_ID" --state "$CYCLE_LEDGER_STATUS" --reason "$cycle_failed_reason" >/dev/null; then
+        log_cycle "$loop_count" "FAIL" "Cannot close the durable product cycle; refusing another cycle"
+        cleanup 1 product_cycle_state_error
+    fi
+    # Seal the AI result before optional media: stopping a slow capture must not
+    # discard output or relabel an already completed provider invocation.
+    finalize_cycle_media
     case "$budget_state" in
         warning)
             log_cycle "$loop_count" "BUDGET" "Warning threshold reached; next cycle remains enabled"

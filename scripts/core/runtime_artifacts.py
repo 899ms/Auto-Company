@@ -237,13 +237,11 @@ def preview_request(record, stop=False):
         return False
 
 
-def finalize(root, cycle):
+def finalize(root, cycle, capture=True):
     """Close only exact-cycle running records after the existing supervisor ends."""
     if not isinstance(cycle, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", cycle):
         raise ValueError("Valid cycle identity required")
     folder = safe_path(root, "logs/artifacts")
-    if not folder.is_dir():
-        return
     for record in artifact_records(root):
         try:
             if record.get("version") != 1 or record.get("source") != "runner" or record.get("cycleId") != cycle or record.get("state") != "running":
@@ -260,6 +258,14 @@ def finalize(root, cycle):
                 observe(root, record)
         except (OSError, ValueError, TypeError, KeyError):
             continue
+    # The provider supervisor has already ended. Capture owns an independent,
+    # bounded preview and therefore does not depend on a model opening one.
+    if capture:
+        try:
+            from product_media import capture_cycle
+            capture_cycle(root, cycle)
+        except (OSError, ValueError, TypeError):
+            pass
 
 
 def write_context(root, cycle, project):
@@ -307,10 +313,13 @@ def main():
     sub.add_parser("prompt")
     finish = sub.add_parser("finalize")
     finish.add_argument("--cycle", required=True)
+    finish.add_argument("--cleanup-only", action="store_true", help="Close records without starting new media work")
     context = sub.add_parser("context")
     context.add_argument("--cycle", required=True)
     document = sub.add_parser("document")
     document.add_argument("path")
+    media = sub.add_parser("media", help="Capture the selected product without running a model")
+    media.add_argument("--retry", action="store_true", help="Create a new attempt even when this version was already attempted")
     check = sub.add_parser("check")
     check.add_argument("--report")
     check.add_argument("--adapter", choices=ADAPTERS)
@@ -327,7 +336,7 @@ def main():
         print(PROMPT)
         return 0
     if args.action == "finalize":
-        finalize(root, args.cycle)
+        finalize(root, args.cycle, capture=not args.cleanup_only)
         return 0
     if args.action == "context":
         write_context(root, args.cycle, args.project or "")
@@ -342,7 +351,20 @@ def main():
         path = safe_path(project, args.path)
         record.update(path=path.relative_to(root).as_posix(), sha256=fingerprint(path),
                       modifiedAt=datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat())
-        return 0 if observe(root, record) else 1
+        observed = observe(root, record)
+        if observed:
+            try:
+                from product_media import capture_product
+                capture_product(root, args.project, record["cycleId"], "delivery")
+            except (OSError, ValueError, TypeError):
+                pass
+        return 0 if observed else 1
+    if args.action == "media":
+        from product_media import capture_product, media_projection
+        capture_product(root, args.project, record["cycleId"], "manual", retry=args.retry)
+        projection = media_projection(root, args.project)
+        print(json.dumps(projection, ensure_ascii=False))
+        return 0 if projection["screenshot"]["state"] == "success" else 1
     if args.action == "check":
         return run_check(root, project, record, args)
     if args.action == "preview" and args.background and record["cycleId"]:

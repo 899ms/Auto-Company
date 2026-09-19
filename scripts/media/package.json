@@ -1,0 +1,12 @@
+{
+  "name": "auto-company-product-media",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Optional bounded product screenshot runtime",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

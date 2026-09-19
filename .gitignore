@@ -140,6 +140,7 @@ logs/
 .auto-loop-budget-paused.*
 .auto-loop.env
 .auto-company.local
+.auto-company/
 .auto-company.local.*
 .auto-company-migrations/
 .auto-loop-awake.pid
@@ -160,6 +161,9 @@ projects/*
 # Explicitly published product examples; autonomous output stays ignored.
 !projects/tabledelta/
 !projects/cuecheck/
+!projects/scopefence/
+!projects/text-meter/
+!projects/scope-sheet/
 
 # Local/private outputs (do not publish)
 AGENTS.md
@@ -212,6 +216,8 @@ docs/*/*
 !docs/windows-setup.md
 !docs/usage-governance.md
 !docs/runtime-observability.md
+!docs/product-media.md
+!docs/product-cycles.md
 # Ignore all memories (keep folder marker only)
 memories/*
 !memories/.gitkeep

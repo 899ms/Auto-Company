@@ -27,6 +27,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   // Lucide 0.468.0, pinned f12b0de; ISC/MIT notices in LICENSE-lucide.txt.
   const ICONS = {"notebook-pen": "<path d=\"M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4\" />\n  <path d=\"M2 6h4\" />\n  <path d=\"M2 10h4\" />\n  <path d=\"M2 14h4\" />\n  <path d=\"M2 18h4\" />\n  <path d=\"M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z\" />", "chart-no-axes-column": "<line x1=\"18\" x2=\"18\" y1=\"20\" y2=\"10\" />\n  <line x1=\"12\" x2=\"12\" y1=\"20\" y2=\"4\" />\n  <line x1=\"6\" x2=\"6\" y1=\"20\" y2=\"14\" />", "terminal": "<polyline points=\"4 17 10 11 4 5\" />\n  <line x1=\"12\" x2=\"20\" y1=\"19\" y2=\"19\" />", "play": "<polygon points=\"6 3 20 12 6 21 6 3\" />", "square": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" />", "sliders-horizontal": "<line x1=\"21\" x2=\"14\" y1=\"4\" y2=\"4\" />\n  <line x1=\"10\" x2=\"3\" y1=\"4\" y2=\"4\" />\n  <line x1=\"21\" x2=\"12\" y1=\"12\" y2=\"12\" />\n  <line x1=\"8\" x2=\"3\" y1=\"12\" y2=\"12\" />\n  <line x1=\"21\" x2=\"16\" y1=\"20\" y2=\"20\" />\n  <line x1=\"12\" x2=\"3\" y1=\"20\" y2=\"20\" />\n  <line x1=\"14\" x2=\"14\" y1=\"2\" y2=\"6\" />\n  <line x1=\"8\" x2=\"8\" y1=\"10\" y2=\"14\" />\n  <line x1=\"16\" x2=\"16\" y1=\"18\" y2=\"22\" />", "refresh-cw": "<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\" />\n  <path d=\"M21 3v5h-5\" />\n  <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\" />\n  <path d=\"M8 16H3v5\" />", "file-text": "<path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\" />\n  <path d=\"M14 2v4a2 2 0 0 0 2 2h4\" />\n  <path d=\"M10 9H8\" />\n  <path d=\"M16 13H8\" />\n  <path d=\"M16 17H8\" />", "list-checks": "<path d=\"m3 17 2 2 4-4\" />\n  <path d=\"m3 7 2 2 4-4\" />\n  <path d=\"M13 6h8\" />\n  <path d=\"M13 12h8\" />\n  <path d=\"M13 18h8\" />", "panels-top-left": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" />\n  <path d=\"M3 9h18\" />\n  <path d=\"M9 21V9\" />", "external-link": "<path d=\"M15 3h6v6\" />\n  <path d=\"M10 14 21 3\" />\n  <path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6\" />", "chevron-right": "<path d=\"m9 18 6-6-6-6\" />", "x": "<path d=\"M18 6 6 18\" />\n  <path d=\"m6 6 12 12\" />"};
   const $ = (id) => document.getElementById(id);
+  const DEFAULT_HISTORY_LIMIT = 4;
   const state = { data: null, language: 'zh-CN', tab: 'work', expanded: new Set(), older: false, selectedLog: 'runtime', logText: '', logLoadedId: '', logRequest: 0, logPending: null, refreshPending: null, signature: '', statusFailed: true, action: '', languageState: null, languageSaving: false, languageLoading: false, languageRevision: 0, languageError: '', languageSaved: false, timer: null, autoChanged: false, currentCycle: null, receivedAt: 0, elapsedTimer: null };
   const message = (key, values = {}) => {
     const dictionary = window.JOURNAL_MESSAGES[state.language] || window.JOURNAL_MESSAGES.en;
@@ -47,6 +48,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     return text.length > length ? `${text.slice(0, length).trim()}…` : text;
   }
   function statusLabel(status) {
+    if (['not_started', 'startup_unconfirmed'].includes(status)) return message(status);
     return ['stopping', 'stop_failed', 'completed', 'completed_with_timeout', 'failed', 'interrupted', 'stopped_status', 'running', 'idle', 'paused', 'waiting_limit', 'circuit_break', 'stopped', 'active', 'inactive', 'configured', 'not_configured', 'not_installed', 'mismatched', 'activating', 'deactivating', 'reloading', 'unsupported'].includes(status) ? message(status) : status === 'unavailable' ? message('statusUnavailable') : message('unknown');
   }
   function readOnly() { return state.data?.readOnly !== false; }
@@ -94,6 +96,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   }
   function cycleTitle(cycle) {
     if (cycle.workReport) return cycle.workReport.title;
+    if (['not_started', 'startup_unconfirmed'].includes(cycle.status)) return statusLabel(cycle.status);
     if (cycle.status === 'interrupted' && cycle.events?.length) return message('interruptedSummary');
     if (cycle.synthetic && cycle.status !== 'running') return statusLabel(cycle.status);
     let title = clean(cycle.summary || cycle.report || '').split('\n').find((line) => line.trim()) || '';
@@ -106,9 +109,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   }
   function metadata(cycle) {
     const row = element('div', 'cycle-meta');
+    if (cycle.numbering === 'legacy') row.append(element('span', '', message('legacyCycles')));
+    if (cycle.identityKind === 'exploration') row.append(element('span', '', message('explorationCycles')));
     if (cycle.workReport?.phase) row.append(element('span', 'reported-phase', message(`workPhase_${cycle.workReport.phase}`)));
     if (['failed', 'interrupted', 'unknown', 'completed_with_timeout'].includes(cycle.status)) row.append(element('span', cycle.status === 'failed' ? 'status-failed' : '', statusLabel(cycle.status)));
-    row.append(element('span', '', message('startAt', { time: formatTime(cycle.startedAt) })));
+    row.append(element('span', '', message(cycle.reservedAt && !cycle.startedAt ? 'reservedAt' : 'startAt', { time: formatTime(cycle.startedAt || cycle.reservedAt) })));
     const elapsed = duration(cycle);
     if (elapsed) row.append(element('span', '', elapsed));
     if (cycle.active && cycle.status === 'running') {
@@ -126,6 +131,17 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
       else state.expanded.delete(key);
     });
     return details;
+  }
+  function paddedCycleNumber(cycle) { return String(cycle.number ?? '—').padStart(2, '0'); }
+  function historyGroups(data, current) {
+    const cycles = Array.isArray(data?.cycles) ? data.cycles : [];
+    const hasProduct = cycles.some((cycle) => cycle.identityKind === 'product');
+    const separateExploration = hasProduct;
+    const older = cycles.filter((cycle) => cycle.id !== current?.id);
+    return {
+      main: older.filter((cycle) => !separateExploration || cycle.identityKind !== 'exploration'),
+      exploration: separateExploration ? older.filter((cycle) => cycle.identityKind === 'exploration') : [],
+    };
   }
   function logButton(cycle) {
     if (cycle.synthetic) {
@@ -294,7 +310,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     article.setAttribute('aria-current', 'step');
     article.setAttribute('aria-labelledby', 'cycleTitle');
     const gutter = element('div', 'cycle-gutter');
-    const cycleNumber = element('span', 'cycle-number', String(cycle.number ?? '—').padStart(2, '0'));
+    const cycleNumber = element('span', 'cycle-number', paddedCycleNumber(cycle));
     cycleNumber.id = 'cycleNumber';
     gutter.append(cycleNumber);
     const body = element('div', 'cycle-body');
@@ -332,38 +348,67 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     article.append(gutter, progressIcon(cycle.status), body);
     container.append(article);
   }
+  function historyRow(cycle, exploration = false) {
+    const row = bindDisclosure(element('details', `history-row${exploration ? ' exploration-row' : ''}`), `cycle:${cycle.id}`);
+    row.dataset.cycleId = cycle.id;
+    const summary = element('summary');
+    const association = cycle.projectStatus === 'other' ? message('otherProjectCycle') : cycle.projectStatus === 'unknown' ? message('unknownProjectCycle') : cycle.identityKind === 'exploration' ? message('explorationCycles') : '';
+    const timing = `${statusLabel(cycle.status)} · ${formatTime(cycle.startedAt)}${association ? ` · ${association}` : ''}`;
+    const cycleNumber = exploration ? message('explorationNumber', { number: paddedCycleNumber(cycle) }) : paddedCycleNumber(cycle);
+    summary.append(element('span', 'history-number', cycleNumber), progressIcon(cycle.status), element('span', 'history-title', cycleTitle(cycle)), element('span', `history-meta${cycle.status === 'failed' ? ' status-failed' : ''}`, timing));
+    const arrow = icon('chevron-right'); arrow.classList.add('history-chevron');
+    arrow.setAttribute('aria-hidden', 'true');
+    summary.append(arrow);
+    const content = element('div', 'history-content');
+    content.append(metadata(cycle));
+    let report = cycle.workReport?.summary || clean(cycle.summary || '');
+    if (/^[\[{]/.test(report)) report = cycleTitle(cycle);
+    content.append(element('p', '', report || message('noSummary')));
+    const workDetails = workReportDetails(cycle);
+    if (workDetails) content.append(workDetails);
+    const results = cycle.workReport ? [] : reportRows(cycle);
+    if (results.length) content.append(resultList(results));
+    content.append(cycleRecords(cycle));
+    content.append(logButton(cycle));
+    row.append(summary, content);
+    return row;
+  }
+  function renderExplorationHistory(cycles) {
+    const section = clear($('explorationSection'));
+    section.hidden = !cycles.length;
+    if (!cycles.length) return;
+    const disclosure = bindDisclosure(element('details', 'exploration-disclosure'), 'exploration-records');
+    const summary = element('summary');
+    const label = element('span', 'exploration-heading', message('explorationRecords'));
+    label.id = 'explorationHeading';
+    summary.append(label, element('span', 'exploration-note', message('explorationRecordsNote', { count: cycles.length })));
+    const arrow = icon('chevron-right'); arrow.classList.add('exploration-chevron');
+    summary.append(arrow);
+    disclosure.setAttribute('aria-labelledby', label.id);
+    const list = element('div', 'exploration-list');
+    for (const cycle of cycles) list.append(historyRow(cycle, true));
+    disclosure.append(summary, list);
+    section.append(disclosure);
+  }
   function renderHistory() {
     const history = clear($('historyList'));
-    const older = state.data.cycles.filter((cycle) => cycle.id !== state.currentCycle?.id);
-    const visible = state.older ? older : older.slice(0, 2);
+    const groups = historyGroups(state.data, state.currentCycle);
+    const older = groups.main;
+    older.sort((a, b) => Number(a.numbering === 'legacy') - Number(b.numbering === 'legacy'));
+    const visible = state.older ? older : older.slice(0, DEFAULT_HISTORY_LIMIT);
+    $('historyNote').textContent = message(state.data.cycleNumbering?.mode === 'persistent' ? (state.data.cycleNumbering.hasLegacy ? 'mixedHistoryNote' : 'persistentHistoryNote') : state.data.cycleNumbering?.mode === 'unavailable' ? 'numberingUnavailable' : 'historyNote');
+    let group = null;
     for (const cycle of visible) {
-      const row = bindDisclosure(element('details', 'history-row'), `cycle:${cycle.id}`);
-      row.dataset.cycleId = cycle.id;
-      const summary = element('summary');
-      const association = cycle.projectStatus === 'other' ? message('otherProjectCycle') : cycle.projectStatus === 'unknown' ? message('unknownProjectCycle') : '';
-      const timing = `${statusLabel(cycle.status)} · ${formatTime(cycle.startedAt)}${association ? ` · ${association}` : ''}`;
-      summary.append(element('span', 'history-number', String(cycle.number ?? '—').padStart(2, '0')), progressIcon(cycle.status), element('span', 'history-title', cycleTitle(cycle)), element('span', `history-meta${cycle.status === 'failed' ? ' status-failed' : ''}`, timing));
-      const arrow = icon('chevron-right'); arrow.classList.add('history-chevron');
-      arrow.setAttribute('aria-hidden', 'true');
-      summary.append(arrow);
-      const content = element('div', 'history-content');
-      content.append(metadata(cycle));
-      let report = cycle.workReport?.summary || clean(cycle.summary || '');
-      if (/^[\[{]/.test(report)) report = cycleTitle(cycle);
-      content.append(element('p', '', report || message('noSummary')));
-      const workDetails = workReportDetails(cycle);
-      if (workDetails) content.append(workDetails);
-      const results = cycle.workReport ? [] : reportRows(cycle);
-      if (results.length) content.append(resultList(results));
-      content.append(cycleRecords(cycle));
-      content.append(logButton(cycle));
-      row.append(summary, content);
-      history.append(row);
+      const nextGroup = cycle.numbering === 'legacy' ? 'legacy' : 'persistent';
+      if (nextGroup !== group && nextGroup === 'legacy' && state.data.cycleNumbering?.mode === 'persistent') history.append(element('h3', 'history-group-label', message('legacyCycles')));
+      group = nextGroup;
+      history.append(historyRow(cycle));
     }
-    $('olderButton').hidden = older.length <= 2;
-    $('olderButton').textContent = state.older ? message('fewer') : message('older', { count: older.length - 2 });
+    $('olderButton').hidden = older.length <= DEFAULT_HISTORY_LIMIT;
+    $('olderButton').textContent = state.older ? message('fewer') : message('older', { count: older.length - DEFAULT_HISTORY_LIMIT });
     document.querySelector('.history-section').hidden = !older.length;
     document.querySelector('.journal-layout').classList.toggle('no-history', !older.length);
+    renderExplorationHistory(groups.exploration);
   }
   function aggregate(cycles) {
     const result = { inputTokens: null, outputTokens: null, totalTokens: null, known: 0, count: cycles.length, partial: false };
@@ -405,7 +450,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     const process = runtime.processState || runtime.state;
     const action = state.action || data?.control?.action;
     const retryStop = data?.control?.stopUnconfirmed === true;
-    const locked = !data || readOnly() || (unavailable && !retryStop) || Boolean(action);
+    const locked = !data || readOnly() || (unavailable && !retryStop) || Boolean(action || state.mediaAction);
     $('runtimeState').textContent = runtimeLabel();
     $('runtimeState').dataset.state = unavailable ? 'unavailable' : runtime.state || 'unknown';
     $('startButton').disabled = locked || retryStop || !['stopped', 'inactive'].includes(process);
@@ -500,6 +545,97 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     }
     return message(artifact.evidenceStatus === 'stale' ? 'artifactStale' : 'artifactUnavailable');
   }
+  function mediaURL(value, productId) {
+    if (typeof productId !== 'string' || !/^[0-9a-f]{32}$/.test(productId) || typeof value !== 'string') return null;
+    return new RegExp(`^/api/product-media/${productId}/[a-zA-Z0-9_.-]+\\.(?:png|svg)$`).test(value) ? value : null;
+  }
+  async function retryProductMedia(productId) {
+    if (readOnly() || state.mediaAction || productId !== state.data?.productMedia?.productId) return;
+    const previousCapture = state.data?.productMedia?.screenshot;
+    const previousSuccess = previousCapture?.latestSuccess?.capturedAt || null;
+    state.mediaAction = true; state.mediaError = null;
+    renderSidebar();
+    renderRuntime();
+    try {
+      await fetchJSON('/api/product-media/capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId }) }, 170000);
+    } catch (_) { state.mediaError = { productId, previousSuccess }; }
+    finally {
+      state.mediaAction = false;
+      await refresh();
+      renderSidebar();
+      renderRuntime();
+    }
+  }
+  function mediaRetryError(media) {
+    const error = state.mediaError;
+    if (!error) return false;
+    const capture = media?.screenshot;
+    if (error.productId !== media?.productId || (capture?.state === 'success' && capture.latestSuccess?.capturedAt !== error.previousSuccess)) {
+      state.mediaError = null;
+      return false;
+    }
+    return true;
+  }
+  function iconPublicationWarning(icon) {
+    if (icon?.publicationStatus === 'conflict') return 'iconPublicationConflict';
+    if (icon?.publicationStatus === 'failed') return 'iconPublicationFailed';
+    if (['stale', 'unavailable'].includes(icon?.publicationStatus)) return 'iconPublicationChanged';
+    const reference = icon?.reference;
+    if (reference?.state === 'preserved') return 'iconReferencePreserved';
+    return reference && !['inserted', 'linked', 'not_applicable'].includes(reference.state) ? 'iconReferenceUnconfirmed' : null;
+  }
+  function renderProductMedia(media) {
+    if (!media?.productId) return null;
+    const section = element('section', 'sidebar-block product-media');
+    section.append(element('h2', '', message('productScreenshot')));
+    const capture = media.screenshot || {};
+    const success = capture.latestSuccess;
+    const variants = (success?.variants || []).filter((item) => mediaURL(item.href, media.productId));
+    const desktop = variants.find((item) => item.viewport === 'desktop') || variants[0];
+    if (desktop) {
+      const link = element('a', 'product-screenshot-link');
+      link.href = mediaURL(desktop.href, media.productId);
+      link.target = '_blank'; link.rel = 'noopener';
+      link.setAttribute('aria-label', message('openScreenshot'));
+      const image = element('img', 'product-screenshot');
+      image.src = link.href;
+      image.alt = message('screenshotAlt', { name: state.data.project?.name || message('noProject') });
+      image.loading = 'lazy'; image.decoding = 'async';
+      if (Number.isInteger(desktop.width) && Number.isInteger(desktop.height) && desktop.width > 0 && desktop.height > 0) {
+        image.width = desktop.width; image.height = desktop.height;
+      }
+      image.addEventListener('error', () => {
+        link.replaceWith(element('p', 'sidebar-note status-failed', message('screenshotResourceUnavailable')));
+      }, { once: true });
+      link.append(image); section.append(link);
+      const caption = element('p', 'sidebar-note screenshot-caption', message('capturedAt', { time: formatTime(success.capturedAt, true) }));
+      if (capture.currentVersion && success.version !== capture.currentVersion) caption.append(element('span', 'screenshot-stale', message('screenshotOldVersion')));
+      section.append(caption);
+      const links = element('div', 'screenshot-links');
+      for (const variant of variants) {
+        const item = element('a', '', message(variant.viewport === 'mobile' ? 'mobileScreenshot' : 'desktopScreenshot'));
+        item.href = mediaURL(variant.href, media.productId); item.target = '_blank'; item.rel = 'noopener';
+        links.append(item);
+      }
+      section.append(links);
+    }
+    if (!desktop || !['completed', 'ready', 'success', 'unchanged'].includes(capture.state)) {
+      const key = { capturing: 'screenshotCapturing', running: 'screenshotCapturing', pending: 'screenshotCapturing',
+        failed: 'screenshotFailed', interrupted: 'screenshotInterrupted', unsupported: 'screenshotUnsupported',
+        not_applicable: 'screenshotNotApplicable', unavailable: 'screenshotUnavailable', stale: 'screenshotOldVersion' }[capture.state] || 'screenshotMissing';
+      section.append(element('p', 'sidebar-note', message(key)));
+    }
+    if (!readOnly()) {
+      const retry = element('button', 'text-button screenshot-retry', message(state.mediaAction ? 'screenshotCapturing' : 'retryScreenshot'));
+      retry.id = 'retryScreenshot';
+      retry.disabled = Boolean(state.mediaAction || state.statusFailed || state.action || state.data?.control?.action || state.data?.control?.stopUnconfirmed || !['stopped', 'inactive'].includes(state.data?.runtime?.processState));
+      retry.title = message('retryScreenshotHint');
+      retry.addEventListener('click', () => retryProductMedia(media.productId));
+      section.append(retry);
+      if (mediaRetryError(media)) section.append(element('p', 'sidebar-note status-failed', message('screenshotRetryFailed')));
+    }
+    return section;
+  }
   function renderSidebar() {
     const sidebar = clear($('projectSidebar'));
     const data = state.data;
@@ -508,7 +644,20 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     const description = element('p', 'project-description', clean(data.project?.description)); description.id = 'projectDescription'; description.title = description.textContent;
     const latest = state.currentCycle;
     const date = element('p', 'sidebar-note', latest?.active ? message('currentRun') : latest ? message('latestRun', { date: formatDate(latest.startedAt) }) : message(readOnly() ? 'archived' : 'ready')); date.id = 'runHeading';
-    overview.append(name, description, date);
+    const identity = element('div', 'project-identity');
+    const media = data.productMedia;
+    const productIcon = mediaURL(media?.icon?.href, media?.productId);
+    if (productIcon) {
+      const image = element('img', 'product-icon');
+      image.src = productIcon; image.alt = ''; image.width = image.height = 36;
+      image.title = message(media.icon.source === 'default' ? 'defaultProductIcon' : 'productIcon');
+      image.addEventListener('error', () => image.remove(), { once: true });
+      identity.append(image);
+    }
+    identity.append(name);
+    overview.append(identity, description, date);
+    const iconWarning = iconPublicationWarning(media?.icon);
+    if (iconWarning) overview.append(element('p', 'sidebar-note status-failed', message(iconWarning)));
     const artifacts = element('section', 'sidebar-block');
     artifacts.append(element('h2', '', message('artifacts')));
     const visibleArtifacts = (data.artifacts || []).filter((artifact) => artifact.kind !== 'check');
@@ -546,7 +695,10 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     details.append(element('summary', '', message('moreRuntime')), runtimeRows([[message('state'), runtimeLabel()], [message('source'), data.sourceName]]));
     details.append(element('p', 'sidebar-note', message(config.configSource === 'session_context' ? 'observedSession' : 'unconfirmedSession')));
     runtime.append(details);
-    sidebar.append(overview, artifacts, runtime);
+    sidebar.append(overview);
+    const productMedia = renderProductMedia(media);
+    if (productMedia) sidebar.append(productMedia);
+    sidebar.append(artifacts, runtime);
   }
   function applyLanguage() {
     document.documentElement.lang = state.language;
@@ -650,7 +802,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     else if (total.partial) summary.append(element('p', 'usage-warning', message('partial')));
     for (const cycle of cycles) {
       const row = element('tr');
-      row.append(element('td', '', `Cycle ${String(cycle.number ?? '—').padStart(2, '0')}`), element('td', '', formatTime(cycle.startedAt, true)), element('td', '', statusLabel(cycle.status)));
+      row.append(element('td', '', cycle.identityKind === 'exploration' ? message('explorationNumber', { number: paddedCycleNumber(cycle) }) : `${message('cycle')} ${paddedCycleNumber(cycle)}`), element('td', '', formatTime(cycle.startedAt, true)), element('td', '', statusLabel(cycle.status)));
       for (const field of ['inputTokens', 'outputTokens', 'totalTokens']) {
         const cell = element('td', 'numeric', number(cycle.usage?.[field]));
         if (!knownNumber(cycle.usage?.[field])) cell.title = message('unknown');
@@ -689,7 +841,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     global.value = 'runtime';
     select.append(global);
     for (const cycle of cycles) {
-      const option = element('option', '', `Cycle ${String(cycle.number ?? '—').padStart(2, '0')} · ${formatTime(cycle.startedAt, true)} · ${statusLabel(cycle.status)}`);
+      const label = cycle.identityKind === 'exploration' ? message('explorationNumber', { number: paddedCycleNumber(cycle) }) : `${message('cycle')} ${paddedCycleNumber(cycle)}`;
+      const option = element('option', '', `${label} · ${formatTime(cycle.startedAt, true)} · ${statusLabel(cycle.status)}`);
       option.value = cycle.id;
       select.append(option);
     }

@@ -19,7 +19,7 @@ RUNTIME_FILES = {
 RUNTIME_PREFIXES = (".claude/", "dashboard/", "i18n/", "memories/", "scripts/", "tests/")
 BROWSER_PREFIXES = (
     "dashboard/", "i18n/", "scripts/core/", "scripts/windows/", "scripts/macos/",
-    "scripts/wsl/", "tests/browser/", "tests/fixtures/",
+    "scripts/wsl/", "scripts/media/", "tests/browser/", "tests/fixtures/",
 )
 
 
@@ -38,7 +38,7 @@ def route_paths(paths):
         runtime = path in RUNTIME_FILES or path.startswith(RUNTIME_PREFIXES) or path.endswith(".sh")
         if runtime:
             selected["runtime"] = True
-        if path.startswith(BROWSER_PREFIXES) or path.startswith("tests/test_dashboard"):
+        if path.startswith(BROWSER_PREFIXES) or path.startswith("tests/test_dashboard") or path == "tests/test_product_media.py":
             selected["browser"] = True
         if product or runtime:
             continue

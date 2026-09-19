@@ -98,6 +98,12 @@ class JournalHandler(BaseHTTPRequestHandler):
                 self.respond(content.encode("utf-8"), LEGACY_ASSETS[name])
             elif request.path == "/api/journal":
                 self.json({**source.snapshot(), "legacyAvailable": self.server.legacy is not None})
+            elif request.path.startswith("/api/product-media/"):
+                match = re.fullmatch(r"/api/product-media/([0-9a-f]{32})/([A-Za-z0-9_.-]+\.(?:png|svg))", request.path)
+                if not match or query:
+                    raise ValueError("Invalid media identity")
+                raw, mime = source.media_resource(*match.groups())
+                self.respond(raw, mime)
             elif request.path == "/api/journal/log":
                 if set(query) != {"id"} or len(query["id"]) != 1:
                     raise ValueError("One cycle identity is required")

@@ -231,10 +231,12 @@ project_new() {
         die "project is already registered: $name"
     fi
 
-    local created_at registry_tmp created=0
+    local created_at registry_tmp registry_before created=0
     created_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     registry_tmp="$(mktemp "$PROJECTS_DIR/.registry.XXXXXX")"
-    trap 'if [ "$created" -eq 1 ] && [ -d "$target" ]; then rm -rf -- "$target"; fi; rm -f "$registry_tmp"' EXIT
+    registry_before="$(mktemp "$PROJECTS_DIR/.registry-before.XXXXXX")"
+    cp "$REGISTRY_FILE" "$registry_before"
+    trap 'if [ "$created" -eq 1 ] && [ -d "$target" ]; then rm -rf -- "$target"; cp "$registry_before" "$REGISTRY_FILE"; fi; rm -f "$registry_tmp" "$registry_before"' EXIT
 
     cp "$REGISTRY_FILE" "$registry_tmp"
     printf '%s\tprojects/%s\tlocal\t%s\n' "$name" "$name" "$created_at" >> "$registry_tmp"
@@ -254,7 +256,21 @@ project_new() {
         echo "Project metadata unavailable; product creation continues." >&2
 
     mv "$registry_tmp" "$REGISTRY_FILE"
+    # A normal creation event registers stable identity and, during exploration,
+    # its explicit continuation. It never edits human-owned ACTIVE_PROJECT.
+    if ! python3 "$SCRIPT_DIR/product_identity.py" --root "$FRAMEWORK_DIR" --project "projects/$name" register \
+        --cycle "${AUTO_COMPANY_CYCLE_ID:-}" >/dev/null; then
+        # EXIT traps may run after function locals disappear under Bash errexit.
+        # Roll back this failed registration while its exact paths remain live.
+        rm -rf -- "$target"
+        cp "$registry_before" "$REGISTRY_FILE"
+        rm -f "$registry_tmp" "$registry_before"
+        created=0
+        trap - EXIT
+        return 1
+    fi
     created=0
+    rm -f "$registry_before"
     trap - EXIT
 
     echo "Created independent local Git repository: $target"

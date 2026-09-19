@@ -226,8 +226,8 @@ def _artifact_entry(source, selected, record, preview_probe):
     return entry
 
 
-def artifact_projection(source):
-    selected = source.pairs(".auto-company.local").get("ACTIVE_PROJECT", "")
+def artifact_projection(source, selected=None):
+    selected = (source.project()["id"] or "") if selected is None else selected
     if not re.fullmatch(r"projects/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", selected):
         return {"items": [], "status": "unavailable", "selectedProject": None,
                 "invalidRecords": 0, "truncated": False, "scannedRecords": 0, "returnedRecords": 0}

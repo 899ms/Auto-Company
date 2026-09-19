@@ -23,9 +23,24 @@
 
 ## 看板预览
 
-![Auto Company 看板](presentation/dashboard-showcase.png)
+[![Auto Company Dashboard](presentation/dashboard-showcase.png)](presentation/dashboard-showcase.png)
 
-新版看板用纵向时间轴串联各轮次，展示简洁工作记录、检查结果、交付成果、用量与日志。截图使用 Outline Desk 连续三轮的真实记录，以只读归档模式展示。标题和摘要来自模型按固定格式填写的工作记录；运行事实和已接入检查的结果由程序记录。缺失或过期的信息明确标注，已记录用量不等于完整账单。采集约定与支持范围见[运行记录说明](docs/runtime-observability.md)。
+ScopeFence 的真实四轮产品记录：04 展开，03、02、01 逐项收起且全部可见；立项前探索单独保留。看板展示工作汇报、检查、文档、实拍、用量与日志。标题和摘要仍是模型填写的记录，运行事实与支持的检查结果由程序采集；缺失、失败、过期和部分用量明确标注。支持范围见[运行记录](docs/runtime-observability.md)、[连续轮次](docs/product-cycles.md)和[自动实拍](docs/product-media.md)说明。
+
+<table>
+  <tr>
+    <th width="50%">Text Meter · English</th>
+    <th width="50%">范围确认单 / Scope Sheet · 中文</th>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><a href="presentation/dashboards/text-meter.png"><img src="presentation/dashboards/text-meter.png" alt="Text Meter · English Dashboard" width="100%" /></a></td>
+    <td width="50%" valign="top"><a href="presentation/dashboards/scope-sheet.png"><img src="presentation/dashboards/scope-sheet.png" alt="范围确认单 / Scope Sheet · 中文 Dashboard" width="100%" /></a></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">两次启动的两个产品轮次，编号从 01 延续到 02。</td>
+    <td width="50%" valign="top">四个产品尝试；两次模型容量错误保留为失败，后续成功记录照常呈现。</td>
+  </tr>
+</table>
 
 ## 这是什么？
 
@@ -49,28 +64,23 @@ daemon (launchd / systemd --user, 崩溃自重启)
 
 ## 运行产物示例
 
-以下是 Auto-Company 自主运行生成的独立应用。截图展示的是产出应用，不是 Auto-Company 本身或其控制台。
-
-人类仅下达启动指令和交付范围；从产品立项、方案讨论、设计开发到测试交付，均由 Agent 团队自主讨论、决策并执行，过程中无需人工介入。
+以下三个独立产品来自实际运行，中英文 README 展示同一套项目。ScopeFence 与范围确认单由默认流程自主选题；Text Meter 来自一个普通的文本统计需求。人类设置了运行权限、语言与停止边界，发布前进行了定向审查和必要修正，具体来源记录在各项目中。产品截图来自公开源码的实际默认界面；上方 Dashboard 保留原始运行事实，未修改失败或工作汇报。
 
 <table>
   <tr>
-    <th width="50%">行间 / TableDelta</th>
-    <th width="50%">幕检 / CueCheck</th>
+    <th width="33%">ScopeFence · English</th>
+    <th width="33%">Text Meter · English</th>
+    <th width="33%">范围确认单 / Scope Sheet · 中文</th>
   </tr>
   <tr>
-    <td width="50%" valign="top"><a href="projects/tabledelta/docs/images/desktop-result.png"><img src="projects/tabledelta/docs/images/desktop-result.png" alt="行间 / TableDelta：CSV 差异核对结果" width="100%" /></a></td>
-    <td width="50%" valign="top"><a href="projects/cuecheck/docs/images/desktop-result.png"><img src="projects/cuecheck/docs/images/desktop-result.png" alt="幕检 / CueCheck：字幕检查与编辑工作台" width="100%" /></a></td>
+    <td width="33%" valign="top"><a href="presentation/products/scopefence-full.png"><img src="presentation/products/scopefence.png" alt="ScopeFence" width="100%" /></a></td>
+    <td width="33%" valign="top"><a href="presentation/products/text-meter-full.png"><img src="presentation/products/text-meter.png" alt="Text Meter" width="100%" /></a></td>
+    <td width="33%" valign="top"><a href="presentation/products/scope-sheet-full.png"><img src="presentation/products/scope-sheet.png" alt="范围确认单 / Scope Sheet" width="100%" /></a></td>
   </tr>
   <tr>
-    <td width="50%" valign="top">
-      <p>对比两份 CSV，查看新增、删除和修改，并导出变化报告。</p>
-      <p><a href="projects/tabledelta/">查看源码 →</a></p>
-    </td>
-    <td width="50%" valign="top">
-      <p>检查 SRT 字幕的时码、重叠与阅读速度，支持逐条编辑、重检和导出。</p>
-      <p><a href="projects/cuecheck/">查看源码 →</a></p>
-    </td>
+    <td width="33%" valign="top"><p>将范围变更整理成无需登录的确认链接；返回链接是可编辑的沟通副本，不是经过验证的批准记录。</p><p><a href="projects/scopefence/">查看源码 →</a></p></td>
+    <td width="33%" valign="top"><p>在浏览器本地即时统计字符、非空白字符、以空白分隔的词与行数。</p><p><a href="projects/text-meter/">查看源码 →</a></p></td>
+    <td width="33%" valign="top"><p>填写合作范围、修改、交付与报价，检查必填项后复制或下载中文确认单。</p><p><a href="projects/scope-sheet/">查看源码 →</a></p></td>
   </tr>
 </table>
 
