@@ -665,6 +665,59 @@ button:focus:not(:focus-visible), main:focus {
   font-size: 12px;
 }
 
+.exploration-section {
+  grid-column: 1;
+  grid-row: 3;
+  min-width: 0;
+}
+
+.exploration-disclosure>summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: var(--body-start);
+  border-top: 1px solid var(--line);
+  padding: 15px 0;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.exploration-disclosure>summary::-webkit-details-marker {
+  display: none;
+}
+
+.exploration-heading {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.exploration-note {
+  margin-left: auto;
+  font-size: 10px;
+  color: #9298a1;
+}
+
+.exploration-chevron {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  transition: transform .15s;
+}
+
+.exploration-disclosure[open] .exploration-chevron {
+  transform: rotate(90deg);
+}
+
+.exploration-list {
+  margin-top: 4px;
+}
+
+.exploration-list .history-number {
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
 .source-notes {
   font-size: 11px;
   line-height: 1.8;
@@ -1734,6 +1787,7 @@ dialog .runtime-details {
 @media(max-width:760px) {
   .history-section { grid-row: 2; }
   .project-sidebar { grid-row: 3; padding-top: 23px; }
+  .exploration-section { grid-row: 4; }
   .project-overview { grid-column: 1 / -1; }
   .project-description { max-width: 560px; }
   .header-actions, .preview-note { flex-wrap: wrap; }
@@ -1757,6 +1811,10 @@ dialog .runtime-details {
   .history-title { font-size: 13px; }
   .history-meta { font-size: 10px; white-space: normal; }
   .history-content { padding-right: 0; }
+  .exploration-disclosure>summary { margin-left: 0; flex-wrap: wrap; gap: 4px 10px; }
+  .exploration-note { width: 100%; margin-left: 0; }
+  .exploration-chevron { margin-left: auto; }
+  .exploration-list .history-number { font-size: 10px; }
   .tabs { gap: 14px; }
   .tab { gap: 5px; }
   .tab .ui-icon { width: 15px; height: 15px; flex-basis: 15px; }

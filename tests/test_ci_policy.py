@@ -57,6 +57,11 @@ class RoutePolicyTests(unittest.TestCase):
         self.assertEqual(self.selected("projects/snapog/check.sh"), {"runtime", "snapog"})
         self.assertEqual(self.selected("docs/example.sh"), {"runtime"})
 
+    def test_optional_product_media_dependencies_and_tests_select_real_browser_checks(self):
+        for path in ("scripts/media/package.json", "scripts/media/package-lock.json", "tests/test_product_media.py"):
+            with self.subTest(path=path):
+                self.assertEqual(self.selected(path), {"runtime", "browser"})
+
     def test_unknown_code_defaults_to_all_and_product_prefix_is_exact(self):
         for path in ("new-build/config.toml", "projects/snapog-copy/code.js", "pyproject.toml"):
             with self.subTest(path=path):

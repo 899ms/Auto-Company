@@ -7,9 +7,12 @@
 | [SnapOG](snapog/) | Existing Open Graph image prototype | See its project README |
 | [行间 / TableDelta](tabledelta/) | Compare two CSV files by a unique key and export changes as JSON | `cd projects/tabledelta && python3 -m http.server 8765 --bind 127.0.0.1` |
 | [幕检 / CueCheck](cuecheck/) | Review, edit, and export SRT subtitles locally | `cd projects/cuecheck && python3 -m http.server 8766 --bind 127.0.0.1` |
+| [ScopeFence](scopefence/) | Share a scope-change decision as an editable, self-contained link | `cd projects/scopefence && python3 -m http.server 8000 --bind 127.0.0.1` |
+| [Text Meter](text-meter/) | Count Unicode code points, whitespace-separated words and lines locally | `cd projects/text-meter && python3 -m http.server 8000 --bind 127.0.0.1` |
+| [范围确认单 / Scope Sheet](scope-sheet/) | Prepare a Chinese project-scope note, check required fields and copy or download it | `cd projects/scope-sheet && python3 -m http.server 8000 --bind 127.0.0.1` |
 
-TableDelta and CueCheck are explicitly published source snapshots of local MVPs.
-Each folder includes its own instructions, examples, and tests. Their original
+The published snapshots are local prototypes with their own usage instructions
+and documented limits. The newer examples also include source provenance. Their original
 independent local repositories are preserved; nested Git metadata, runtime logs,
 browser caches, and private company planning documents are not included.
 These tracked examples are not selectable independent runtime repositories.

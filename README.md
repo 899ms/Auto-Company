@@ -23,9 +23,24 @@ Optional Cursor and OpenAI-compatible adapters require explicit configuration. S
 
 ## Dashboard Preview
 
-![Auto Company Dashboard](presentation/dashboard-showcase.png)
+[![Auto Company Dashboard](presentation/dashboard-showcase.png)](presentation/dashboard-showcase.png)
 
-The dashboard connects cycles in a vertical timeline, with concise work records, check results, deliverables, usage, and logs. This screenshot shows three real Outline Desk cycles in read-only archive mode. Titles and summaries are structured model reports; runtime facts and supported check results are recorded by the program. Missing or expired evidence stays explicit, and recorded usage is not a complete bill. See the [collection contract and supported tools](docs/runtime-observability.md).
+Four real ScopeFence product cycles: 04 is expanded; 03, 02 and 01 remain individually collapsed and visible. Pre-product exploration is kept separately. The journal connects reports, checks, documents, real previews, usage and logs. Titles and summaries remain model-authored reports; runtime facts and supported check results are collected by the program. Missing, failed, stale and partial evidence stays explicit. See the [recording contract](docs/runtime-observability.md), [continuous cycles](docs/product-cycles.md) and [automatic previews](docs/product-media.md).
+
+<table>
+  <tr>
+    <th width="50%">Text Meter · English</th>
+    <th width="50%">范围确认单 / Scope Sheet · 中文</th>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><a href="presentation/dashboards/text-meter.png"><img src="presentation/dashboards/text-meter.png" alt="Text Meter · English Dashboard" width="100%" /></a></td>
+    <td width="50%" valign="top"><a href="presentation/dashboards/scope-sheet.png"><img src="presentation/dashboards/scope-sheet.png" alt="范围确认单 / Scope Sheet · 中文 Dashboard" width="100%" /></a></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">Two product cycles across two separate starts; numbering continues from 01 to 02.</td>
+    <td width="50%" valign="top">Four product attempts. Two provider-capacity failures remain visible alongside the successful later work.</td>
+  </tr>
+</table>
 
 ## What Is This?
 
@@ -49,28 +64,23 @@ Each cycle is an independent CLI call. `memories/consensus.md` is the only cross
 
 ## Generated Applications
 
-These independent applications were created through autonomous Auto-Company runs. The screenshots show the resulting products, not Auto-Company itself or its dashboard.
-
-Humans supplied only the instruction to start and the delivery scope. From product selection and planning through design, development, testing, and delivery, the Agent team discussed, decided, and executed autonomously, with no human intervention in that process.
+These three local products come from actual runs and appear in both README languages. ScopeFence and Scope Sheet chose their directions through the default workflow; Text Meter came from an ordinary text-counting request. Humans set permissions, language and external run boundaries, then reviewed and made necessary publication fixes documented in each project. Product images show the actual default interfaces of the published source; the Dashboards above retain the original reports and failures.
 
 <table>
   <tr>
-    <th width="50%">行间 / TableDelta</th>
-    <th width="50%">幕检 / CueCheck</th>
+    <th width="33%">ScopeFence · English</th>
+    <th width="33%">Text Meter · English</th>
+    <th width="33%">范围确认单 / Scope Sheet · 中文</th>
   </tr>
   <tr>
-    <td width="50%" valign="top"><a href="projects/tabledelta/docs/images/desktop-result.png"><img src="projects/tabledelta/docs/images/desktop-result.png" alt="TableDelta: CSV comparison results" width="100%" /></a></td>
-    <td width="50%" valign="top"><a href="projects/cuecheck/docs/images/desktop-result.png"><img src="projects/cuecheck/docs/images/desktop-result.png" alt="CueCheck: subtitle checking and editing workspace" width="100%" /></a></td>
+    <td width="33%" valign="top"><a href="presentation/products/scopefence-full.png"><img src="presentation/products/scopefence.png" alt="ScopeFence" width="100%" /></a></td>
+    <td width="33%" valign="top"><a href="presentation/products/text-meter-full.png"><img src="presentation/products/text-meter.png" alt="Text Meter" width="100%" /></a></td>
+    <td width="33%" valign="top"><a href="presentation/products/scope-sheet-full.png"><img src="presentation/products/scope-sheet.png" alt="范围确认单 / Scope Sheet" width="100%" /></a></td>
   </tr>
   <tr>
-    <td width="50%" valign="top">
-      <p>Compare two CSV files, inspect added, removed, and changed records, and export a change report.</p>
-      <p><a href="projects/tabledelta/">View source →</a></p>
-    </td>
-    <td width="50%" valign="top">
-      <p>Check SRT subtitle timing, overlaps, and reading speed; edit individual subtitles, recheck, and export.</p>
-      <p><a href="projects/cuecheck/">View source →</a></p>
-    </td>
+    <td width="33%" valign="top"><p>Turn a scope change into a no-login decision link. The returned link is an editable communication copy, not verified approval.</p><p><a href="projects/scopefence/">View source →</a></p></td>
+    <td width="33%" valign="top"><p>Count characters, non-whitespace characters, whitespace-separated words and lines locally as you type.</p><p><a href="projects/text-meter/">View source →</a></p></td>
+    <td width="33%" valign="top"><p>Prepare a Chinese scope note, check required fields, and copy or download the text for a client conversation.</p><p><a href="projects/scope-sheet/">View source →</a></p></td>
   </tr>
 </table>
 

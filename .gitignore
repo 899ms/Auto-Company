@@ -161,6 +161,9 @@ projects/*
 # Explicitly published product examples; autonomous output stays ignored.
 !projects/tabledelta/
 !projects/cuecheck/
+!projects/scopefence/
+!projects/text-meter/
+!projects/scope-sheet/
 
 # Local/private outputs (do not publish)
 AGENTS.md

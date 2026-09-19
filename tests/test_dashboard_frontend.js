@@ -21,7 +21,7 @@ function helpers() {
   // copied application logic, network request or production testing hook.
   const binding = app.indexOf("\n  document.querySelectorAll('[data-tab]').forEach");
   assert.ok(binding > 0, "Journal event wiring must follow its helper declarations");
-  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows, liveDuration, checkCounts, checkPresentation, progressState, latestCycle, unavailableArtifact, mediaURL, mediaRetryError, iconPublicationWarning };\n})();", context);
+  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows, liveDuration, checkCounts, checkPresentation, progressState, latestCycle, historyGroups, unavailableArtifact, mediaURL, mediaRetryError, iconPublicationWarning };\n})();", context);
   context.journal.state.language = "en";
   return { ...context.journal, messages: context.window.JOURNAL_MESSAGES, fields };
 }
@@ -204,6 +204,26 @@ test("project selection never promotes unrelated or unknown history into current
   assert.equal(latestCycle({ project, cycles: [old, unknown, current], latestProjectCycleId: "current" }), current);
   assert.equal(latestCycle({ project: { id: null }, cycles: [unknown], latestProjectCycleId: null }), unknown);
   assert.equal(latestCycle({ cycles: [old] }), old);
+});
+
+test("product timelines separate exploration without dropping legacy or unknown records", () => {
+  const { historyGroups } = helpers();
+  const current = { id: "product-5", identityKind: "product" };
+  const product = { id: "product-4", identityKind: "product" };
+  const exploration = { id: "explore-3", identityKind: "exploration", status: "failed" };
+  const legacy = { id: "legacy", numbering: "legacy", status: "unknown" };
+  const grouped = historyGroups({ cycles: [current, product, exploration, legacy] }, current);
+  assert.deepEqual(Array.from(grouped.main, (cycle) => cycle.id), ["product-4", "legacy"]);
+  assert.deepEqual(Array.from(grouped.exploration, (cycle) => cycle.id), ["explore-3"]);
+
+  const explorationCurrent = { id: "explore-4", identityKind: "exploration" };
+  const explorationOnly = historyGroups({ cycles: [explorationCurrent, exploration] }, explorationCurrent);
+  assert.deepEqual(Array.from(explorationOnly.main, (cycle) => cycle.id), ["explore-3"]);
+  assert.deepEqual(Array.from(explorationOnly.exploration), []);
+
+  const currentExplorationWithProduct = historyGroups({ cycles: [explorationCurrent, product, exploration] }, explorationCurrent);
+  assert.deepEqual(Array.from(currentExplorationWithProduct.main, (cycle) => cycle.id), ["product-4"]);
+  assert.deepEqual(Array.from(currentExplorationWithProduct.exploration, (cycle) => cycle.id), ["explore-3"]);
 });
 
 
