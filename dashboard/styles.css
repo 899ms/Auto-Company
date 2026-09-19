@@ -1699,3 +1699,8 @@ dialog .runtime-details {
     gap: 5px;
   }
 }
+.observed-events { margin: 1.5rem 0; }
+.event-list { list-style: none; padding: 0; margin: 1rem 0; }
+.event-list li { display: grid; grid-template-columns: 5rem minmax(0, 1fr); gap: .75rem; padding: .5rem 0; }
+.event-list time { color: var(--muted, #667085); font-variant-numeric: tabular-nums; }
+.event-list span { overflow-wrap: anywhere; }

@@ -211,6 +211,7 @@ docs/*/*
 !docs/*/.gitkeep
 !docs/windows-setup.md
 !docs/usage-governance.md
+!docs/runtime-observability.md
 # Ignore all memories (keep folder marker only)
 memories/*
 !memories/.gitkeep

@@ -58,6 +58,7 @@
     return seconds < 60 ? message('seconds', { seconds }) : message('minutes', { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
   }
   function cycleTitle(cycle) {
+    if (cycle.status === 'interrupted' && cycle.events?.length) return message('interruptedSummary');
     if (cycle.synthetic && cycle.status !== 'running') return statusLabel(cycle.status);
     let title = clean(cycle.summary || cycle.report || '').split('\n').find((line) => line.trim()) || '';
     if (/^[\[{]/.test(title)) title = '';
@@ -144,6 +145,28 @@
     details.append(summary, body);
     return details;
   }
+  function eventList(cycle) {
+    const events = (cycle.events || []).filter((event) => event.kind !== 'report');
+    if (!events.length) return null;
+    const section = element('section', 'observed-events');
+    section.append(element('h3', '', message('observedEvents')));
+    section.append(element('p', 'sidebar-note', message('eventTimeNote')));
+    const list = element('ol', 'event-list');
+    for (const event of events.slice(-12)) {
+      const row = element('li');
+      let label = message(`event_${event.kind}`);
+      if (event.kind === 'command') {
+        const ended = event.phase === 'completed';
+        label = `${message(ended ? 'commandEnded' : 'commandStarted')} ${event.command || ''}`;
+        if (ended) label += ` · ${message('exitCode')}: ${Number.isInteger(event.exitCode) ? event.exitCode : message('unknown')}`;
+      } else if (event.kind === 'files') label = `${message('fileChanges')}: ${(event.paths || []).join(', ')}`;
+      row.append(element('time', '', formatTime(event.observedAt)), element('span', '', label));
+      list.append(row);
+    }
+    section.append(list);
+    if (cycle.eventStatus === 'partial') section.append(element('p', 'sidebar-note', message('partialEvents')));
+    return section;
+  }
   function renderCurrent(cycle) {
     const container = clear($('currentCycle'));
     if (!cycle) {
@@ -165,17 +188,20 @@
     const report = element('section', 'report-section');
     const heading = element('div', 'section-heading-row');
     heading.append(element('h3', '', message('latestReport')));
-    const timestamp = cycle.durationReliable !== false && cycle.endedAtKind !== 'recovered' && cycle.status !== 'interrupted' ? cycle.endedAt : null;
+    const timestamp = cycle.reportObservedAt || (cycle.durationReliable !== false && cycle.endedAtKind !== 'recovered' && cycle.status !== 'interrupted' ? cycle.endedAt : null);
     if (timestamp) {
       const time = element('time', '', message('recordedAt', { time: formatTime(timestamp) }));
       time.dateTime = timestamp;
       heading.append(time);
     }
-    let intro = clean(cycle.summary || '');
+    const liveReport = cycle.active ? [...(cycle.events || [])].reverse().find((event) => event.kind === 'report') : null;
+    let intro = clean(cycle.summary || liveReport?.text || '');
     if (/^[\[{]/.test(intro)) intro = cycleTitle(cycle);
     if (!intro) intro = message(cycle.active ? 'runningNoReport' : 'noReport');
     report.append(heading, element('p', 'report-intro', intro));
     body.append(report);
+    const observed = eventList(cycle);
+    if (observed) body.append(observed);
     const rows = reportRows(cycle);
     if (rows.length) {
       const results = element('section', 'results-section');
@@ -206,6 +232,8 @@
       summary.append(arrow);
       const content = element('div', 'history-content');
       content.append(metadata(cycle));
+      const observed = eventList(cycle);
+      if (observed) content.append(observed);
       let report = clean(cycle.summary || '');
       if (/^[\[{]/.test(report)) report = cycleTitle(cycle);
       content.append(element('p', '', report || message('noSummary')));
@@ -367,16 +395,27 @@
       const list = element('ul', 'artifact-list');
       for (const artifact of data.artifacts) {
         const item = element('li');
-        const link = element('a', 'artifact-link');
-        link.href = `/api/journal/document?path=${encodeURIComponent(artifact.path)}`;
-        link.target = '_blank';
-        link.rel = 'noopener';
-        link.title = artifact.path;
-        link.append(fileIcon(), element('span', '', artifact.label || artifact.path));
-        const arrow = element('span', 'artifact-arrow', '↗');
-        arrow.setAttribute('aria-hidden', 'true');
-        link.append(arrow);
-        item.append(link);
+        const label = artifact.kind === 'preview' ? message('productPreview') : artifact.label || artifact.path;
+        if (artifact.available === false || (!artifact.path && !artifact.url)) {
+          item.append(element('span', '', `${label} · ${message('artifactUnavailable')}`));
+        } else {
+          const link = element('a', 'artifact-link');
+          link.href = artifact.url || `/api/journal/document?path=${encodeURIComponent(artifact.path)}`;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          link.title = artifact.path || artifact.url;
+          link.append(fileIcon(), element('span', '', label));
+          const arrow = element('span', 'artifact-arrow', '↗');
+          arrow.setAttribute('aria-hidden', 'true');
+          link.append(arrow);
+          item.append(link);
+        }
+        if (artifact.kind === 'check') {
+          const tests = artifact.tests;
+          const result = `${message('exitCode')}: ${Number.isInteger(artifact.exitCode) ? artifact.exitCode : message('unknown')}`;
+          item.append(element('p', 'sidebar-note', tests ? `${result} · ${message('testCounts', { tests: tests.tests, failures: tests.failures + tests.errors, skipped: tests.skipped })}` : result));
+        }
+        if (artifact.recordedAt) item.append(element('p', 'sidebar-note', message('recordedAt', { time: formatTime(artifact.recordedAt) })));
         list.append(item);
       }
       artifacts.append(list);
@@ -387,6 +426,7 @@
     const usage = `${compactNumber(sum.totalTokens)}${knownNumber(sum.totalTokens) ? ' tokens' : ''}${sum.partial && sum.known ? message('usagePartialShort') : ''}`;
     const config = data.runtime || {};
     runtime.append(runtimeRows([[message('engine'), config.engine], [message('model'), config.model], [message('reasoning'), config.reasoning === 'unknown' ? message('unknown') : config.reasoning], [message('language'), languageLabel(config.language || data.language)], [message('recordedUsage'), usage]]));
+    runtime.append(element('p', 'sidebar-note', message(config.configSource === 'session_context' ? 'observedSession' : 'unconfirmedSession')));
     const details = bindDisclosure(element('details', 'runtime-disclosure'), 'runtime');
     details.append(element('summary', '', message('moreRuntime')), runtimeRows([[message('state'), runtimeLabel()], [message('phase'), clean(data.consensus?.phase) || message('phaseUnknown')], [message('source'), data.sourceName]]));
     runtime.append(details);

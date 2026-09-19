@@ -28,7 +28,7 @@ class MacosStartTests(unittest.TestCase):
         self.project = self.root / 'Repo & "trial"'
         shutil.copytree(REPO / "scripts", self.project / "scripts")
         (self.project / "dashboard").mkdir()
-        for name in ("server.py", "journal_data.py"):
+        for name in ("server.py", "journal_data.py", "observability_data.py"):
             shutil.copy2(REPO / "dashboard" / name, self.project / "dashboard" / name)
         self.home = self.root / "home"
         self.plist = self.home / f"Library/LaunchAgents/{LABEL}.plist"

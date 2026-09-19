@@ -459,9 +459,11 @@ run_engine_cycle() {
     # This is workflow context, not an OS sandbox or an authentication boundary.
     export AUTO_COMPANY_ROOT="$PROJECT_DIR"
     export AUTO_COMPANY_CYCLE=1
+    export AUTO_COMPANY_CYCLE_ID="$(basename "$cycle_log" .log)"
     export ACTIVE_PROJECT ACTIVE_PROJECT_PATH
     engine_adapter_run "$prompt"
     unset AUTO_COMPANY_CYCLE
+    unset AUTO_COMPANY_CYCLE_ID
     OUTPUT="$ADAPTER_OUTPUT"
     EXIT_CODE="$ADAPTER_EXIT_CODE"
     CYCLE_TIMED_OUT="$ADAPTER_TIMED_OUT"

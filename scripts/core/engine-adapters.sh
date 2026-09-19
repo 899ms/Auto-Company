@@ -135,7 +135,10 @@ engine_adapter_validate() {
             adapter_validate_claude_permission_mode
             ;;
         codex)
-            return 0
+            case "${CODEX_REASONING_EFFORT:-}" in
+                ""|none|minimal|low|medium|high|xhigh|max|ultra) return 0 ;;
+                *) echo "Invalid CODEX_REASONING_EFFORT" >&2; return 1 ;;
+            esac
             ;;
         cursor)
             adapter_validate_boolean "CURSOR_ADAPTER_ENABLED" "$CURSOR_ADAPTER_ENABLED" || return 1
@@ -401,8 +404,16 @@ adapter_run_codex() {
     if [ -n "${MODEL:-}" ]; then
         codex_cmd+=("-m" "$MODEL")
     fi
+    if [ -n "${CODEX_REASONING_EFFORT:-}" ]; then
+        codex_cmd+=("-c" "model_reasoning_effort=\"${CODEX_REASONING_EFFORT}\"")
+    fi
     codex_cmd+=("$prompt")
-    adapter_execute "${codex_cmd[@]}"
+    if [ -n "${AUTO_COMPANY_CYCLE_ID:-}" ]; then
+        adapter_execute python3 "$ENGINE_ADAPTER_DIR/runtime_events.py" \
+            --root "$PROJECT_DIR" --cycle "$AUTO_COMPANY_CYCLE_ID" -- "${codex_cmd[@]}"
+    else
+        adapter_execute "${codex_cmd[@]}"
+    fi
     ADAPTER_RESULT_SOURCE=$(adapter_redact < "$message_file" 2>/dev/null || true)
     rm -f "$message_file"
 }
