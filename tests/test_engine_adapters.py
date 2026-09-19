@@ -287,7 +287,7 @@ printf '%s\n' "$ADAPTER_OUTPUT"
         record = json.loads(ledger.read_text().splitlines()[0])
         self.assertEqual(record["status"], "failed")
         self.assertEqual(record["usage"]["total_tokens"], 3)
-        sidecar = json.loads(next((self.workspace / "logs").glob("cycle-*.json")).read_text())
+        sidecar = json.loads((self.workspace / "logs" / f"{record['cycle_id']}.json").read_text())
         self.assertEqual(sidecar["cycle_outcome"], "failure")
         self.assertIn("Adapter reported error", sidecar["failure_reason"])
 

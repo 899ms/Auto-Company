@@ -97,9 +97,12 @@ a cycle, not an implicit side effect. The loop finalizes unfinished checks as
 interrupted after existing process supervision ends; an unknown end time stays
 null rather than being replaced by cleanup time.
 
-Artifact records live in `logs/artifacts/`. The reader bounds discovery to
-501 entries, checks the newest 100 of those, and exposes up to 20 records and
-three loopback checks per refresh. It is not an unlimited artifact archive.
+Artifact records live in `logs/artifacts/`. The reader enumerates filenames and
+keeps the newest 500 by modification time/name in a fixed-size heap. It reads
+only those 500 records, at most 16 KiB each, and exposes up to 100 records and
+three loopback checks per refresh. `scannedRecords` reports all candidate names;
+`partial`/`truncated` explicitly mark omitted or invalid evidence. This is not
+an unlimited artifact archive.
 Lifecycle cleanup streams all record filenames, reading at most 16 KiB per
 regular file and handling one record at a time. Display limits never cause a
 later cycle-owned process or unfinished check to be excluded from cleanup.

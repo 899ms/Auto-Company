@@ -1,5 +1,6 @@
 import { test as base, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
@@ -56,7 +57,16 @@ const test = base.extend({
     }));
     await fs.writeFile(path.join(directory, ".auto-company.local"), "ACTIVE_PROJECT=projects/journal-fixture\nAUTO_COMPANY_LANGUAGE=zh-CN\n");
     await fs.writeFile(path.join(directory, ".auto-loop-state"), "STATUS=stopped\nENGINE=codex\nMODEL=gpt-6-astra\nLOOP_COUNT=3\n");
-    await fs.writeFile(path.join(directory, "DELIVERY.md"), "# Browser fixture delivery\nThis document stays read-only.\n");
+    const deliveryText = "# Browser fixture delivery\nThis document stays read-only.\n";
+    const deliveryPath = "projects/journal-fixture/DELIVERY.md";
+    await fs.writeFile(path.join(directory, deliveryPath), deliveryText);
+    await fs.mkdir(path.join(directory, "logs/artifacts"), { recursive: true });
+    const recordedAt = new Date().toISOString();
+    await fs.writeFile(path.join(directory, "logs/artifacts/delivery.json"), JSON.stringify({
+      version: 1, id: "a".repeat(32), kind: "document", project: "projects/journal-fixture",
+      cycleId: cycles.at(-1).cycle_id, recordedAt, modifiedAt: recordedAt, source: "runner",
+      path: deliveryPath, sha256: createHash("sha256").update(deliveryText).digest("hex"),
+    }));
     // Exercise the optional backup route without relying on private local files
     // or keeping a second production dashboard in the repository.
     const legacyDirectory = path.join(directory, "legacy-backup");
@@ -142,7 +152,7 @@ test("usage preserves unknown coverage and artifacts open through the real serve
   await page.locator("#tab-usage").click();
   await expect(page.locator("body")).toContainText(/部分|未知|不完整/);
   await page.locator("#tab-work").click();
-  const delivery = page.locator('#projectSidebar a[href="/api/journal/document?path=DELIVERY.md"]');
+  const delivery = page.locator('#projectSidebar a[href="/api/journal/document?path=projects%2Fjournal-fixture%2FDELIVERY.md"]');
   await expect(delivery.first()).toBeVisible();
   const response = await page.request.get(new URL(await delivery.first().getAttribute("href"), journal.url).href);
   expect(response.ok()).toBeTruthy();
