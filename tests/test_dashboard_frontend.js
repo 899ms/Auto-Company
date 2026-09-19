@@ -21,7 +21,7 @@ function helpers() {
   // copied application logic, network request or production testing hook.
   const binding = app.indexOf("\n  document.querySelectorAll('[data-tab]').forEach");
   assert.ok(binding > 0, "Journal event wiring must follow its helper declarations");
-  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows };\n})();", context);
+  vm.runInContext(app.slice(0, binding) + "\n globalThis.journal = { state, message, aggregate, duration, cycleTitle, statusLabel, formatTime, filterUsage, reportRows, liveDuration, checkCounts, checkPresentation, progressState, latestCycle, unavailableArtifact };\n})();", context);
   context.journal.state.language = "en";
   return { ...context.journal, messages: context.window.JOURNAL_MESSAGES, fields };
 }
@@ -125,4 +125,86 @@ test("day and week usage filters use ledger end dates and exclude active work", 
   assert.equal(filterUsage().length, 7);
   assert.equal(filterUsage().some((cycle) => cycle.active), false);
   assert.equal(fields.get("usageDate").hidden, true);
+});
+
+
+test("live elapsed time advances only with fresh verified runtime identity", () => {
+  const { state, liveDuration } = helpers();
+  state.statusFailed = false;
+  state.receivedAt = 1000;
+  state.data = { runtime: { processState: "running", elapsedReliable: true, elapsedSeconds: 60 } };
+  const cycle = { active: true, status: "running" };
+  assert.equal(liveDuration(cycle, 4000), "Running for 1m 3s");
+  assert.equal(liveDuration(cycle, 17000), "Elapsed time unconfirmed");
+  assert.equal(liveDuration(cycle, 999), "Elapsed time unconfirmed");
+  state.action = "stop";
+  assert.equal(liveDuration(cycle, 4000), "Elapsed time unconfirmed");
+  state.action = "";
+  state.statusFailed = true;
+  assert.equal(liveDuration(cycle, 4000), "Elapsed time unconfirmed");
+  state.statusFailed = false;
+  state.data.runtime.elapsedReliable = false;
+  assert.equal(liveDuration(cycle, 4000), "Elapsed time unconfirmed");
+});
+
+test("check pass counts require a complete internally consistent machine summary", () => {
+  const { checkCounts } = helpers();
+  assert.equal(checkCounts({ tests: 12, failures: 2, errors: 1, skipped: 3 }).passed, 6);
+  assert.equal(checkCounts({ tests: 0, failures: 0, errors: 0, skipped: 0 }).passed, 0);
+  assert.equal(checkCounts({ tests: 12, failures: 0 }).passed, undefined);
+  assert.equal(checkCounts({ tests: 1, failures: 2, errors: 0, skipped: 0 }).passed, undefined);
+  assert.equal(checkCounts(null).passed, undefined);
+});
+
+
+test("project selection never promotes unrelated or unknown history into current work", () => {
+  const { latestCycle } = helpers();
+  const old = { id: "old", projectStatus: "other", active: false };
+  const unknown = { id: "unknown", projectStatus: "unknown", active: false };
+  const current = { id: "current", projectStatus: "current", active: false };
+  const project = { id: "projects/current" };
+  assert.equal(latestCycle({ project, cycles: [old, unknown], latestProjectCycleId: null }), undefined);
+  assert.equal(latestCycle({ project, cycles: [old, unknown, current], latestProjectCycleId: "current" }), current);
+  assert.equal(latestCycle({ project: { id: null }, cycles: [unknown], latestProjectCycleId: null }), unknown);
+  assert.equal(latestCycle({ cycles: [old] }), old);
+});
+
+
+test("compact checks never promote stale, incomplete or failed evidence to success", () => {
+  const { checkPresentation } = helpers();
+  const check = { state: "completed", evidenceStatus: "completed", exitCode: 0, tests: { tests: 7, failures: 0, errors: 0, skipped: 0 } };
+  const show = (changes) => checkPresentation({ latestCheck: { ...check, ...changes } });
+  assert.equal(show({}).status, "completed");
+  assert.equal(show({}).detail, "7 passed");
+  for (const changes of [{ evidenceStatus: "missing" }, { freshness: "stale" }, { tests: null }, { exitCode: null }, { evidenceStatus: "unknown" }]) {
+    assert.equal(show(changes).status, "unknown");
+  }
+  assert.equal(show({ exitCode: 1 }).status, "failed");
+  assert.match(show({ exitCode: 1 }).detail, /failed/i);
+  assert.equal(show({ tests: { tests: 7, failures: 1, errors: 0, skipped: 0 } }).status, "failed");
+  assert.equal(show({ state: "interrupted" }).status, "interrupted");
+  assert.equal(show({ tests: { tests: 7, failures: 0, errors: 0, skipped: 7 } }).status, "unknown");
+  assert.equal(checkPresentation({}).status, "unknown");
+});
+
+test("cycle progress distinguishes execution completion, pauses and unknown states", () => {
+  const { progressState } = helpers();
+  assert.equal(progressState("completed"), "completed");
+  assert.equal(progressState("running"), "running");
+  assert.equal(progressState("pending"), "pending");
+  for (const status of ["interrupted", "paused", "completed_with_timeout", "waiting_limit"]) assert.equal(progressState(status), "paused");
+  assert.equal(progressState("failed"), "failed");
+  assert.equal(progressState("unexpected"), "unknown");
+  assert.equal(progressState(undefined), "unknown");
+});
+
+test("unavailable previews use lifecycle labels while documents keep file evidence labels", () => {
+  const { state, unavailableArtifact, messages } = helpers();
+  for (const language of ["en", "zh-CN"]) {
+    state.language = language;
+    for (const [status, label] of [["stopped", "previewEnded"], ["interrupted", "previewInterrupted"], ["running", "previewUnavailable"], ["launch_failed", "previewUnavailable"]]) {
+      assert.equal(unavailableArtifact({ kind: "preview", state: status, evidenceStatus: "stale" }), messages[language][label]);
+    }
+    assert.equal(unavailableArtifact({ kind: "document", evidenceStatus: "stale" }), messages[language].artifactStale);
+  }
 });

@@ -413,7 +413,7 @@ class GovernanceLoopTest(GovernanceFixture):
         self.assertEqual(calls[0]["project"], str(product))
         self.assertEqual(calls[0]["active"], "projects/selected")
         self.assertIn(f"Selected product repository: `{product}`", calls[0]["argv"][2])
-        self.assertIn("Dashboard work report (version 1", calls[0]["argv"][2])
+        self.assertIn("Dashboard work report (version 2", calls[0]["argv"][2])
         self.assertEqual(self.git("log", "-1", "--format=%s", cwd=product).strip(), "Fake product milestone")
         self.assertEqual(self.git("ls-files", "--", "projects/selected"), "")
         self.assertEqual(len(list((self.root / "memories/snapshots").glob("*.md"))), 1)

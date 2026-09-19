@@ -27,7 +27,7 @@ class LogRotationTests(unittest.TestCase):
             (self.logs / name).write_text(content)
 
     def seed(self, stem, mtime):
-        for extension in (".log", ".json"):
+        for extension in (".log", ".json", ".context.json", ".work.json", ".events.jsonl"):
             path = self.logs / (stem + extension)
             path.write_text(stem)
             os.utime(path, (mtime, mtime))
@@ -38,8 +38,12 @@ class LogRotationTests(unittest.TestCase):
                                          SCRIPT_DIR=str(REPO / "scripts/core")), timeout=10)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         logs = {p.stem for p in self.logs.glob("cycle-*.log")}
-        sidecars = {p.stem for p in self.logs.glob("cycle-*.json") if p.name != "cycle-orphan.json"}
+        sidecars = {p.stem for p in self.logs.glob("cycle-*.json") if p.name != "cycle-orphan.json"
+                    and not p.name.endswith((".context.json", ".work.json"))}
         self.assertEqual(logs, sidecars)
+        for extension in (".context.json", ".work.json", ".events.jsonl"):
+            paired = {p.name.removesuffix(extension) for p in self.logs.glob("cycle-*" + extension)}
+            self.assertEqual(logs, paired)
         for name, content in self.sentinels.items():
             self.assertEqual((self.logs / name).read_text(), content)
         return logs

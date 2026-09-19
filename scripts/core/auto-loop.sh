@@ -261,6 +261,10 @@ cleanup() {
         final_state="process_cleanup_failed"
         log "Process-tree cleanup could not be confirmed for cycle PGID ${CYCLE_SUPERVISOR_LAST_PGID}"
     else
+        if [ -n "${AUTO_COMPANY_CYCLE_ID:-}" ]; then
+            python3 "$SCRIPT_DIR/runtime_artifacts.py" --root "$PROJECT_DIR" finalize \
+                --cycle "$AUTO_COMPANY_CYCLE_ID" >/dev/null 2>&1 || true
+        fi
         # A signal interrupts adapter_execute before it can publish its output.
         # Preserve already emitted evidence after the owned process tree exits.
         if [ -n "${ADAPTER_OUTPUT_FILE:-}" ] && [ -f "$ADAPTER_OUTPUT_FILE" ] &&
@@ -461,7 +465,14 @@ run_engine_cycle() {
     export AUTO_COMPANY_CYCLE=1
     export AUTO_COMPANY_CYCLE_ID="$(basename "$cycle_log" .log)"
     export ACTIVE_PROJECT ACTIVE_PROJECT_PATH
+    python3 "$SCRIPT_DIR/runtime_artifacts.py" --root "$PROJECT_DIR" --project "$ACTIVE_PROJECT" context \
+        --cycle "$AUTO_COMPANY_CYCLE_ID" >/dev/null 2>&1 || true
     engine_adapter_run "$prompt"
+    # Observation cleanup does not classify the cycle or replace supervision.
+    if [ "$CYCLE_SUPERVISOR_CLEANUP_FAILED" -eq 0 ]; then
+        python3 "$SCRIPT_DIR/runtime_artifacts.py" --root "$PROJECT_DIR" finalize \
+            --cycle "$AUTO_COMPANY_CYCLE_ID" >/dev/null 2>&1 || true
+    fi
     unset AUTO_COMPANY_CYCLE
     unset AUTO_COMPANY_CYCLE_ID
     OUTPUT="$ADAPTER_OUTPUT"
@@ -646,6 +657,7 @@ while true; do
     CONSENSUS=$(cat "$CONSENSUS_FILE" 2>/dev/null || echo "No consensus file found. This is the very first cycle.")
     # Optional observation instructions must never block the existing cycle.
     REPORT_INSTRUCTIONS=$(python3 "$SCRIPT_DIR/cycle_reports.py" prompt 2>/dev/null) || REPORT_INSTRUCTIONS=""
+    ARTIFACT_INSTRUCTIONS=$(python3 "$SCRIPT_DIR/runtime_artifacts.py" prompt 2>/dev/null) || ARTIFACT_INSTRUCTIONS=""
     FULL_PROMPT="$PROMPT
 
 ---
@@ -671,6 +683,8 @@ while true; do
 - Framework cwd remains available for company coordination and consensus. Project selection is workflow routing, not an OS filesystem or network sandbox.
 
 $REPORT_INSTRUCTIONS
+
+$ARTIFACT_INSTRUCTIONS
 
 ---
 

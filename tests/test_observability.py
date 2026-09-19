@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "dashboard"))
 from runtime_events import Recorder, observed_config
 from runtime_artifacts import base_record, save, fingerprint
 from journal_data import JournalSource
-from observability_data import cycle_events, registered_artifacts, preview_available
+from observability_data import artifact_projection, cycle_events, registered_artifacts, preview_available
 
 
 class ObservabilityTests(unittest.TestCase):
@@ -116,8 +116,66 @@ class ObservabilityTests(unittest.TestCase):
         result = subprocess.run(prefix + [sys.executable, "-c", "pass"], capture_output=True)
         self.assertEqual(result.returncode, 0)
         records = registered_artifacts(self.source)
-        self.assertEqual(len(records), 1)
+        self.assertEqual(len(records), 2, "distinct check executions retain their own evidence")
         self.assertTrue(any(row.get("reportStatus") == "missing_or_stale" and "tests" not in row for row in records))
+
+    def test_projection_rejects_bad_identity_and_counts_and_binds_cycle(self):
+        report = self.project / "report.xml"
+        report.write_text("evidence")
+        check = base_record("projects/probe", "check")
+        check.update(cycleId="cycle-bound", path="projects/probe/report.xml", sha256=fingerprint(report),
+                     state="completed", startedAt="2026-09-19T01:00:00+00:00",
+                     endedAt="2026-09-19T01:00:01+00:00", exitCode=0, reportStatus="fresh",
+                     tests={"tests": 1, "failures": 1, "errors": 1, "skipped": 0})
+        save(self.root, check)
+        folder = self.root / "logs/artifacts"
+        (folder / "bad.json").write_text("{not-json")
+        projection = artifact_projection(self.source)
+        self.assertEqual(projection["status"], "partial")
+        self.assertEqual(projection["invalidRecords"], 1)
+        self.assertEqual(projection["items"][0]["associationStatus"], "bound")
+        self.assertEqual(projection["items"][0]["evidenceStatus"], "invalid")
+        self.assertEqual(projection["items"][0]["countsStatus"], "invalid")
+        self.assertNotIn("tests", projection["items"][0])
+
+    def test_projection_reports_output_limit_instead_of_silently_dropping_history(self):
+        folder = self.root / "logs/artifacts"
+        folder.mkdir(parents=True)
+        for number in range(101):
+            value = {"version": 1, "id": f"{number:032x}", "project": "projects/probe",
+                     "kind": "check", "cycleId": f"cycle-{number}",
+                     "recordedAt": "2026-09-19T01:00:00+00:00", "source": "runner",
+                     "state": "completed", "exitCode": 0, "reportStatus": "unavailable"}
+            (folder / f"{number:032x}.json").write_text(json.dumps(value))
+        projection = artifact_projection(self.source)
+        self.assertEqual(projection["scannedRecords"], 101)
+        self.assertEqual(projection["returnedRecords"], 100)
+        self.assertTrue(projection["truncated"])
+        self.assertEqual(projection["status"], "partial")
+
+    def test_file_limit_selects_newest_record_beyond_directory_prefix(self):
+        folder = self.root / "logs/artifacts"
+        folder.mkdir(parents=True)
+        for number in range(500):
+            path = folder / f"{number:032x}.json"
+            path.write_text(json.dumps({
+                "version": 1, "id": f"{number:032x}", "project": "projects/other",
+                "kind": "check", "cycleId": f"old-{number}",
+                "recordedAt": "2026-09-19T01:00:00+00:00", "source": "runner",
+                "state": "completed", "exitCode": 0, "reportStatus": "unavailable"}))
+            os.utime(path, (1700000000, 1700000000))
+        newest_id = "f" * 32
+        newest = folder / f"{newest_id}.json"
+        newest.write_text(json.dumps({
+            "version": 1, "id": newest_id, "project": "projects/probe",
+            "kind": "check", "cycleId": "cycle-newest",
+            "recordedAt": "2027-09-19T01:00:00+00:00", "source": "runner",
+            "state": "completed", "exitCode": 0, "reportStatus": "unavailable"}))
+        os.utime(newest, (1800000000, 1800000000))
+        projection = artifact_projection(self.source)
+        self.assertEqual(projection["scannedRecords"], 501)
+        self.assertTrue(projection["truncated"])
+        self.assertEqual([item["id"] for item in projection["items"]], [newest_id])
 
     def test_preview_identity_rejects_other_server_and_remote_url(self):
         class Handler(http.server.BaseHTTPRequestHandler):

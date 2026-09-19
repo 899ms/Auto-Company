@@ -135,6 +135,7 @@ class Recorder:
                 if item_type == "command_execution":
                     code = item.get("exit_code")
                     self.emit("command", **fields, command=bounded_text(item.get("command")),
+                              commandTruncated=len(bounded_text(item.get("command"), 1001)) > 1000,
                               exitCode=code if type(code) is int else None)
                 elif item_type == "file_change":
                     changes = item.get("changes")

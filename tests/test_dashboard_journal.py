@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import threading
 import unittest
@@ -52,7 +53,11 @@ class JournalFixture(unittest.TestCase):
         pid = self.write(".auto-loop.pid", "4321\n")
         os.utime(pid, (1700000000, 1700000000))
         self.write(".auto-loop-state", "STATUS=running\nLOOP_COUNT=2\nENGINE=codex\nMODEL=example-model\n")
+        self.write(".auto-company.local", "ACTIVE_PROJECT=projects/probe\n")
         self.write("logs/usage.jsonl.pending", json.dumps(record("cycle-0002-live", number=2, status="interrupted")))
+        self.write("logs/cycle-0002-live.context.json", json.dumps({
+            "version": 1, "cycleId": "cycle-0002-live", "project": "projects/probe",
+            "recordedAt": "2026-09-18T12:00:00+08:00", "source": "runtime_context"}))
         return {"ok": True, "raw": "Loop is running", "stateFile": self.source.pairs(".auto-loop-state"),
                 "parsed": {"loop": {"state": "running", "processState": "running", "pid": 4321},
                            "daemon": {"state": "active"}}}
@@ -100,7 +105,7 @@ class JournalTests(JournalFixture):
         consensus = self.source.snapshot()["consensus"]
         self.assertEqual(consensus["phase"], "交付")
         self.assertEqual(consensus["progress"], ["完成测试"])
-        self.assertEqual(consensus["nextAction"], "等待人工试用")
+        self.assertNotIn("nextAction", consensus)
         self.assertEqual(consensus["reportedUpdatedAt"], "2020-01-01T00:00:00+08:00")
         self.assertEqual(consensus["updatedAt"], "2027-01-15T08:00:00+00:00")
         self.assertEqual(consensus["raw"], path.read_bytes().decode("utf-8"))
@@ -146,11 +151,97 @@ class JournalTests(JournalFixture):
         self.write("projects/sample/README.md", "# Sample guide")
         self.write(".env", "private")
         self.assertEqual([item["path"] for item in self.source.documents()], ["DELIVERY.md", "projects/sample/README.md"])
-        self.assertEqual(self.source.snapshot()["project"]["name"], "Sample")
+        self.assertEqual(self.source.snapshot()["project"]["name"], "Auto Company",
+                         "delivery prose is not project identity")
         self.assertEqual(self.source.document("projects/sample/README.md")[0], "# Sample guide")
         for path in (".env", "../.env", "projects/sample/../../.env", "C:/secret", "projects\\sample\\README.md"):
             with self.assertRaises(ValueError):
                 self.source.document(path)
+
+    def test_project_metadata_is_identity_bound_and_never_reuses_consensus(self):
+        self.write("DELIVERY.md", "# Old Product\n[Guide](projects/old/README.md)\n")
+        self.write("projects/old/README.md", "stale deliverable")
+        self.write(".auto-company.local", "ACTIVE_PROJECT=projects/probe\n")
+        self.write("projects/probe/.auto-company-project.json", json.dumps({
+            "version": 1, "project": "projects/probe", "displayName": "Probe",
+            "description": "Bound description", "recordedAt": "2026-09-19T01:00:00+00:00",
+            "source": "project_metadata"}))
+        self.write("memories/consensus.md", "## Company State\n- Product: stale other product\n")
+        project = self.source.snapshot()["project"]
+        self.assertEqual(project, {"id": "projects/probe", "name": "Probe", "displayName": "Probe",
+                                  "description": "Bound description", "source": "project_metadata",
+                                  "status": "recorded", "recordedAt": "2026-09-19T01:00:00+00:00"})
+        self.assertEqual(self.source.documents(), [], "legacy root delivery cannot cross product selection")
+        self.write(".auto-company.local", "ACTIVE_PROJECT=projects/other\n")
+        self.write("projects/other/README.md", "new selection")
+        project = self.source.snapshot()["project"]
+        self.assertEqual((project["id"], project["name"], project["description"], project["status"]),
+                         ("projects/other", "other", "", "missing"))
+        self.write("projects/other/.auto-company-project.json", json.dumps({
+            "version": 1, "project": "projects/probe", "displayName": "Wrong",
+            "description": "wrong identity", "recordedAt": "2026-09-19T01:00:00+00:00",
+            "source": "project_metadata"}))
+        self.assertEqual(self.source.snapshot()["project"]["status"], "invalid")
+
+    def test_project_switch_does_not_borrow_unknown_or_other_cycle(self):
+        self.write(".auto-company.local", "ACTIVE_PROJECT=projects/probe\n")
+        self.write("projects/probe/README.md", "selected")
+        current = record("cycle-current", started_at="2026-09-19T12:00:00+00:00")
+        other = record("cycle-other", number=2, started_at="2026-09-19T13:00:00+00:00")
+        unknown = record("cycle-unknown", number=3, started_at="2026-09-19T14:00:00+00:00")
+        self.ledger(current, other, unknown)
+        for identity, project in (("cycle-current", "projects/probe"), ("cycle-other", "projects/other")):
+            self.write(f"logs/{identity}.context.json", json.dumps({
+                "version": 1, "cycleId": identity, "project": project,
+                "recordedAt": "2026-09-19T01:00:00+00:00", "source": "runtime_context"}))
+        for identity, project in (("cycle-current", "projects/probe"), ("cycle-other", "projects/other"),
+                                  ("cycle-unknown", "projects/probe")):
+            self.write(f"logs/{identity}.work.json", json.dumps({
+                "version": 2, "cycle_id": identity, "project": project,
+                "recorded_at": "2026-09-19T01:00:00+00:00", "source": "model_report",
+                "final": True, "phase": "review", "title": identity,
+                "summary": "Valid historical report", "blocker": ""}))
+        snapshot = self.source.snapshot()
+        cycles = {cycle["id"]: cycle for cycle in snapshot["cycles"]}
+        self.assertEqual(cycles["cycle-current"]["projectStatus"], "current")
+        self.assertEqual(cycles["cycle-other"]["projectStatus"], "other")
+        self.assertEqual(cycles["cycle-unknown"]["projectStatus"], "unknown")
+        self.assertEqual(cycles["cycle-other"]["workReportStatus"], "valid")
+        self.assertEqual(cycles["cycle-unknown"]["workReportStatus"], "valid")
+        self.assertEqual(snapshot["latestProjectCycleId"], "cycle-current")
+
+    def test_large_history_marks_unloaded_cycle_details_explicitly(self):
+        records = [record(f"cycle-{number:04d}", number=number + 1,
+                          started_at=f"2026-09-{(number % 18) + 1:02d}T12:00:00+00:00")
+                   for number in range(31)]
+        self.ledger(*records)
+        snapshot = self.source.snapshot()
+        self.assertEqual(len(snapshot["cycles"]), 31)
+        self.assertIn("cycle_details_truncated", snapshot["warnings"])
+        self.assertEqual(snapshot["cycles"][-1]["detailStatus"], "limited")
+        self.assertEqual(snapshot["cycles"][-1]["projectStatus"], "unknown")
+
+    def test_cycle_check_projection_and_live_elapsed_have_verified_identity(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts/core"))
+        from runtime_artifacts import base_record, save
+        self.write(".auto-company.local", "ACTIVE_PROJECT=projects/probe\n")
+        self.write("projects/probe/README.md", "project")
+        self.ledger(record())
+        check = base_record("projects/probe", "check")
+        check.update(cycleId="cycle-0001-run-a", state="running",
+                     startedAt="2026-09-18T12:00:30+08:00", endedAt=None,
+                     adapter="exit-code", command=["python", "-m", "unittest"],
+                     exitCode=None, reportStatus="unavailable")
+        save(self.root, check)
+        cycle = self.source.snapshot()["cycles"][0]
+        self.assertEqual((cycle["projectId"], cycle["checkStatus"]), ("projects/probe", "running"))
+        self.assertEqual(cycle["latestCheck"]["cycleId"], cycle["id"])
+        self.assertEqual(cycle["latestCheck"]["project"], "projects/probe")
+        live = self.source.snapshot(status=self.live_status())
+        self.assertTrue(live["runtime"]["active"])
+        self.assertTrue(live["runtime"]["elapsedReliable"])
+        self.assertGreaterEqual(live["runtime"]["elapsedSeconds"], 0)
+        self.assertEqual(live["runtime"]["startedAt"], live["cycles"][0]["startedAt"])
 
     def test_symlinked_source_files_and_ancestor_directories_are_not_exposed(self):
         outside = tempfile.TemporaryDirectory()
