@@ -326,6 +326,19 @@ class JournalSource:
             raise ValueError("Document is not an advertised artifact")
         return self.read(relative)
 
+    @staticmethod
+    def project_status(cycle, project, recorded_project):
+        # Paths describe historical locations; only the ledger can establish
+        # continuity across a move or distinguish a replacement at that path.
+        stable_id = cycle.get("stableProductId")
+        if cycle.get("identityKind") == "exploration":
+            stable_id = cycle.get("linkedProductId")
+        if stable_id:
+            return "current" if stable_id == project["stableId"] else "other"
+        if project["stableId"] or cycle.get("numbering") == "unavailable":
+            return "unknown"
+        return "current" if recorded_project and recorded_project == project["id"] else "other" if recorded_project else "unknown"
+
     def active_cycle(self, status: dict[str, Any]) -> dict[str, Any] | None:
         """Join a live loop to its reserved identity, never infer from log names."""
         loop = status.get("parsed", {}).get("loop", {})
@@ -515,10 +528,10 @@ class JournalSource:
                 elif cycle["events"]:
                     cycle["report"] = cycle["summary"] = ""
             reported_project = cycle.get("workReport", {}).get("project") if isinstance(cycle.get("workReport"), dict) else None
-            bound = [item for item in registered if item.get("cycleId") == cycle["id"]]
+            bound = [item for item in registered if item.get("cycleId") == cycle["id"] and item.get("associationStatus") == "bound"]
             context = cycle.get("projectIdentity") or self.cycle_context(cycle["id"])
             recorded_project = cycle.get("projectId")
-            artifact_projects = {item["project"] for item in bound}
+            artifact_projects = {item.get("recordedProject", item["project"]) for item in bound}
             if context["status"] == "recorded":
                 cycle_project = context["project"]
             elif context["status"] == "missing" and recorded_project:
@@ -534,9 +547,12 @@ class JournalSource:
             if cycle.get("identityKind") == "exploration" and cycle.get("linkedProductId") == project["stableId"] and project["stableId"]:
                 try:
                     if selected_project in cycle_projects(self.root, cycle["id"]):
-                        cycle_project = selected_project
-                        context = {"project": selected_project, "status": "recorded", "recordedAt": None,
-                                   "source": "product_cycle_ledger", "kind": "linked_exploration"}
+                        # Preserve the recorded product location for report
+                        # validation; the stable link decides current ownership.
+                        cycle_project = cycle_project or (next(iter(artifact_projects)) if len(artifact_projects) == 1 else selected_project)
+                        context = {"project": cycle_project, "status": "recorded", "recordedAt": None,
+                                   "source": "product_cycle_ledger", "kind": "linked_exploration",
+                                   "currentProject": selected_project}
                 except (OSError, ValueError, TypeError, KeyError):
                     warnings.append("exploration_association_unavailable")
             if cycle_project and reported_project and reported_project != cycle_project:
@@ -544,12 +560,9 @@ class JournalSource:
                 cycle["workReportStatus"] = "identity_mismatch"
             cycle["projectId"] = cycle_project
             cycle["projectIdentity"] = context
-            cycle["projectStatus"] = ("current" if cycle_project and cycle_project == selected_project else
-                                      "other" if cycle_project else "unknown")
-            if cycle.get("stableProductId") and cycle["stableProductId"] != project["stableId"]:
-                cycle["projectStatus"] = "other"
+            cycle["projectStatus"] = self.project_status(cycle, project, cycle_project)
             cycle["belongsToCurrentProject"] = cycle["projectStatus"] == "current"
-            cycle_artifacts = [item for item in bound if cycle_project and item.get("project") == cycle_project]
+            cycle_artifacts = bound if cycle["belongsToCurrentProject"] else []
             checks = [item for item in cycle_artifacts if item["kind"] == "check"]
             cycle["artifacts"] = cycle_artifacts
             cycle["checks"] = checks
@@ -562,12 +575,9 @@ class JournalSource:
             cycle.update({"detailStatus": "limited", "projectIdentity": {
                               "project": recorded_project, "status": "recorded" if recorded_project else "not_loaded",
                               "recordedAt": None, "source": "usage_ledger" if recorded_project else None},
-                          "projectStatus": "current" if recorded_project and recorded_project == selected_project else
-                                           "other" if recorded_project else "unknown",
+                          "projectStatus": self.project_status(cycle, project, recorded_project),
                           "artifacts": [], "checks": [], "latestCheck": None,
                           "checkStatus": "unregistered"})
-            if cycle.get("stableProductId") and cycle["stableProductId"] != project["stableId"]:
-                cycle["projectStatus"] = "other"
             cycle["belongsToCurrentProject"] = cycle["projectStatus"] == "current"
         if cycles:
             observed_cycle = next((cycle for cycle in cycles if cycle.get("projectStatus") == "current"), None)
@@ -580,7 +590,7 @@ class JournalSource:
                 runtime["elapsedSeconds"] = int((generated - started).total_seconds())
                 runtime["elapsedReliable"] = True
         recorded_budget = next((record["budget"] for record in records if isinstance(record.get("budget"), dict)), None)
-        latest_check = next((item for item in registered if item["kind"] == "check" and item.get("cycleId")), None)
+        latest_check = next((item for item in registered if item["kind"] == "check" and item.get("cycleId") and item.get("associationStatus") == "bound"), None)
         latest_project_cycle = next((cycle for cycle in cycles if cycle.get("projectStatus") == "current"), None)
         try:
             product_media = media_projection(self.root, selected_project, readonly=status is None) if selected_project else None

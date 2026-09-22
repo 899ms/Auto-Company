@@ -92,7 +92,7 @@ def main() -> None:
             raw = args.validate.read_bytes() if args.validate else sys.stdin.buffer.read()
             validate(args.project, plistlib.loads(raw), args.validate_loaded)
         except (OSError, ValueError, TypeError, ExpatError, plistlib.InvalidFileException) as exc:
-            parser.exit(1, f"Error: cannot resume LaunchAgent: {exc}\n")
+            parser.exit(1, f"Error: cannot control LaunchAgent: {exc}\n")
         return
     if args.path is None:
         parser.error("--path is required with --output")

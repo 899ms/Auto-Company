@@ -1,4 +1,4 @@
-"""Dashboard Start regressions using a temporary HOME and fake service manager."""
+"""Dashboard Start/Stop regressions with a temporary HOME and fake launchctl."""
 
 import importlib.util
 import os
@@ -41,7 +41,7 @@ class MacosStartTests(unittest.TestCase):
         self.pause.write_text("operator pause\n")
         self.env = {"HOME": str(self.home), "PATH": str(self.bin), "TRACE": str(self.trace),
                     "LOADED": str(self.loaded), "PYTHONDONTWRITEBYTECODE": "1"}
-        for name in ("dirname", "tr", "python3", "grep", "head", "cat", "mkdir", "rm", "tail", "cp"):
+        for name in ("dirname", "tr", "python3", "grep", "head", "cat", "mkdir", "rm", "tail", "cp", "awk", "touch"):
             (self.bin / name).symlink_to(shutil.which(name))
         self.fake("uname", 'printf "Darwin\\n"')
         self.fake("bash", "exit 1")  # Do not source the host's interactive shell.
@@ -59,6 +59,7 @@ sys.stdout.buffer.write(plistlib.dumps(exported))
         self.fake("launchctl", '''printf '%s\\n' "$*" >> "$TRACE"
 case "$1" in
   list)
+    [ "${FAIL_LIST:-}" != 1 ] || exit 5
     if [ "$#" = 1 ]; then
       [ ! -f "$LOADED" ] || printf '123 0 com.autocompany.loop\\n'
     elif [ "$2" = -x ]; then
@@ -67,7 +68,7 @@ case "$1" in
       [ -f "$LOADED" ] || exit 113
     fi ;;
   load) [ "${FAIL_LOAD:-}" != 1 ] || exit 5; cp "$2" "$LOADED" ;;
-  unload) rm -f "$LOADED" ;;
+  unload) [ "${FAIL_UNLOAD:-}" != 1 ] || exit 5; rm -f "$LOADED" ;;
   start) [ -f "$LOADED" ] || exit 113 ;;
   *) exit 99 ;;
 esac''')
@@ -95,6 +96,79 @@ esac''')
     def start(self):
         with mock.patch.dict(os.environ, self.env, clear=True):
             return self.dashboard.run_dashboard_action("start", system_name="Darwin")
+
+    def stop(self):
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            return self.dashboard.run_dashboard_action("stop", system_name="Darwin")
+
+    def assert_pause_rejected(self):
+        result = self.stop()
+        self.assertFalse(result["ok"], result["output"])
+        self.assertEqual(self.pause.read_text(), "operator pause\n")
+        self.assertFalse((self.project / ".auto-loop-stop").exists())
+        self.assertFalse((self.project / ".auto-loop.pid").exists())
+        if self.trace.exists():
+            self.assertNotIn("unload", self.trace.read_text())
+        return result
+
+    def test_pause_foreign_disk_owner_rejected_before_flags_or_signal(self):
+        original = self.install_config(True, self.root / "other")
+        self.assert_pause_rejected()
+        self.assertEqual(self.plist.read_bytes(), original)
+        self.assertEqual(self.loaded.read_bytes(), original)
+        self.assertFalse(self.trace.exists())
+
+    def test_pause_foreign_loaded_owner_rejected_before_flags_or_signal(self):
+        foreign = self.install_config(True, self.root / "other")
+        original = self.install_config()
+        self.assert_pause_rejected()
+        self.assertEqual(self.plist.read_bytes(), original)
+        self.assertEqual(self.loaded.read_bytes(), foreign)
+
+    def test_pause_missing_or_malformed_plist_rejected(self):
+        for content in (None, b"not a plist", plistlib.dumps(["invalid"])):
+            with self.subTest(content=content):
+                if content is not None:
+                    self.plist.write_bytes(content)
+                self.assert_pause_rejected()
+
+    def test_pause_failed_list_or_native_query_rejected_before_mutation(self):
+        original = self.install_config(True)
+        for variable in ("FAIL_LIST", "FAIL_QUERY"):
+            with self.subTest(variable=variable):
+                self.env[variable] = "1"
+                self.assert_pause_rejected()
+                self.env.pop(variable)
+                self.assertEqual(self.loaded.read_bytes(), original)
+
+    def test_pause_owned_loaded_and_already_unloaded_agents(self):
+        original = self.install_config(True)
+        for attempt in range(2):
+            with self.subTest(attempt=attempt):
+                result = self.stop()
+                self.assertTrue(result["ok"], result["output"])
+                self.assertEqual(self.pause.read_text(), "PAUSE_REASON=manual\n")
+                self.assertTrue((self.project / ".auto-loop-stop").exists())
+                self.assertFalse(self.loaded.exists())
+                self.assertEqual(self.plist.read_bytes(), original)
+        self.assertEqual(sum(line.startswith("unload ") for line in self.trace.read_text().splitlines()), 1)
+        self.assertTrue(self.start()["ok"])
+        self.assertEqual(self.loaded.read_bytes(), original)
+
+    def test_pause_unload_failure_propagates_and_allows_retry(self):
+        original = self.install_config(True)
+        self.env["FAIL_UNLOAD"] = "1"
+        result = self.stop()
+        self.assertFalse(result["ok"], result["output"])
+        self.assertEqual(self.pause.read_text(), "PAUSE_REASON=manual\n")
+        self.assertTrue((self.project / ".auto-loop-stop").exists())
+        self.assertEqual(self.loaded.read_bytes(), original)
+        self.assertEqual(self.plist.read_bytes(), original)
+        self.env.pop("FAIL_UNLOAD")
+        result = self.stop()
+        self.assertTrue(result["ok"], result["output"])
+        self.assertFalse(self.loaded.exists())
+        self.assertEqual(self.plist.read_bytes(), original)
 
     def assert_preserved(self, loaded, inherited=False):
         original = self.install_config(loaded)

@@ -87,6 +87,14 @@
     "en": "Service unloaded.",
     "zh-CN": "后台服务已卸载出运行环境。"
   },
+  "mac.query_failed": {
+    "en": "Could not inspect loaded LaunchAgents; no pause or stop was requested.",
+    "zh-CN": "无法检查已加载的 LaunchAgent；未请求暂停或停止。"
+  },
+  "mac.unload_failed": {
+    "en": "Service unload failed. Pause and stop markers are retained; retry Stop after resolving the launchctl error.",
+    "zh-CN": "后台服务卸载失败。已保留暂停和停止标记；处理 launchctl 错误后可重试停止。"
+  },
   "mac.removed": {
     "en": "Plist removed: {0}",
     "zh-CN": "已删除 plist：{0}"

@@ -127,7 +127,7 @@ def preview_available(record):
         return False
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=0.25)
     try:
-        connection.request("GET", "/.auto-company-health")
+        connection.request("GET", "/.auto-company-health", headers={"X-Auto-Company-Preview": token})
         response = connection.getresponse()
         return response.status == 204 and response.getheader("X-Auto-Company-Preview") == token
     except (OSError, http.client.HTTPException):
@@ -144,21 +144,73 @@ def _counts(value):
     return {key: value[key] for key in keys}
 
 
-def _artifact_entry(source, selected, record, preview_probe):
+def _artifact_owner(source, state, record, historical_paths):
+    """Resolve recorded identity from the ledger, never from file equality."""
+    product_id = record.get("productId")
+    row = state["cycles"].get(record.get("cycleId"))
+    if product_id is not None:
+        if not isinstance(product_id, str) or not ARTIFACT_ID.fullmatch(product_id):
+            raise ValueError("Invalid artifact product identity")
+        product = state["identities"].get(product_id)
+        if not product or product["kind"] != "product":
+            return None
+        if row and product_id not in [row["identityId"], *row.get("createdProductIds", [])]:
+            raise ValueError("Artifact identity conflicts with its cycle")
+        return product_id
+    if not row:
+        return None
+    owner = state["identities"][row["identityId"]]
+    if owner["kind"] == "product" and record["project"] in {row.get("project"), owner["project"]}:
+        return owner["id"]
+    created = row.get("createdProductIds", [])
+    if owner["kind"] == "exploration" and len(created) == 1 and owner.get("linkedProductId") == created[0]:
+        # Legacy creation records predate productId. A unique creation still
+        # needs positive path evidence: that cycle could inspect other products.
+        if any(item["kind"] == "product" and item["id"] != created[0] and item["project"] == record["project"]
+               for item in state["identities"].values()):
+            return None
+        current_project = state["identities"][created[0]]["project"]
+        if record["project"] != current_project and record["project"] not in historical_paths.get(created[0], set()):
+            # A retained marker can prove a copied source; an absent old source
+            # cannot prove relocation. Missing path history stays unassociated.
+            try:
+                raw, truncated = source.read(record["project"] + "/.auto-company/identity.json", 4096)
+                marker = json.loads(raw)
+                if truncated or marker.get("schemaVersion") != 1 or marker.get("id") != created[0]:
+                    return None
+            except (OSError, ValueError, TypeError, AttributeError):
+                return None
+        return created[0]
+    elif owner["kind"] == "product":
+        matches = [identity for identity in created if state["identities"][identity]["project"] == record["project"]]
+        return matches[0] if len(matches) == 1 else None
+    return None
+
+
+def _artifact_entry(source, selected, record, preview_probe, scope):
     kind = record.get("kind")
     identity = record.get("id")
     cycle = record.get("cycleId")
     recorded = valid_time(record.get("recordedAt"))
-    if (record.get("version") != 1 or record.get("source") != "runner" or record.get("project") != selected
+    if (record.get("version") != 1 or record.get("source") != "runner"
             or kind not in {"document", "check", "preview"} or not isinstance(identity, str)
             or not ARTIFACT_ID.fullmatch(identity) or not recorded
             or (cycle is not None and (not isinstance(cycle, str) or not CYCLE_ID.fullmatch(cycle)))):
         return None
     relative = record.get("path")
+    recorded_project = record["project"]
+    associated, product_id = scope
     entry = {"id": identity, "kind": kind, "project": selected, "cycleId": cycle,
-             "associationStatus": "bound" if cycle else "unbound", "recordedAt": recorded,
+             "associationStatus": "bound" if associated and cycle else "product" if associated and product_id else "unbound", "recordedAt": recorded,
              "source": "runner", "label": relative or kind, "available": False,
-             "evidenceStatus": "unavailable"}
+             "evidenceStatus": "unavailable", "recordedProject": recorded_project, "productId": product_id}
+    if isinstance(relative, str) and relative.startswith(recorded_project + "/"):
+        entry["recordedPath"] = relative
+        relative = selected + relative[len(recorded_project):]
+        entry["path"] = relative
+    if not associated:
+        entry["associationStatus"] = "unknown"
+        return entry
     if kind == "preview":
         available = preview_probe and preview_available(record)
         state = record.get("state") if record.get("state") in {"running", "stopped", "interrupted", "launch_failed"} else "invalid"
@@ -258,6 +310,22 @@ def artifact_projection(source, selected=None):
     except (OSError, ValueError):
         return {"items": [], "status": "unavailable", "selectedProject": selected,
                 "invalidRecords": 0, "truncated": False, "scannedRecords": 0, "returnedRecords": 0}
+    # One ledger snapshot for the entire collection, including cycles outside
+    # the journal's display window. A missing/mismatched marker fails closed.
+    from product_identity import get_identity, read_state
+    try:
+        identity_state = read_state(source.root)
+        selected_identity = get_identity(source.root, selected, create=False)
+        selected_id = selected_identity["id"] if selected_identity else None
+        legacy = not identity_state["identities"]
+    except (OSError, ValueError, TypeError, KeyError):
+        identity_state, selected_id, legacy = None, None, False
+    historical_paths = {}
+    if identity_state:
+        for row in identity_state["cycles"].values():
+            owner = identity_state["identities"][row["identityId"]]
+            if owner["kind"] == "product" and isinstance(row.get("project"), str):
+                historical_paths.setdefault(owner["id"], set()).add(row["project"])
     result = []
     invalid = scan_invalid
     preview_count = 0
@@ -272,24 +340,29 @@ def artifact_projection(source, selected=None):
                 invalid += 1
                 continue
             record_project = record.get("project")
-            if (isinstance(record_project, str)
-                    and re.fullmatch(r"projects/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", record_project)
-                    and record_project != selected):
-                # A valid record for another selected product is outside this
-                # projection, not corrupt evidence.
+            if not isinstance(record_project, str) or not re.fullmatch(r"projects/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", record_project):
+                invalid += 1
                 continue
+            product_id = _artifact_owner(source, identity_state, record, historical_paths) if identity_state is not None else None
+            if product_id and product_id != selected_id:
+                continue
+            if not product_id and record_project != selected:
+                continue
+            associated = bool(product_id and product_id == selected_id) or (legacy and record.get("productId") is None and not product_id
+                                                                           and record.get("cycleId") not in identity_state["cycles"])
             if record.get("kind") == "preview":
                 preview_count += 1
-            entry = _artifact_entry(source, selected, record, preview_count <= 3)
+            entry = _artifact_entry(source, selected, record, preview_count <= 3, (associated, product_id))
             if entry is None:
                 invalid += 1
                 continue
             result.append(entry)
         except (OSError, ValueError, TypeError, RecursionError, OverflowError):
             invalid += 1
-    # Program timestamps, then stable IDs, determine "latest"; filesystem copy
-    # times are not execution evidence. Replaceable resources keep only newest.
-    result.sort(key=lambda entry: (datetime.fromisoformat(entry["recordedAt"]), entry["id"]), reverse=True)
+    # Unassociated history cannot hide a verified current resource. Within each
+    # group, program timestamps (never file copy times) determine the newest.
+    result.sort(key=lambda entry: (entry["associationStatus"] != "unknown",
+                                   datetime.fromisoformat(entry["recordedAt"]), entry["id"]), reverse=True)
     deduped, seen = [], set()
     for entry in result:
         key = (entry["kind"], entry.get("path") if entry["kind"] == "document" else

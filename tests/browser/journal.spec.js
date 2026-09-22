@@ -1,5 +1,6 @@
 import { test as base, expect } from "@playwright/test";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
@@ -8,6 +9,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const python = process.env.AUTO_COMPANY_BROWSER_PYTHON || process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
+
+async function changeIdentityFixture(directory, code) {
+  return promisify(execFile)(python, ["-c", [
+    "import json, sys", "from pathlib import Path",
+    "sys.path.insert(0, str(Path(sys.argv[1]) / 'scripts/core'))",
+    "import product_identity as products", "root = Path(sys.argv[2])", code,
+  ].join("\n"), repository, directory], { windowsHide: true });
+}
 
 async function unusedPort() {
   const server = net.createServer();
@@ -132,6 +142,112 @@ test("journal renders source history and never treats a report as live telemetry
   await page.locator("#closeSettingsButton").click();
   expect(await page.evaluate(() => window.journalInjected)).toBeUndefined();
   expect(errors).toEqual([]);
+});
+
+test("stable identity keeps moved history and document access, then isolates a same-path replacement", async ({ page, journal }) => {
+  await changeIdentityFixture(journal.directory, [
+    "row = products.reserve_cycle(root, 'projects/journal-fixture', 'browser-identity-fixture', 1, 'fixture', 'no-model')",
+    "products.update_cycle(root, row['cycleId'], 'completed')",
+    "record_path = root / 'logs/artifacts/delivery.json'",
+    "record = json.loads(record_path.read_text()); record['cycleId'] = row['cycleId']",
+    "record_path.write_text(json.dumps(record))",
+    "(root / 'logs' / (row['cycleId'] + '.json')).write_text(json.dumps({'result': 'Synthetic identity fixture report'}))",
+    "(root / 'projects/journal-fixture').rename(root / 'projects/moved-fixture')",
+    "products.relocate_identity(root, row['productId'], 'projects/moved-fixture')",
+    "(root / '.auto-company.local').write_text('ACTIVE_PROJECT=projects/moved-fixture\\nAUTO_COMPANY_LANGUAGE=en\\n')",
+  ].join("\n"));
+  await page.goto(`${journal.url}/journal`);
+  await expect(page.locator("#cycleNumber")).toHaveText("01");
+  const document = page.locator('#projectSidebar a[href="/api/journal/document?path=projects%2Fmoved-fixture%2FDELIVERY.md"]');
+  await expect(document).toBeVisible();
+  const snapshot = await (await page.request.get(`${journal.url}/api/journal`)).json();
+  expect(snapshot.cycles.find((cycle) => cycle.id === snapshot.latestProjectCycleId).projectId).toBe("projects/journal-fixture");
+  const moved = await page.request.get(`${journal.url}/api/journal/document?path=projects%2Fmoved-fixture%2FDELIVERY.md`);
+  expect(moved.ok()).toBeTruthy();
+  expect(await moved.text()).toContain("Browser fixture delivery");
+  expect((await page.request.get(`${journal.url}/api/journal/document?path=projects%2Fjournal-fixture%2FDELIVERY.md`)).ok()).toBeFalsy();
+  await changeIdentityFixture(journal.directory, [
+    "(root / 'projects/moved-fixture/.auto-company/identity.json').unlink()",
+    "products.register_project(root, 'projects/moved-fixture')",
+  ].join("\n"));
+  await page.locator("#refreshButton").click();
+  await expect(document).toHaveCount(0);
+  await expect(page.locator("#cycleNumber")).toHaveCount(0);
+  expect((await page.request.get(`${journal.url}/api/journal/document?path=projects%2Fmoved-fixture%2FDELIVERY.md`)).ok()).toBeFalsy();
+});
+
+test("unproven legacy document is visibly unassociated after identity registration", async ({ page, journal }) => {
+  await changeIdentityFixture(journal.directory, "products.register_project(root, 'projects/journal-fixture')");
+  await page.goto(`${journal.url}/journal`);
+  await expect(page.locator("#projectSidebar")).toContainText("尚未确认所属产品");
+  await expect(page.locator('#projectSidebar a[href*="DELIVERY.md"]')).toHaveCount(0);
+  expect((await page.request.get(`${journal.url}/api/journal/document?path=projects%2Fjournal-fixture%2FDELIVERY.md`)).ok()).toBeFalsy();
+});
+
+test("relocated exploration keeps its recorded report and identity-bound document", async ({ page, journal }) => {
+  await changeIdentityFixture(journal.directory, [
+    "from cycle_reports import write_report",
+    "from runtime_artifacts import write_context",
+    "row = products.reserve_cycle(root, '', 'browser-exploration-fixture', 1, 'fixture', 'no-model')",
+    "identity = products.register_project(root, 'projects/journal-fixture', row['cycleId'])",
+    "write_context(root, row['cycleId'], '')",
+    "write_report(root, row['cycleId'], {'title': 'Synthetic relocated exploration', 'summary': 'Synthetic report', 'phase': 'review', 'blocker': '', 'final': True}, 'projects/journal-fixture')",
+    "products.update_cycle(root, row['cycleId'], 'completed')",
+    "record_path = root / 'logs/artifacts/delivery.json'",
+    "record = json.loads(record_path.read_text()); record['cycleId'] = row['cycleId']; record['productId'] = identity['id']",
+    "record_path.write_text(json.dumps(record))",
+    "(root / 'projects/journal-fixture').rename(root / 'projects/moved-fixture')",
+    "products.relocate_identity(root, identity['id'], 'projects/moved-fixture')",
+    "(root / '.auto-company.local').write_text('ACTIVE_PROJECT=projects/moved-fixture\\nAUTO_COMPANY_LANGUAGE=en\\n')",
+  ].join("\n"));
+  await page.goto(`${journal.url}/journal`);
+  await expect(page.locator("#cycleTitle")).toHaveText("Synthetic relocated exploration");
+  await expect(page.locator('#projectSidebar a[href="/api/journal/document?path=projects%2Fmoved-fixture%2FDELIVERY.md"]')).toBeVisible();
+  const snapshot = await (await page.request.get(`${journal.url}/api/journal`)).json();
+  const current = snapshot.cycles.find((cycle) => cycle.id === snapshot.latestProjectCycleId);
+  expect(current.workReportStatus).toBe("valid");
+  expect(current.workReport.project).toBe("projects/journal-fixture");
+});
+
+test("real static preview loads web assets and denies private same-origin reads", async ({ page, journal }) => {
+  const project = path.join(journal.directory, "projects/journal-fixture");
+  await fs.writeFile(path.join(project, "index.html"), '<!doctype html><title>Synthetic preview fixture</title><link rel="stylesheet" href="style.css"><h1>Synthetic fixture</h1><img src="image.svg"><script src="app.js"></script>');
+  await fs.writeFile(path.join(project, "style.css"), "h1 { color: rgb(1, 2, 3); }");
+  await fs.writeFile(path.join(project, "app.js"), "window.previewFixture = true;");
+  await fs.writeFile(path.join(project, "image.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4"/></svg>');
+  await fs.writeFile(path.join(project, ".env"), "FAKE_SECRET=synthetic-only");
+  const child = spawn(python, [path.join(repository, "scripts/core/runtime_artifacts.py"),
+    "--root", journal.directory, "--project", "projects/journal-fixture", "preview"],
+  { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  let output = "";
+  child.stdout.on("data", (chunk) => { output += chunk; });
+  let preview;
+  try {
+    await expect.poll(() => output).toMatch(/http:\/\/127\.0\.0\.1:\d+\//);
+    const url = output.match(/http:\/\/127\.0\.0\.1:\d+\//)[0];
+    await page.goto(url);
+    await expect(page.locator("h1")).toHaveCSS("color", "rgb(1, 2, 3)");
+    expect(await page.evaluate(() => window.previewFixture)).toBeTruthy();
+    expect(await page.locator("img").evaluate((image) => image.complete && image.naturalWidth === 4)).toBeTruthy();
+    for (const resource of ["/.env", "/.auto-company-health"]) {
+      const status = await page.evaluate(async (resource) => (await fetch(resource)).status, resource);
+      expect([403, 404]).toContain(status);
+    }
+    const folder = path.join(journal.directory, "logs/artifacts");
+    for (const name of await fs.readdir(folder)) {
+      const record = JSON.parse(await fs.readFile(path.join(folder, name), "utf8"));
+      if (record.kind === "preview") preview = record;
+    }
+    expect(preview).toBeTruthy();
+    const stopped = await fetch(`${url}.auto-company-stop`, { method: "POST", headers: { "X-Auto-Company-Preview": preview.token } });
+    expect(stopped.status).toBe(204);
+    await expect.poll(() => child.exitCode).toBe(0);
+  } finally {
+    if (child.exitCode === null) {
+      child.kill();
+      await new Promise((resolve) => child.once("exit", resolve));
+    }
+  }
 });
 
 test("history stays open after refresh and its log belongs to the selected cycle", async ({ page, journal }) => {

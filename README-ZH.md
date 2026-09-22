@@ -2,10 +2,10 @@
 
 # Auto Company
 
-**全自主 AI 公司，24/7 不停歇运行** <a href="README.md"><img alt="[English Documentation]" src="https://img.shields.io/badge/%5BEnglish%20Documentation%5D-2f3640.svg" /></a>
+**支持持续自主工作的 AI 公司框架** <a href="README.md"><img alt="[English Documentation]" src="https://img.shields.io/badge/%5BEnglish%20Documentation%5D-2f3640.svg" /></a>
 
-基于 **Agentic Workflows (代理式工作流)** 驱动，系统编排了 14 个 **Autonomous AI Agent (自主智能体)**，每个都是该领域世界顶级专家的思维分身。
-自主构思产品、做决策、写代码、部署上线、搞营销。没有人类参与。
+基于 **Agentic Workflows（代理式工作流）**，系统提供 14 份 **AI 智能体角色定义**，各自参考相关领域专家的工作方法。
+团队可以在人类设定的目标、权限和预算内自主调研产品、做决策和写代码。部署、发布和营销取决于可用工具及授权范围，持续运行也依赖服务和模型可用性。
 
 默认使用 Claude Code，并支持 [Codex CLI](https://www.npmjs.com/package/@openai/codex)（macOS 原生 + Windows/WSL），两端都可启动本地 Dashboard。
 
@@ -44,23 +44,23 @@ ScopeFence 的真实四轮产品记录：04 展开，03、02、01 逐项收起�
 
 ## 这是什么？
 
-你启动一个循环。AI 团队醒来，读取共识记忆，决定干什么，组建 3-5 人小队，执行任务，更新共识记忆，然后睡一觉。接着又醒来。如此往复，永不停歇。
+你启动循环后，每轮会读取工作摘要、决定任务、按需组队、执行并更新摘要，然后等待下一轮。实际组队取决于模型和引擎能力；错误、预算限制或暂停请求可能中止后续运行。
 
 ```
 daemon (launchd / systemd --user, 崩溃自重启)
-  └── scripts/core/auto-loop.sh (永续循环)
+  └── scripts/core/auto-loop.sh (持续循环)
         ├── 读 PROMPT.md + consensus.md
         ├── CLI 调用（Codex CLI / Claude Code）
         │   ├── 读 CLAUDE.md (公司章程 + 安全红线)
         │   ├── 读 .claude/skills/team/SKILL.md (组队方法)
-        │   ├── 组建 Agent Team (3-5 人)
+        │   ├── 按需组建 Agent Team
         │   ├── 执行：调研、写码、部署、营销
-        │   └── 更新 memories/consensus.md (传递接力棒)
+        │   └── 更新 memories/consensus.md (工作摘要)
         ├── 失败处理: 限额等待 / 熔断保护 / consensus 回滚
         └── sleep → 下一轮
 ```
 
-每个周期是一次独立的 CLI 调用。`memories/consensus.md` 是唯一的跨周期状态——类似接力赛传棒。
+每个周期是一次独立的 CLI 调用。`memories/consensus.md` 是下一轮预加载的主要工作摘要，产品文件、仓库、配置、身份记录、日志和用量数据也会跨轮次保留。
 
 ## 运行产物示例
 
@@ -106,7 +106,7 @@ daemon (launchd / systemd --user, 崩溃自重启)
 | 用量与预算 | [治理说明](i18n/zh-CN/docs/usage-governance.md) | [Governance guide](docs/usage-governance.md) |
 | 操作与排错 | [常见操作与排错](docs/troubleshooting.md) | [Common tasks and errors](i18n/en/docs/troubleshooting.md) |
 
-## 团队阵容（14 人）
+## 团队阵容（14 个角色）
 
 不是"你是一个开发者"，而是"你是 DHH"——用真实传奇人物激活 LLM 的深层知识。
 
@@ -224,16 +224,16 @@ Auto-Company 并非简单调用 LLM API，而是一个高度解耦的 **多智�
 ```text
 ┌────────────────────────────────────────────────────────────┐
 │ 5. 监控与人机交互层 (Observability & HITL)                 │
-│    [ Dashboard看板 ]  [ 基于文件的操纵杆 (consensus.md) ]  │
+│    [ Dashboard看板 ]  [ 文件式引导 (consensus.md) ]       │
 ├────────────────────────────────────────────────────────────┤
 │ 4. 工作流路由层 (Workflow Routing & Teaming)               │
-│    [ 动态组队路由 (Squad) ]  [ 强制收敛流 (Cycle 1->2->3) ]│
+│    [ 按角色组队 (Squad) ]  [ 提示词工作流指导 ]           │
 ├────────────────────────────────────────────────────────────┤
 │ 3. 智能体模型与认知层 (Agentic Models & Cognition)         │
 │    [ 14 个专家人格 (Personas) ]  [ 30+ 技能库 (Skills) ]   │
 ├────────────────────────────────────────────────────────────┤
 │ 2. 编排与状态控制层 (Orchestration & State Machine)        │
-│    [ 永续主循环 ]  [ 状态机 (Consensus) ]  [ 容错与熔断 ]  │
+│    [ 持续主循环 ]  [ 持久状态 ]  [ 容错与熔断 ]          │
 ├────────────────────────────────────────────────────────────┤
 │ 1. 基础设施与执行引擎层 (Execution Engine & Infrastructure)│
 │    [ 引擎适配器 (Adapters) ]  [ 跨平台守护进程 (Daemon) ] │
@@ -241,21 +241,21 @@ Auto-Company 并非简单调用 LLM API，而是一个高度解耦的 **多智�
 ```
 
 ### 第 5 层：监控与人机交互层 (Observability & HITL)
-*   **基于文件的操纵杆 (File-based Steering)**：人类只需编辑 `memories/consensus.md`，修改 `Next Action`，下一个周期醒来的 AI 团队就会立刻“转舵”，实现极简的宏观控制。
+*   **文件式引导 (File-based Steering)**：停止当前运行后，在 `memories/consensus.md` 中修改 `Next Action` 来安排下一步，或修改 `Human Overrides` 来设置持续约束，然后启动或恢复。运行中编辑可能与模型更新和恢复操作冲突，不保证立即改变方向。
 *   **日志与看板 (Dashboard)**：`logs/` 保存引擎实际输出（对已知凭据进行脱敏），以及每轮结果和可用的用量记录。输出详细程度取决于引擎，不保证包含完整思考链。`dashboard/` 按当前与历史轮次组织工作汇报和成果，并提供运行控制、状态、用量、预算与日志，不跟踪各个 Agent 的活跃度。
 
 ### 第 4 层：工作流路由层 (Workflow Routing & Teaming)
-*   **动态组队路由 (Dynamic Squad Formation)**：系统利用 Agent Teams 功能，根据当前 `consensus.md` 中的 "Next Action"，从 14 人池子中动态挑选 2-5 名最适合的专家，并在当前循环中将它们“实例化”为子代理。
-*   **强制收敛流 (Convergence Workflow)**：由 `PROMPT.md` 强制执行的流程控制。例如：Cycle 1 发散（提 Idea） -> Cycle 2 验证（算账预检，输出 GO/NO-GO） -> Cycle 3 执行（写代码部署，**禁止纯讨论**）。
+*   **按角色组队 (Role-based Teaming)**：组队技能建议从 14 份角色定义中选择 2–5 个相关角色。实际子代理创建和并发取决于执行模型与引擎，不代表 14 个常驻工作者或固定人数的调度器。
+*   **工作流指导 (Workflow Guidance)**：`PROMPT.md` 要求团队从构思推进到验证和实现。这是提示词约定，不是程序强制执行的业务状态机；第三个引擎轮次不保证完成产品或部署。
 
 ### 第 3 层：智能体模型与认知层 (Agentic Models & Cognition)
 *   **专家思维注入 (Expert Personas)**：在 `.claude/agents/` 下，注入具体的历史人物/行业领袖思维模型框架（如 Bezos 的“逆向工作法”、Munger 的“查理清单”、DHH 的“宏伟单体架构”），使决策具有极高的商业和工程厚度。
 *   **技能库系统 (Skill Arsenal)**：位于 `.claude/skills/` 的可插拔插件系统（如 `frontend-design`, `security-audit`）。将具体方法论封装成工具，供任何被唤醒的 Agent “临时加载”。
-*   **约束与红线 (Constitutional Guardrails)**：写死在 `CLAUDE.md` 中的系统级 Prompt，设定了绝对不能触碰的底线（如禁止删除仓库、强制推送），确保高度自治下的安全性。
+*   **行为规则 (Behavioral Rules)**：`CLAUDE.md` 要求智能体遵守不删除仓库、不强制推送等规则。框架另有针对特定运行和配置边界的检查；提示词规则不能拦截任意命令，也不提供操作系统级沙箱。
 
 ### 第 2 层：编排与状态控制层 (Orchestration & State Machine)
-*   **永续主循环 (The Auto-Loop)**：通过 `scripts/core/auto-loop.sh` 控制的执行循环，让 AI 摆脱“单次对话”，实现 24/7 永续运行。
-*   **轻量级状态机 (Consensus Memory)**：放弃复杂的向量数据库或内存管理，将跨周期的上下文压缩为一个 Markdown 文件：`memories/consensus.md`。每次循环开始前读取，结束前必须重写，作为整个系统的“接力棒”。
+*   **持续主循环 (The Auto-Loop)**：`scripts/core/auto-loop.sh` 调度重复的 CLI 调用、等待和失败处理；服务、模型访问、预算及运行检查允许时可以持续执行。
+*   **共识记忆 (Consensus Memory)**：`memories/consensus.md` 在调用之间传递自然语言工作摘要。结构化产品身份、用量、配置和恢复记录另行保存，摘要不等于整个运行状态。
 *   **容错与恢复机制 (Resilience & Recovery)**：内置熔断器（连续错误触发冷却）、限流退避（429 报错自动休眠），并在周期失败后恢复共识。Human Overrides、`.auto-company.local` 和框架根目录的 `.gitignore` 有定向保护。产品代码修改和外部副作用不会自动回滚。
 
 ### 第 1 层：基础设施与执行引擎层 (Execution Engine & Infrastructure)
@@ -265,15 +265,19 @@ Auto-Company 并非简单调用 LLM API，而是一个高度解耦的 **多智�
 
 ## 运作机制
 
-### 自动收敛（防止无限讨论）
+### 默认工作流指导
+
+提示词建议按下列顺序推进。这些标签描述工作阶段，一个阶段可能跨越多个引擎轮次，不是完成期限或强制状态机。
 
 | 周期 | 动作 |
 |------|------|
 | Cycle 1 | 头脑风暴——每个 Agent 提一个想法，排出 top 3 |
 | Cycle 2 | 验证 #1——Munger 做 Pre-Mortem，Thompson 验证市场，Campbell 算账 → **GO / NO-GO** |
-| Cycle 3+ | GO → 建 repo 写代码部署。NO-GO → 试下一个。**纯讨论禁止** |
+| Cycle 3+ | GO → 建 repo、写代码，在获得授权时部署。NO-GO → 试下一个。提示词要求推进实现，避免只有讨论的轮次 |
 
 ### 六大标准流程
+
+以下是建议的角色协作链，实际任务和参与者由执行模型选择。
 
 | # | 流程 | 协作链 |
 |---|------|--------|
@@ -286,18 +290,18 @@ Auto-Company 并非简单调用 LLM API，而是一个高度解耦的 **多智�
 
 ## 引导方向
 
-AI 团队全自主运行，但你可以随时介入：
+改变方向前，前台运行使用 `make stop`，macOS/WSL 守护模式使用 `make pause`，Windows 使用下表的停止命令。等运行停止后再编辑，然后重新启动或恢复。
 
 | 方式 | 操作 |
 |------|------|
-| **改方向** | 修改 `memories/consensus.md` 的 "Next Action" |
+| **改方向** | 停止后修改 `memories/consensus.md` 的 "Next Action"；持续约束写入 "Human Overrides" |
 | **暂停** | `make pause`（macOS/WSL 守护模式）或 `.\scripts\windows\stop-win.ps1`（Windows 入口） |
 | **恢复** | `make resume`，回到自主模式 |
 | **审查产出** | 查看 `docs/*/`——每个 Agent 的工作成果 |
 
 ## 安全红线
 
-写死在 `CLAUDE.md`，对所有 Agent 强制生效：
+`CLAUDE.md` 向智能体提供以下行为规则。它们与框架的特定检查共同使用，但不是通用命令拦截机制，也不保证每次违反规则的操作都被阻止：
 
 - 不得删除 GitHub 仓库（`gh repo delete`）
 - 不得删除 Cloudflare 项目（`wrangler delete`）
@@ -350,7 +354,7 @@ auto-company/
 │   ├── wsl/               # WSL systemd --user 守护实现
 │   └── macos/             # macOS launchd 守护实现
 ├── memories/
-│   └── consensus.md       # 共识记忆（跨周期接力棒）
+│   └── consensus.md       # 共识记忆（跨轮次工作摘要）
 ├── docs/                  # Agent 产出（14 个目录 + Windows 指南）
 ├── projects/              # 所有新建项目的工作空间
 ├── logs/                  # 循环日志
@@ -411,7 +415,7 @@ auto-company/
 - **Windows 入口需要 WSL** — PowerShell 只做控制层
 - **还在测试中** — 能跑，但不保证稳定
 - **会花钱** — 每个周期消耗模型额度
-- **完全自主** — AI 团队自己做决策，不会问你。请认真设置 `CLAUDE.md` 中的安全红线
+- **权限配置很重要** — 默认引擎设置允许无需常规确认的广泛本地操作。请检查引擎权限和 `CLAUDE.md`；提示词规则本身不提供隔离
 - **无担保** — AI 可能会构建你意想不到的东西，定期检查 `docs/` 和 `projects/`
 
 建议先用 `make start`（前台）观察行为，再启用守护模式（macOS/WSL：`make install`，Windows：`.\scripts\windows\start-win.ps1`）。
