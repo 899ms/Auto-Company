@@ -2,7 +2,7 @@
 
 Set AUTO_COMPANY_TEST_LAUNCHD=1 to require these tests (missing prerequisites fail).
 Each case rewrites only the fixed label in temporary source copies, uses a fresh
-HOME and a harmless loop probe, and calls the actual Dashboard Start chain.
+HOME and a harmless loop probe, and calls the actual Dashboard Start/Stop chain.
 """
 
 import importlib.util
@@ -90,6 +90,10 @@ class LaunchdRuntimeTests(unittest.TestCase):
             result = self.dashboard.run_dashboard_action("start", system_name="Darwin")
         self.assertTrue(result["ok"], result["output"])
 
+    def stop(self, environment=None):
+        with mock.patch.dict(os.environ, {**self.env, **(environment or {})}, clear=True):
+            return self.dashboard.run_dashboard_action("stop", system_name="Darwin")
+
     def wait_probe(self):
         result = self.project / "probe-result"
         deadline = time.monotonic() + 15
@@ -146,6 +150,54 @@ class LaunchdRuntimeTests(unittest.TestCase):
         self.wait_probe()
         self.assertEqual(self.plist.read_bytes(), before)
         self.assertFalse(pause.exists())
+
+    def test_pause_foreign_checkout_cannot_touch_flags_or_owned_service(self):
+        pid = self.install()
+        before = self.plist.read_bytes()
+        foreign = self.root / "Other checkout"
+        shutil.copytree(self.project / "scripts", foreign / "scripts")
+        pause = foreign / ".auto-loop-paused"
+        pause.write_text("original foreign pause\n")
+        result = subprocess.run(["/bin/bash", str(foreign / "scripts/core/stop-loop.sh"), "--pause-daemon"],
+                                env=self.env, capture_output=True, text=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(pause.read_text(), "original foreign pause\n")
+        self.assertFalse((foreign / ".auto-loop-stop").exists())
+        self.assertFalse((foreign / ".auto-loop.pid").exists())
+        self.assertEqual(self.loaded_pid(), pid)
+        self.assertEqual(self.plist.read_bytes(), before)
+
+    def test_pause_unloads_and_resume_preserves_saved_settings(self):
+        self.install()
+        before = self.plist.read_bytes()
+        result = self.stop()
+        self.assertTrue(result["ok"], result["output"])
+        self.assertNotEqual(self.control("list", self.label).returncode, 0)
+        self.assertEqual((self.project / ".auto-loop-paused").read_text(), "PAUSE_REASON=manual\n")
+        self.assertEqual(self.plist.read_bytes(), before)
+        (self.project / "probe-result").unlink()
+        self.start()
+        self.wait_probe()
+        self.assertEqual(self.plist.read_bytes(), before)
+
+    def test_unload_failure_reports_error_and_retry_controls_only_test_label(self):
+        pid = self.install()
+        before = self.plist.read_bytes()
+        fail_bin = self.root / "fail-bin"
+        fail_bin.mkdir()
+        wrapper = fail_bin / "launchctl"
+        wrapper.write_text('#!/bin/sh\n[ "$1" != unload ] || exit 5\nexec /bin/launchctl "$@"\n')
+        wrapper.chmod(0o755)
+        result = self.stop({"PATH": str(fail_bin) + os.pathsep + self.env["PATH"]})
+        self.assertFalse(result["ok"], result["output"])
+        self.assertEqual(self.loaded_pid(), pid)
+        self.assertEqual(self.plist.read_bytes(), before)
+        self.assertEqual((self.project / ".auto-loop-paused").read_text(), "PAUSE_REASON=manual\n")
+        self.assertTrue((self.project / ".auto-loop-stop").exists())
+        retry = self.stop()
+        self.assertTrue(retry["ok"], retry["output"])
+        self.assertNotEqual(self.control("list", self.label).returncode, 0)
+        self.assertEqual(self.plist.read_bytes(), before)
 
 
 if __name__ == "__main__":

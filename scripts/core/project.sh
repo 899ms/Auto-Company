@@ -202,6 +202,21 @@ project_migrate_rollback() {
     echo "Bundle remains recoverable at: $migration_dir/project.bundle"
 }
 
+cleanup_project_new() {
+    local status=$?
+    # Keep cleanup state outside function locals: Bash errexit may unwind them
+    # before invoking EXIT. Never restore a whole-registry snapshot.
+    if [ "$NEW_CREATED" -eq 1 ]; then
+        if python3 "$SCRIPT_DIR/project-lock.py" rollback-row "$FRAMEWORK_DIR" "$NEW_REGISTRY_ROW"; then
+            rm -rf -- "$NEW_TARGET"
+        else
+            echo "Project creation failed; retained source and registry for recovery: $NEW_TARGET" >&2
+        fi
+    fi
+    rm -f "$NEW_REGISTRY_TMP"
+    return "$status"
+}
+
 project_new() {
     local name="" display_name="" description=""
     while [ "$#" -gt 0 ]; do
@@ -231,18 +246,21 @@ project_new() {
         die "project is already registered: $name"
     fi
 
-    local created_at registry_tmp registry_before created=0
+    local created_at
     created_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-    registry_tmp="$(mktemp "$PROJECTS_DIR/.registry.XXXXXX")"
-    registry_before="$(mktemp "$PROJECTS_DIR/.registry-before.XXXXXX")"
-    cp "$REGISTRY_FILE" "$registry_before"
-    trap 'if [ "$created" -eq 1 ] && [ -d "$target" ]; then rm -rf -- "$target"; cp "$registry_before" "$REGISTRY_FILE"; fi; rm -f "$registry_tmp" "$registry_before"' EXIT
+    NEW_TARGET="$target"
+    NEW_CREATED=0
+    NEW_REGISTRY_ROW="$(printf '%s\tprojects/%s\tlocal\t%s' "$name" "$name" "$created_at")"
+    NEW_REGISTRY_TMP="$(mktemp "$PROJECTS_DIR/.registry.XXXXXX")"
+    trap cleanup_project_new EXIT
+    trap 'exit 143' TERM
+    trap 'exit 130' INT
 
-    cp "$REGISTRY_FILE" "$registry_tmp"
-    printf '%s\tprojects/%s\tlocal\t%s\n' "$name" "$name" "$created_at" >> "$registry_tmp"
+    cp "$REGISTRY_FILE" "$NEW_REGISTRY_TMP"
+    printf '%s\n' "$NEW_REGISTRY_ROW" >> "$NEW_REGISTRY_TMP"
 
     mkdir "$target"
-    created=1
+    NEW_CREATED=1
     if ! git -C "$target" init --initial-branch=main >/dev/null 2>&1; then
         git -C "$target" init >/dev/null
         git -C "$target" symbolic-ref HEAD refs/heads/main
@@ -255,23 +273,15 @@ project_new() {
         --display-name "${display_name:-$name}" --description "$description" || \
         echo "Project metadata unavailable; product creation continues." >&2
 
-    mv "$registry_tmp" "$REGISTRY_FILE"
+    mv "$NEW_REGISTRY_TMP" "$REGISTRY_FILE"
     # A normal creation event registers stable identity and, during exploration,
     # its explicit continuation. It never edits human-owned ACTIVE_PROJECT.
     if ! python3 "$SCRIPT_DIR/product_identity.py" --root "$FRAMEWORK_DIR" --project "projects/$name" register \
         --cycle "${AUTO_COMPANY_CYCLE_ID:-}" >/dev/null; then
-        # EXIT traps may run after function locals disappear under Bash errexit.
-        # Roll back this failed registration while its exact paths remain live.
-        rm -rf -- "$target"
-        cp "$registry_before" "$REGISTRY_FILE"
-        rm -f "$registry_tmp" "$registry_before"
-        created=0
-        trap - EXIT
         return 1
     fi
-    created=0
-    rm -f "$registry_before"
-    trap - EXIT
+    NEW_CREATED=0
+    trap - EXIT TERM INT
 
     echo "Created independent local Git repository: $target"
     echo "Human selection is unchanged. Select with: make project-select PROJECT=$name CONFIRM=SELECT"
@@ -404,6 +414,16 @@ project_publish() {
 
 command="${1:-}"
 [ -n "$command" ] || die "usage: project.sh <new|select|status|publish|migrate-legacy|migrate-rollback> [options]"
+# Hold one checkout-wide lock over source creation, registry writes and identity
+# registration, including publish/migration lifecycle changes and their checks.
+# Identity/config helpers have their own locks, always acquired after this one.
+case "$command" in
+    new|select|status|publish|migrate-legacy|migrate-rollback)
+        if [ "${AUTO_COMPANY_PROJECT_LOCK_PID:-}" != "$$" ]; then
+            exec python3 "$SCRIPT_DIR/project-lock.py" run "$FRAMEWORK_DIR" "$0" "$@"
+        fi
+        ;;
+esac
 shift
 
 case "$command" in

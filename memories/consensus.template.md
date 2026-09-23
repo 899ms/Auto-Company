@@ -28,7 +28,7 @@ Select one concrete next action.
 - (none)
 
 ## Priority Issues
-- None. Add unresolved blockers as `- [ ] P1: description`; resolve them as `- [x] P1: description`.
+- None. Agents may append unresolved blockers as `- [ ] P1: description` and must preserve existing P1 entries verbatim. Only a human may resolve them as `- [x] P1: description` after stopping the run and completing pending recovery.
 
 ## Open Questions
 - What should the company validate first?

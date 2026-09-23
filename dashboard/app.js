@@ -540,6 +540,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     finally { state.languageSaving = false; renderLanguage(); }
   }
   function unavailableArtifact(artifact) {
+    if (artifact.associationStatus === 'unknown') return message('artifactUnassociated');
     if (artifact.kind === 'preview') {
       return message(artifact.state === 'stopped' ? 'previewEnded' : artifact.state === 'interrupted' ? 'previewInterrupted' : 'previewUnavailable');
     }

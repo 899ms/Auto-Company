@@ -144,7 +144,7 @@ AUTO_COMPANY_ROOT="$GUARD_ROOT" "$GUARD_SCRIPT" close 11
 rm -f "$GUARD_ROOT/.auto-loop-paused"
 
 echo "[4/5] unresolved P1 blocks a fake cycle before execution"
-sed -i 's/- None. Add unresolved blockers.*/- [ ] P1: legal approval is missing/' "$GUARD_ROOT/memories/consensus.md"
+sed -i '/^## Priority Issues$/a\- [ ] P1: legal approval is missing' "$GUARD_ROOT/memories/consensus.md"
 set +e
 AUTO_COMPANY_ROOT="$GUARD_ROOT" "$GUARD_SCRIPT" preflight 2 > "$TEMP_ROOT/p1.out" 2>&1 && touch "$TEMP_ROOT/fake-engine-called"
 p1_status=$?

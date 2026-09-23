@@ -58,7 +58,8 @@ Before finishing, you **must** update `memories/consensus.md` in this format:
 [Preserve existing content verbatim; agents must not delete, rewrite, reorder, or reformat it]
 
 ## Priority Issues
-- [ ] P1: [Unresolved highest-priority blocker; if there is none, write `- None.`]
+[Preserve existing P1 entries and their descriptions verbatim, including history checked off by a human. You may append unresolved entries; do not delete, rewrite, downgrade or check them off.]
+- [ ] P1: [A newly discovered blocker requiring human action; write `- None.` only when there are no entries.]
 
 ## Open Questions
 - [Question to consider]
@@ -83,7 +84,7 @@ Cycle 1/2/3 below describe convergence for a **new exploration task**, not a bus
 ## Human Governance and Project Boundaries (Mandatory)
 
 1. `Human Overrides` is a human-only section and must be preserved verbatim; any change triggers a rollback of the entire cycle's consensus and pauses the loop.
-2. If `Priority Issues` contains an unchecked P1, the cycle is blocked before the model is called. Only a human may resolve it or explicitly check it off as complete.
+2. If `Priority Issues` contains an unchecked P1, the cycle is blocked before the model is called. Preserve all pre-cycle P1 entries and their descriptions verbatim, including history checked off by a human. You may append unresolved P1 entries, but must not delete, rewrite or downgrade existing entries or add checked-off entries. Only a human may resolve or check off an issue after stopping the run and completing any pending interrupted-cycle recovery. Directly editing the consensus during execution does not provide reliable protection for human issue updates.
 3. New products may only be created through `make project-new NAME=<slug>`; each becomes an independent local Git repository.
 4. The framework repository records project metadata only; it must not contain product source code, product commits, or product remotes.
 5. After creating a project, adding a remote or pushing is prohibited; publishing is allowed only when a human explicitly runs `make project-publish ... CONFIRM=PUBLISH`.

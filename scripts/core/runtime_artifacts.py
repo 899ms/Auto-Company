@@ -23,6 +23,7 @@ import tempfile
 import threading
 import time
 import uuid
+from urllib.parse import unquote, urlsplit
 import xml.etree.ElementTree as ET
 
 from check_adapters import ADAPTERS, bounded_bytes, report_summary
@@ -73,10 +74,21 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def base_record(project, kind):
-    return {"version": 1, "id": uuid.uuid4().hex, "project": project,
+def base_record(project, kind, root=None):
+    record = {"version": 1, "id": uuid.uuid4().hex, "project": project,
             "kind": kind, "cycleId": os.environ.get("AUTO_COMPANY_CYCLE_ID"),
             "recordedAt": now(), "source": "runner"}
+    if root is not None:
+        from product_identity import get_identity
+        try:
+            identity = get_identity(root, project, create=False)
+            if identity:
+                record["productId"] = identity["id"]
+        except (OSError, ValueError, TypeError, KeyError):
+            # Observation cannot prevent checks from running. Consumers leave
+            # records with no provable identity unassociated.
+            pass
+    return record
 
 
 def fingerprint(path):
@@ -305,6 +317,106 @@ This is an intentionally long-running foreground command. Use your engine's pers
 """
 
 
+WEB_SUFFIXES = {".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".json", ".webmanifest",
+                ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico",
+                ".woff", ".woff2", ".ttf", ".otf", ".eot", ".wasm", ".txt", ".xml",
+                ".csv", ".pdf", ".mp3", ".mp4", ".ogg", ".ogv", ".wav", ".webm", ".vtt"}
+PRIVATE_NAME = re.compile(r"(?:credentials?|secrets?|tokens?|auth|service[-_]account|id[-_](?:rsa|dsa|ecdsa|ed25519))(?:[._-]|$)", re.I)
+
+
+class PreviewHandler(SimpleHTTPRequestHandler):
+    """Loopback web assets only; control endpoints require their exact token."""
+
+    def __init__(self, *args, token, **kwargs):
+        self.token = token
+        self.control_response = False
+        super().__init__(*args, **kwargs)
+
+    def request_allowed(self):
+        port = self.server.server_port
+        hosts = self.headers.get_all("Host", [])
+        origins = self.headers.get_all("Origin", [])
+        host = hosts[0].lower() if len(hosts) == 1 else ""
+        if (host not in {f"localhost:{port}", f"127.0.0.1:{port}"}
+                or len(origins) > 1 or (origins and origins[0] != f"http://{host}")
+                or self.headers.get("Sec-Fetch-Site") == "cross-site"):
+            self.send_error(403, "Only same-origin local preview requests are allowed")
+            return False
+        return True
+
+    def translate_path(self, path):
+        parsed = urlsplit(path)
+        if parsed.scheme or parsed.netloc:
+            raise ValueError("Invalid preview path")
+        relative = unquote(parsed.path, errors="strict").lstrip("/") or "."
+        if any(part.startswith(".") or PRIVATE_NAME.match(part) or part.endswith((" ", "."))
+               for part in relative.split("/") if part and part != "."):
+            raise ValueError("Private preview path")
+        return str(safe_path(Path(self.directory), relative))
+
+    def send_head(self):
+        try:
+            target = Path(self.translate_path(self.path))
+            if target.is_dir():
+                for name in ("index.html", "index.htm"):
+                    index = safe_path(Path(self.directory), (target / name).relative_to(self.directory).as_posix())
+                    if index.is_file():
+                        break
+                else:
+                    self.send_error(403, "Directory listing is disabled")
+                    return None
+            elif target.suffix.lower() not in WEB_SUFFIXES:
+                raise ValueError("Unsupported preview resource")
+        except (OSError, ValueError, UnicodeError):
+            self.send_error(404)
+            return None
+        return super().send_head()
+
+    def list_directory(self, path):
+        self.send_error(403, "Directory listing is disabled")
+        return None
+
+    def end_headers(self):
+        if self.control_response:
+            self.send_header("X-Auto-Company-Preview", self.token)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+    def control(self, stop=False):
+        if self.headers.get_all("X-Auto-Company-Preview", []) != [self.token]:
+            self.send_error(403)
+            return
+        self.control_response = True
+        self.send_response(204)
+        self.end_headers()
+        if stop:
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+
+    def do_GET(self):
+        if not self.request_allowed():
+            return
+        if self.path == "/.auto-company-health":
+            self.control()
+        else:
+            super().do_GET()
+
+    def do_HEAD(self):
+        if self.request_allowed():
+            super().do_HEAD()
+
+    def do_POST(self):
+        if not self.request_allowed():
+            return
+        if self.path != "/.auto-company-stop":
+            self.send_error(403)
+            return
+        self.control(stop=True)
+
+    def log_message(self, *args):
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=os.environ.get("AUTO_COMPANY_ROOT") or Path(__file__).resolve().parents[2])
@@ -346,7 +458,7 @@ def main():
     project = safe_path(root, args.project)
     if not project.is_dir():
         parser.error("Project does not exist")
-    record = base_record(args.project, args.action)
+    record = base_record(args.project, args.action, root)
     if args.action == "document":
         path = safe_path(project, args.path)
         record.update(path=path.relative_to(root).as_posix(), sha256=fingerprint(path),
@@ -410,38 +522,7 @@ def main():
         print("Static preview did not become available", file=sys.stderr)
         return 1
 
-    class PreviewHandler(SimpleHTTPRequestHandler):
-        def translate_path(self, path):
-            translated = Path(super().translate_path(path))
-            try:
-                relative = translated.relative_to(directory).as_posix()
-                return str(safe_path(directory, relative))
-            except ValueError:
-                return str(directory / ".unavailable-preview-file")
-
-        def end_headers(self):
-            self.send_header("X-Auto-Company-Preview", token)
-            super().end_headers()
-
-        def do_GET(self):
-            if self.path == "/.auto-company-health":
-                self.send_response(204)
-                self.end_headers()
-            else:
-                super().do_GET()
-
-        def do_POST(self):
-            if self.path != "/.auto-company-stop" or self.headers.get("X-Auto-Company-Preview") != token:
-                self.send_error(403)
-                return
-            self.send_response(204)
-            self.end_headers()
-            threading.Thread(target=server.shutdown, daemon=True).start()
-
-        def log_message(self, *args):
-            pass
-
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), partial(PreviewHandler, directory=str(directory)))
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), partial(PreviewHandler, directory=str(directory), token=token))
     record.update(url=f"http://127.0.0.1:{server.server_port}/", token=token, state="running", pid=os.getpid(),
                   lifetime="cycle" if record["cycleId"] else "operator", directory=directory.relative_to(root).as_posix(),
                   startedAt=now(), endedAt=None)

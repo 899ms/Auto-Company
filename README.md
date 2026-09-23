@@ -2,10 +2,10 @@
 
 # Auto Company
 
-**A fully autonomous AI company running 24/7** <a href="README-ZH.md"><img alt="[中文说明]" src="https://img.shields.io/badge/%5B%E4%B8%AD%E6%96%87%E8%AF%B4%E6%98%8E%5D-2f3640.svg" /></a>
+**An AI company framework for continuous autonomous work** <a href="README-ZH.md"><img alt="[中文说明]" src="https://img.shields.io/badge/%5B%E4%B8%AD%E6%96%87%E8%AF%B4%E6%98%8E%5D-2f3640.svg" /></a>
 
-Powered by **Agentic Workflows**, this project orchestrates 14 **Autonomous AI Agents**, each modeled after world-class experts in their domain.
-They ideate products, make decisions, write code, deploy, and market - without human intervention.
+Powered by **Agentic Workflows**, this project provides 14 **AI agent role definitions**, each drawing on an expert's approach to its domain.
+The team can research products, make decisions, and write code autonomously within human-configured goals, permissions, and budgets. Deployment, publication, and marketing depend on the tools and authorization available; continuous operation depends on services and model availability.
 
 Powered by Claude Code (default) and [Codex CLI](https://www.npmjs.com/package/@openai/codex) on macOS + Windows/WSL, with a local dashboard on both hosts.
 
@@ -44,7 +44,7 @@ Four real ScopeFence product cycles: 04 is expanded; 03, 02 and 01 remain indivi
 
 ## What Is This?
 
-You start a loop. The AI team wakes up, reads shared consensus memory, decides what to do, forms a 3-5 person squad, executes, updates consensus memory, then sleeps briefly. Then it repeats.
+You start a loop. Each cycle reads the shared work summary, decides what to do, forms a team as needed, executes, updates the summary, and waits before the next cycle. Team creation depends on the model and engine capabilities; errors, budget limits, or a pause request can stop continuation.
 
 ```
 daemon (launchd / systemd --user, auto-restart on crash)
@@ -53,14 +53,14 @@ daemon (launchd / systemd --user, auto-restart on crash)
         ├── LLM CLI call (Codex CLI / Claude Code)
         │   ├── reads CLAUDE.md (charter + guardrails)
         │   ├── reads .claude/skills/team/SKILL.md (teaming method)
-        │   ├── forms an Agent Team (3-5 agents)
+        │   ├── forms an Agent Team as needed
         │   ├── executes: research, coding, deploy, marketing
-        │   └── updates memories/consensus.md (handoff baton)
+        │   └── updates memories/consensus.md (work summary)
         ├── failure handling: rate-limit wait / circuit breaker / consensus rollback
         └── sleep -> next cycle
 ```
 
-Each cycle is an independent CLI call. `memories/consensus.md` is the only cross-cycle state.
+Each cycle is an independent CLI call. `memories/consensus.md` is the main work summary loaded for the next cycle. Product files, repositories, configuration, identity records, logs, and usage data also persist across cycles.
 
 ## Generated Applications
 
@@ -106,7 +106,7 @@ All bundled skills are written in English; their user-facing work follows the pr
 | Usage and budgets | [Governance guide](docs/usage-governance.md) | [用量与预算治理](i18n/zh-CN/docs/usage-governance.md) |
 | Operations and troubleshooting | [Common tasks and errors](i18n/en/docs/troubleshooting.md) | [常见操作与排错](docs/troubleshooting.md) |
 
-## Team Lineup (14 Agents)
+## Team Lineup (14 Roles)
 
 This is not "you are a generic developer". It is "you are DHH" style role prompting with real expert mental models.
 
@@ -226,13 +226,13 @@ Auto-Company is not a simple LLM API wrapper, but a highly decoupled **Multi-Age
 │    [ Dashboard ]  [ File-based Steering (consensus.md) ]   │
 ├────────────────────────────────────────────────────────────┤
 │ 4. Workflow Routing & Teaming Layer                        │
-│    [ Dynamic Squad Routing ]  [ Forced Convergence Flow ]  │
+│    [ Role-based Teaming ]  [ Prompt Workflow Guidance ]   │
 ├────────────────────────────────────────────────────────────┤
 │ 3. Agentic Models & Cognition Layer                        │
 │    [ 14 Expert Personas ]  [ 30+ Skill Arsenal ]           │
 ├────────────────────────────────────────────────────────────┤
 │ 2. Orchestration & State Machine Layer                     │
-│    [ 24/7 Auto-Loop ]  [ State Machine ]  [ Resilience ]   │
+│    [ Auto-Loop ]  [ Persistent State ]  [ Resilience ]    │
 ├────────────────────────────────────────────────────────────┤
 │ 1. Execution Engine & Infrastructure Layer                 │
 │    [ Engine Adapters ]  [ Cross-Platform Daemon ]        │
@@ -240,21 +240,21 @@ Auto-Company is not a simple LLM API wrapper, but a highly decoupled **Multi-Age
 ```
 
 ### Layer 5: Observability & HITL (Human-In-The-Loop)
-*   **File-based Steering**: Humans only need to edit `memories/consensus.md` and modify the `Next Action`. The AI team waking up in the next cycle will immediately pivot, enabling minimalist macro-control.
+*   **File-based Steering**: After stopping the current run, edit `Next Action` in `memories/consensus.md` for the next task, or `Human Overrides` for continuing constraints, then start or resume. Editing during a cycle can conflict with the model's updates and recovery; it does not guarantee an immediate change of direction.
 *   **Logs & Dashboard**: `logs/` saves engine-emitted output after known credential redaction, together with per-cycle results and available usage records. Output detail depends on the engine; complete reasoning traces are not guaranteed. `dashboard/` organizes current and historical cycle reports and results, alongside runtime controls, status, usage, budgets, and logs. It does not track individual agents' activity.
 
 ### Layer 4: Workflow Routing & Teaming
-*   **Dynamic Squad Formation**: Powered by Agent Teams, the system dynamically selects 2-5 of the most suitable experts from the 14-person pool based on the "Next Action" in `consensus.md`, instantiating them as sub-agents for the current loop.
-*   **Forced Convergence Flow**: Hardcoded flow control in `PROMPT.md`. For example: Cycle 1 Ideation -> Cycle 2 Validation (Pre-mortem, GO/NO-GO) -> Cycle 3 Execution (Code & Deploy, **pure discussion is forbidden**).
+*   **Role-based Teaming**: The team skill recommends selecting 2-5 relevant roles from 14 definitions for the current task. Actual sub-agent creation and concurrency depend on the executing model and engine; these are not 14 permanent workers or a fixed-size scheduler.
+*   **Workflow Guidance**: `PROMPT.md` asks the team to move from ideation to validation and then implementation. These are prompt instructions, not an enforced business state machine; the third engine cycle does not guarantee a completed or deployed product.
 
 ### Layer 3: Agentic Models & Cognition
 *   **Expert Personas Injection**: Instead of generic prompts, it injects specific mental models of historical figures/industry leaders (e.g., Bezos's "Working Backwards", Munger's "Checklists", DHH's "Majestic Monolith") into `.claude/agents/`, giving decisions extreme business and engineering depth.
 *   **Skill Arsenal**: A pluggable system located in `.claude/skills/` (e.g., `frontend-design`, `security-audit`). Specific methodologies are encapsulated as tools that any awakened Agent can "temporarily load".
-*   **Constitutional Guardrails**: System-level prompts hardcoded in `CLAUDE.md` set absolute bottom lines (e.g., no deleting repos, no force pushes) to ensure safety under high autonomy.
+*   **Behavioral Rules**: `CLAUDE.md` instructs agents not to delete repositories or force-push, among other rules. The framework also checks specific runtime and configuration boundaries; prompt rules do not block arbitrary commands or provide an operating-system sandbox.
 
 ### Layer 2: Orchestration & State Machine
-*   **The Auto-Loop**: The execution loop controlled by `scripts/core/auto-loop.sh` frees the AI from "single-turn conversations", enabling 24/7 continuous operation.
-*   **Lightweight State Machine (Consensus Memory)**: Forgoes complex vector databases or memory management, compressing cross-cycle context into a single Markdown file: `memories/consensus.md`. Read before every cycle and rewritten before it ends, acting as the system's "baton".
+*   **The Auto-Loop**: `scripts/core/auto-loop.sh` schedules repeated CLI calls, waits, and failure handling. It can continue while services, model access, budgets, and runtime checks permit.
+*   **Consensus Memory**: `memories/consensus.md` carries the natural-language work summary between calls. Structured product identity, usage, configuration, and recovery records are stored separately; the summary is not the entire runtime state.
 *   **Resilience & Recovery**: Built-in circuit breakers (cooldown triggered by consecutive errors), rate-limit backoff (auto-sleep on 429 errors), and consensus recovery after failed cycles. Human Overrides, `.auto-company.local`, and the framework's root `.gitignore` have targeted protection. Product code changes and external side effects are not automatically rolled back.
 
 ### Layer 1: Execution Engine & Infrastructure
@@ -264,15 +264,19 @@ Auto-Company is not a simple LLM API wrapper, but a highly decoupled **Multi-Age
 
 ## Operating Model
 
-### Automatic Convergence (No Endless Discussion)
+### Default Workflow Guidance
+
+The prompt recommends the following progression. These labels describe work stages, which may span multiple engine cycles; they are not a completion deadline or an enforced state machine.
 
 | Cycle | Action |
 |------|------|
 | Cycle 1 | Brainstorm: each agent proposes ideas, rank top 3 |
 | Cycle 2 | Validate #1: Munger pre-mortem + Thompson market check + Campbell economics -> **GO / NO-GO** |
-| Cycle 3+ | GO -> create repo, build, deploy. NO-GO -> move to next idea. Discussion-only loops are forbidden |
+| Cycle 3+ | GO -> create repo, build, and deploy when authorized. NO-GO -> move to the next idea. The prompt asks for implementation rather than discussion-only cycles |
 
 ### Six Standard Workflows
+
+These are suggested role collaboration chains; the executing model selects the actual work and participants.
 
 | # | Workflow | Collaboration Chain |
 |---|------|--------|
@@ -285,18 +289,20 @@ Auto-Company is not a simple LLM API wrapper, but a highly decoupled **Multi-Age
 
 ## Steering
 
-The team runs autonomously, but you can intervene at any time:
+To change direction, stop the foreground run with `make stop`, pause a macOS/WSL daemon with `make pause`, or use the Windows stop command below. Wait until the run has stopped before editing, then start or resume it.
 
 | Method | Action |
 |------|------|
-| **Change direction** | Edit "Next Action" in `memories/consensus.md` |
+| **Change direction** | After stopping, edit "Next Action" in `memories/consensus.md`; use "Human Overrides" for continuing constraints |
 | **Pause** | `make pause` (macOS/WSL daemon mode) or `.\scripts\windows\stop-win.ps1` (Windows entry) |
 | **Resume** | `make resume` |
 | **Review outputs** | Check `docs/*/` for artifacts generated by agents |
 
+Agents may report unresolved P1 blockers, but must preserve existing P1 entries and cannot add checked-off ones. Resolve blockers only after stopping and completing pending recovery; see [P1 issues and human edits](i18n/en/docs/troubleshooting.md#p1-issues-and-human-edits).
+
 ## Safety Guardrails
 
-Hard constraints in `CLAUDE.md`, enforced for all agents:
+`CLAUDE.md` gives agents the following behavioral rules. They complement specific framework checks, but are not a general command-denial mechanism or a guarantee that every agent action is blocked when it violates a rule:
 
 - Do not delete GitHub repos (`gh repo delete`)
 - Do not delete Cloudflare projects (`wrangler delete`)
@@ -410,7 +416,7 @@ This is an **experimental project**:
 - **Windows entry requires WSL**: PowerShell is only the control layer
 - **Still under test**: runs, but stability is not guaranteed
 - **Costs money**: each cycle consumes model quota
-- **Fully autonomous**: agents act without approval prompts; configure guardrails carefully in `CLAUDE.md`
+- **Permissions matter**: default engine settings allow broad local actions without routine approval prompts. Review engine permissions and `CLAUDE.md`; prompt rules alone do not provide isolation
 - **No warranty**: review `docs/` and `projects/` regularly
 
 Suggested rollout: start with `make start` (foreground), then move to daemon mode (`make install` on macOS/WSL, `.\scripts\windows\start-win.ps1` on Windows).

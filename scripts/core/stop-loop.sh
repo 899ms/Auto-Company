@@ -40,12 +40,34 @@ pause_daemon() {
         exit 1
     fi
 
+    if [ ! -f "$PLIST_PATH" ]; then
+        ui_message mac.plist_missing "$PLIST_PATH"
+        exit 1
+    fi
+    # Check both saved and loaded ownership before touching either stop marker
+    # or signalling a process. A different checkout may own the shared label.
+    python3 "$SCRIPT_DIR/launchd-config.py" --project "$PROJECT_DIR" --validate "$PLIST_PATH"
+    local jobs loaded=0
+    if ! jobs="$(launchctl list)"; then
+        ui_message mac.query_failed >&2
+        return 1
+    fi
+    if printf '%s\n' "$jobs" | awk -v label="$LABEL" '$3 == label { found=1 } END { exit !found }'; then
+        loaded=1
+        python3 "$SCRIPT_DIR/../macos/launchd-job.py" "$LABEL" | python3 "$SCRIPT_DIR/launchd-config.py" \
+            --project "$PROJECT_DIR" --validate-loaded
+    fi
+
     printf 'PAUSE_REASON=manual\n' > "$PAUSE_FLAG"
     ui_message mac.pause_created "$PAUSE_FLAG"
     stop_loop_process
 
-    if launchctl list 2>/dev/null | grep -q "$LABEL"; then
-        launchctl unload "$PLIST_PATH" 2>/dev/null || true
+    if [ "$loaded" -eq 1 ]; then
+        if ! launchctl unload "$PLIST_PATH"; then
+            # Keep both markers so the loop stays paused and Stop can retry.
+            ui_message mac.unload_failed >&2
+            return 1
+        fi
         ui_message mac.unloaded
     fi
     ui_message mac.paused
