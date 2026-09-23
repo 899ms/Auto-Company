@@ -736,6 +736,7 @@ while true; do
 6. Preserve the entire \`## Human Overrides\` section byte-for-byte. Never delete, edit, reorder, or reformat it.
 7. Create products only through \`make project-new NAME=<slug>\`. Never add a product remote or push outside the explicit human-run \`project-publish\` gate.
 8. Human-owned selection is \`$PROJECT_DIR/.auto-company.local\`; never create, edit, or select it during a cycle. Creating a candidate does not change the selection.
+9. Preserve existing P1 items and their continuation text in \`## Priority Issues\` exactly. You may add unresolved P1 items as \`- [ ] P1: description\`; never add a resolved P1 or close, delete, rewrite, or downgrade an existing P1. Only a human editing after the loop stops and interrupted recovery completes may change the baseline.
 
 ## Authoritative Project Context
 
@@ -800,6 +801,8 @@ Resume the work and phase in the current consensus. First-exploration rules appl
         cycle_failed_reason="Human Overrides protection violation"
         if [ "$(read_pause_reason "$PAUSE_FLAG" "")" = "active_project_mutated" ]; then
             cycle_failed_reason="Human project selection protection violation"
+        elif [ "$(read_pause_reason "$PAUSE_FLAG" "")" = "priority_issue_mutated" ]; then
+            cycle_failed_reason="Priority Issues protection violation"
         fi
         governance_pause_required=1
     elif [ "$consensus_guard_status" -ne 0 ]; then

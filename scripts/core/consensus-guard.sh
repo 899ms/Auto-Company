@@ -30,9 +30,11 @@ timestamp() {
 
 log_guard() {
     local cycle="$1" level="$2" message="$3"
-    mkdir -p "$LOG_DIR"
-    printf '[%s] Cycle #%s [%s] %s\n' "$(timestamp)" "$cycle" "$level" "$message" >> "$LOG_FILE"
-    printf 'Cycle #%s [%s] %s\n' "$cycle" "$level" "$message" >&2
+    # Diagnostics must never prevent restoring a rejected or interrupted cycle.
+    if ! { mkdir -p "$LOG_DIR" && printf '[%s] Cycle #%s [%s] %s\n' "$(timestamp)" "$cycle" "$level" "$message" >> "$LOG_FILE"; }; then
+        printf 'Error: cannot append consensus guard log: %s\n' "$LOG_FILE" >&2 || true
+    fi
+    printf 'Cycle #%s [%s] %s\n' "$cycle" "$level" "$message" >&2 || true
 }
 
 write_guard_state() {
@@ -141,6 +143,15 @@ human_overrides_unchanged() {
     python3 "$FORMAT_TOOL" unchanged "$CONSENSUS_FILE" "$BACKUP_FILE"
 }
 
+archive_rejected_consensus() {
+    local cycle="$1" archive
+    if archive="$(python3 "$FORMAT_TOOL" archive-rejected "$CONSENSUS_FILE" "$cycle")"; then
+        log_guard "$cycle" "REJECTED" "Saved rejected consensus for human review: ${archive#$FRAMEWORK_DIR/}"
+    else
+        log_guard "$cycle" "CRITICAL" "Could not save rejected consensus; proceeding with baseline restoration"
+    fi
+}
+
 snapshot_consensus() {
     local cycle="$1" snapshot
     verify_cycle "$cycle" || return $?
@@ -155,6 +166,7 @@ verify_cycle() {
     python3 "$PROJECT_CONTEXT_TOOL" verify --root "$FRAMEWORK_DIR" || selection_status=$?
     if ! human_overrides_unchanged; then
         write_pause_flag "human_override_mutated"
+        archive_rejected_consensus "$cycle"
         if ! python3 "$FORMAT_TOOL" restore "$CONSENSUS_FILE" "$BACKUP_FILE"; then
             local message="HIGH PRIORITY: consensus restoration failed; inspect baseline at $BACKUP_FILE and repair consensus before resuming"
             log_guard "$cycle" "CRITICAL" "$message"
@@ -165,6 +177,20 @@ verify_cycle() {
         log_guard "$cycle" "CRITICAL" "$message"
         write_pause_flag "human_override_mutated"
         write_guard_state "$cycle" "paused" "human_override_mutated" "$message"
+        return 42
+    fi
+    if ! python3 "$FORMAT_TOOL" p1-preserved "$CONSENSUS_FILE" "$BACKUP_FILE"; then
+        write_pause_flag "priority_issue_mutated"
+        archive_rejected_consensus "$cycle"
+        if ! python3 "$FORMAT_TOOL" restore "$CONSENSUS_FILE" "$BACKUP_FILE"; then
+            local message="HIGH PRIORITY: P1 protection restoration failed; inspect baseline at $BACKUP_FILE and repair consensus before resuming"
+            log_guard "$cycle" "CRITICAL" "$message"
+            write_guard_state "$cycle" "paused" "priority_issue_mutated" "$message"
+            return 42
+        fi
+        local message="HIGH PRIORITY: Cycle changed or deleted an existing P1 or added a resolved P1; restored pre-cycle consensus and paused subsequent cycles"
+        log_guard "$cycle" "CRITICAL" "$message"
+        write_guard_state "$cycle" "paused" "priority_issue_mutated" "$message"
         return 42
     fi
     if [ "$selection_status" -ne 0 ]; then

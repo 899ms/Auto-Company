@@ -302,6 +302,163 @@ class GovernanceBoundariesTest(GovernanceFixture):
         self.assertFalse((self.root / "memories/consensus.md.bak").exists())
 
 
+class PriorityIssuesTest(GovernanceFixture):
+    def setUp(self):
+        super().setUp()
+        self.assert_ok(self.guard("init"))
+
+    def replace_issues(self, issues):
+        self.consensus.write_bytes(
+            b"# Auto Company Consensus\n## Human Overrides\n- Keep billing disabled.\n"
+            b"## Priority Issues\n" + issues + b"\n## Work\n- Before cycle.\n"
+        )
+
+    def assert_rejected(self, baseline, rejected):
+        result = self.guard("verify", "1")
+        self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+        self.assertEqual(self.consensus.read_bytes(), baseline)
+        self.assertIn("priority_issue_mutated", (self.root / ".auto-loop-paused").read_text())
+        archives = list((self.root / "memories/rejected").glob("*.md"))
+        self.assertIn(rejected, [path.read_bytes() for path in archives])
+        self.assertFalse((self.root / "memories/snapshots").exists())
+        self.assert_ok(self.guard("close", "1"))
+        self.assertFalse((self.root / "memories/.consensus-cycle-pending").exists())
+
+    def test_runtime_added_then_checked_p1_is_rejected_and_saved_for_review(self):
+        baseline = self.consensus.read_bytes()
+        self.assert_ok(self.guard("begin", "1"))
+        added = baseline.replace(b"## Priority Issues\n", b"## Priority Issues\n- [ ] P1: approval required\n")
+        self.consensus.write_bytes(added)
+        rejected = added.replace(b"- [ ] P1:", b"- [x] P1:")
+        self.consensus.write_bytes(rejected)
+        self.assert_rejected(baseline, rejected)
+        self.assertIn("Saved rejected consensus for human review", (self.root / "logs/auto-loop.log").read_text())
+
+    def test_runtime_unresolved_p1_is_saved_then_blocks_next_cycle(self):
+        self.assert_ok(self.guard("begin", "1"))
+        current = self.consensus.read_bytes().replace(
+            b"## Priority Issues\n", b"## Priority Issues\n- [ ] P1: approval required\n"
+        )
+        self.consensus.write_bytes(current)
+        self.assert_ok(self.guard("verify", "1"))
+        self.assert_ok(self.guard("finish", "1"))
+        self.assertEqual(self.guard("begin", "2").returncode, 41)
+        self.assertEqual(self.consensus.read_bytes(), current)
+        snapshots = list((self.root / "memories/snapshots").glob("*.md"))
+        self.assertEqual([path.read_bytes() for path in snapshots], [current])
+        self.assertFalse((self.root / "memories/.consensus-cycle-pending").exists())
+
+    def test_human_closed_prior_p1_persists_and_non_p1_work_can_change(self):
+        self.replace_issues(b"- [x] P1: human approved billing\n  Approval: signed by operator.\n- [ ] P2: cosmetic issue\n")
+        self.assert_ok(self.guard("begin", "1"))
+        updated = self.consensus.read_bytes().replace(b"[ ] P2: cosmetic issue", b"[x] P2: cosmetic issue")
+        updated = updated.replace(b"Before cycle.", b"Completed work.")
+        self.consensus.write_bytes(updated)
+        self.assert_ok(self.guard("finish", "1"))
+        self.assertEqual(self.consensus.read_bytes(), updated)
+
+    def test_existing_p1_rewrite_removal_downgrade_and_continuation_change_are_rejected(self):
+        issue = b"- [x] P1: operator-approved exception\n  Only for the offline fixture.\n"
+        for changed in (
+            b"", issue.replace(b"P1:", b"P2:"), issue.replace(b"[x]", b"[ ]"),
+            issue.replace(b"operator-approved exception", b"all operations approved"),
+            issue.replace(b"  Only for the offline fixture.\n", b""),
+            issue.replace(b"offline fixture", b"public service"),
+        ):
+            with self.subTest(changed=changed):
+                self.replace_issues(issue + b"- P2: freely editable\n")
+                baseline = self.consensus.read_bytes()
+                self.assert_ok(self.guard("begin", "1"))
+                rejected = baseline.replace(issue, changed)
+                self.consensus.write_bytes(rejected)
+                self.assert_rejected(baseline, rejected)
+
+    def test_duplicate_resolved_p1_count_cannot_increase_or_decrease(self):
+        issue = b"- [x] P1: human approved exception\n"
+        for before, after in ((1, 2), (2, 1)):
+            with self.subTest(before=before, after=after):
+                self.replace_issues(issue * before)
+                baseline = self.consensus.read_bytes()
+                self.assert_ok(self.guard("begin", "1"))
+                rejected = baseline.replace(issue * before, issue * after)
+                self.consensus.write_bytes(rejected)
+                self.assert_rejected(baseline, rejected)
+
+    def test_new_p1_checked_markdown_variants_are_rejected(self):
+        for item in (b"* [X] **P1**: approval", b"+ [x] __p1__: approval",
+                     b"1. [x] P1: approval", b"[x] P1: approval"):
+            with self.subTest(item=item):
+                self.replace_issues(b"- None.\n")
+                baseline = self.consensus.read_bytes()
+                self.assert_ok(self.guard("begin", "1"))
+                rejected = baseline.replace(b"- None.", item)
+                self.consensus.write_bytes(rejected)
+                self.assert_rejected(baseline, rejected)
+
+    def test_resolving_reported_p1_after_stopped_cycle_is_accepted(self):
+        self.assert_ok(self.guard("begin", "1"))
+        self.consensus.write_bytes(self.consensus.read_bytes().replace(
+            b"## Priority Issues\n", b"## Priority Issues\n- [ ] P1: human decision required\n"
+        ))
+        self.assert_ok(self.guard("finish", "1"))
+        self.assertEqual(self.guard("begin", "2").returncode, 41)
+        self.consensus.write_bytes(self.consensus.read_bytes().replace(b"[ ] P1:", b"[x] P1:"))
+        human_baseline = self.consensus.read_bytes()
+        self.assert_ok(self.guard("begin", "2"))
+        self.assert_ok(self.guard("finish", "2"))
+        self.assertEqual(self.consensus.read_bytes(), human_baseline)
+
+    def test_malformed_shadow_governance_heading_cannot_hide_p1(self):
+        baseline = self.consensus.read_bytes()
+        for heading in (b"### Priority Issues", b"# Priority Issues", b"## priority issues ##"):
+            with self.subTest(heading=heading):
+                self.consensus.write_bytes(baseline)
+                self.assert_ok(self.guard("begin", "1"))
+                self.consensus.write_bytes(baseline + heading + b"\n- [x] P1: hidden approval\n")
+                self.assertEqual(self.guard("verify", "1").returncode, 42)
+                self.assertEqual(self.consensus.read_bytes(), baseline)
+                self.assert_ok(self.guard("close", "1"))
+
+    def test_interrupted_p1_mutation_restores_baseline_before_human_update(self):
+        self.replace_issues(b"- [x] P1: human-approved historical item\n")
+        baseline = self.consensus.read_bytes()
+        self.assert_ok(self.guard("begin", "1"))
+        self.consensus.write_bytes(baseline.replace(b"P1:", b"P2:"))
+        self.assertEqual(self.guard("recover").returncode, 42)
+        self.assertEqual(self.consensus.read_bytes(), baseline)
+        self.assertFalse((self.root / "memories/.consensus-cycle-pending").exists())
+        updated = baseline.replace(b"historical item", b"historical item with human correction")
+        self.consensus.write_bytes(updated)
+        self.assert_ok(self.guard("recover"))
+        self.assert_ok(self.guard("begin", "2"))
+        self.assert_ok(self.guard("finish", "2"))
+        self.assertEqual(self.consensus.read_bytes(), updated)
+
+    def test_failed_rejected_archive_still_restores_and_pauses(self):
+        baseline = self.consensus.read_bytes()
+        external = self.root / "external-directory"
+        external.mkdir()
+        (self.root / "memories/rejected").symlink_to(external, target_is_directory=True)
+        self.assert_ok(self.guard("begin", "1"))
+        self.consensus.write_bytes(baseline.replace(b"## Priority Issues\n", b"## Priority Issues\n- [x] P1: denied\n"))
+        result = self.guard("verify", "1")
+        self.assertEqual(result.returncode, 42)
+        self.assertEqual(self.consensus.read_bytes(), baseline)
+        self.assertEqual(list(external.iterdir()), [])
+        self.assertIn("Could not save rejected consensus", result.stderr)
+        self.assertIn("priority_issue_mutated", (self.root / ".auto-loop-paused").read_text())
+
+    def test_guard_log_failure_cannot_prevent_p1_restoration(self):
+        baseline = self.consensus.read_bytes()
+        self.assert_ok(self.guard("begin", "1"))
+        log = self.root / "logs/auto-loop.log"
+        log.unlink()
+        log.mkdir()
+        rejected = baseline.replace(b"## Priority Issues\n", b"## Priority Issues\n- [x] P1: unauthorized\n")
+        self.consensus.write_bytes(rejected)
+        self.assert_rejected(baseline, rejected)
+
+
 class GovernanceLoopTest(GovernanceFixture):
     def setUp(self):
         super().setUp()
@@ -324,7 +481,11 @@ class GovernanceLoopTest(GovernanceFixture):
             "    (root / 'mutation-ready.tmp').write_text(str(os.getpid()))\n"
             "    (root / 'mutation-ready.tmp').replace(root / 'mutation-ready')\n"
             "    time.sleep(30)\n"
-            "if os.environ.get('FAKE_MODE') == 'mutate':\n"
+            "if os.environ.get('FAKE_MODE') in ('p1-checked', 'p1-unresolved'):\n"
+            "    consensus.write_bytes(consensus.read_bytes().replace(b'## Priority Issues\\n', b'## Priority Issues\\n- [ ] P1: operator decision required\\n'))\n"
+            "    if os.environ['FAKE_MODE'] == 'p1-checked':\n"
+            "        consensus.write_bytes(consensus.read_bytes().replace(b'[ ] P1:', b'[x] P1:'))\n"
+            "elif os.environ.get('FAKE_MODE') == 'mutate':\n"
             "    consensus.write_bytes(consensus.read_bytes().replace(b'- (none)', b'- Agent changed the rule.'))\n"
             "else:\n"
             "    consensus.write_bytes(consensus.read_bytes().replace(b'Not started', b'Completed fake cycle'))\n"
@@ -458,9 +619,50 @@ class GovernanceLoopTest(GovernanceFixture):
         process = self.start_loop()
         self.wait_until(lambda: self.text_contains(self.root / ".auto-loop-state", "unresolved_p1"), process)
         self.assertFalse((self.root / "calls.jsonl").exists())
+        (self.root / ".auto-loop-stop").touch()
+        self.assertEqual(process.wait(timeout=12), 0)
         self.consensus.write_bytes(self.consensus.read_bytes().replace(b"* [ ] P1:", b"* [x] P1:"))
+        process = self.start_loop()
         self.assertEqual(process.wait(timeout=15), 0)
         self.assertEqual(len((self.root / "calls.jsonl").read_text().splitlines()), 1)
+
+    def test_runtime_checked_p1_records_failure_and_persistent_pause(self):
+        baseline = self.consensus.read_bytes()
+        process = self.start_loop("p1-checked")
+        self.wait_until(lambda: self.text_contains(self.root / ".auto-loop-state", "priority_issue_mutated"), process)
+        self.wait_until(lambda: (self.root / "logs/usage.jsonl").exists(), process)
+        (self.root / ".auto-loop-stop").touch()
+        self.assertEqual(process.wait(timeout=12), 0)
+        self.assertEqual(self.consensus.read_bytes(), baseline)
+        self.assertFalse((self.root / "memories/snapshots").exists())
+        self.assertEqual(len(list((self.root / "memories/rejected").glob("*.md"))), 1)
+        sidecars = [json.loads(path.read_text()) for path in (self.root / "logs").glob("cycle-*.json")]
+        sidecars = [record for record in sidecars if "cycle_outcome" in record]
+        self.assertEqual(len(sidecars), 1)
+        sidecar = sidecars[0]
+        self.assertEqual(sidecar["cycle_outcome"], "failure")
+        self.assertEqual(sidecar["failure_reason"], "Priority Issues protection violation")
+        records = [json.loads(row) for row in (self.root / "logs/usage.jsonl").read_text().splitlines()]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["usage"]["total_tokens"], 5)
+        restarted = self.start_loop()
+        self.wait_until(lambda: self.text_contains(self.root / ".auto-loop-state", "STATUS=paused"), restarted)
+        self.assertEqual(len((self.root / "calls.jsonl").read_text().splitlines()), 1)
+        (self.root / ".auto-loop-stop").touch()
+        self.assertEqual(restarted.wait(timeout=12), 0)
+
+    def test_runtime_unresolved_p1_stops_next_engine_and_human_can_resolve_after_stop(self):
+        process = self.start_loop("p1-unresolved")
+        self.wait_until(lambda: self.text_contains(self.root / ".auto-loop-state", "unresolved_p1"), process)
+        self.assertEqual(len((self.root / "calls.jsonl").read_text().splitlines()), 1)
+        self.assertEqual(len(list((self.root / "memories/snapshots").glob("*.md"))), 1)
+        (self.root / ".auto-loop-stop").touch()
+        self.assertEqual(process.wait(timeout=12), 0)
+        self.consensus.write_bytes(self.consensus.read_bytes().replace(b"[ ] P1:", b"[x] P1:"))
+        restarted = self.start_loop()
+        self.assertEqual(restarted.wait(timeout=15), 0)
+        self.assertIn(b"- [x] P1: operator decision required", self.consensus.read_bytes())
+        self.assertEqual(len((self.root / "calls.jsonl").read_text().splitlines()), 2)
 
     def test_term_during_engine_restores_governance_before_exit(self):
         original = self.consensus.read_bytes()

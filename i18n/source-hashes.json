@@ -1,6 +1,6 @@
 {
   "INDEX.md": "bb3baf532639b7f7de882fa78c2eae385964099bdcc286f4f7608ac46a7a9526",
-  "PROMPT.md": "adb11c6045ce6a3af8a065c574e5dde28517d6d2ad4cefa5879887616f4a66cd",
+  "PROMPT.md": "99a382b995e121e1c9f85c1ee463a82b25ff6bd8562e7e85b61b358911f4e3dd",
   ".claude/agents/ceo-bezos.md": "04655828d6c110787651efc71d53ab2e6d04f26356b3c7de8f00c909aa645de2",
   ".claude/agents/cfo-campbell.md": "63186e51dad6191930907dd8f0847fa8d78080c43f3d9d1576629c30b5f01545",
   ".claude/agents/critic-munger.md": "ca59c72d8b8a91436b1fe60866af2318bb0540e83551c244882427c6fc52b18b",
@@ -19,5 +19,5 @@
   "CLAUDE.md": "9973ac31f1d0eba8a68fbe705c86dfbfceda8820181f8a73d6d1236612537530",
   "ENGINE_ADAPTERS.md": "b81a46b9b41765b41c22958bf4d2b2bfa0a39b70649f2e9bb16d482b7aaf6040",
   "docs/usage-governance.md": "d10069939325b85e77f9f26baa05aa0033a706453e3a059996226d0968175b17",
-  "docs/troubleshooting.md": "e12a34fd14a4360e3bd3b8605e115a79b6d64cf58c314f0b6d31746d9ffc770f"
+  "docs/troubleshooting.md": "05ebfc93aaca9cc64950e5a39c2aa2422b6da27e7fb5fee077e428f6465574ec"
 }
